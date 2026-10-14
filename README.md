@@ -2,7 +2,7 @@
 
 Elixir OTP spike for a real-time actor system: **message transactions with explicit states**, plus **supervised subsystems** that also hold state.
 
-Latency assumption: **soft real-time (milliseconds)**. That is why this spike is Elixir on the BEAM. If you later need sub-millisecond tails or heavy CPU work, the same shape ports to Rust. This is deliberate - when architecting in greenfield space, I follow I think Fred Brooks' advice: "Start with the highest level programming language that fits the requirement [because it is the most productive path], but ensure it has an escape route if you run into performance or other insurmountable problems.
+Latency assumption: **soft real-time (milliseconds)**. That is why this spike is Elixir on the BEAM. If you later need sub-millisecond tails or heavy CPU work, the same shape ports to Rust. This is deliberate - when architecting in greenfield space, I follow I think Fred Brooks' advice: "Start with the highest level programming language that fits the requirement [because it is the most productive path], but ensure it has an escape route if you run into performance or other insurmountable problems." As a programming language of today that addresses complaints about popular programming languages of yesterday, Rust seems promising. Now to see what I can achieve in this POC!
 
 ## What it demonstrates
 
