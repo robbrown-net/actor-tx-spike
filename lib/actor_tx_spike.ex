@@ -1,51 +1,45 @@
 defmodule ActorTxSpike do
   @moduledoc """
-  Public API for the transaction spike.
+  Public API of the transaction spike.
 
-  A transaction is an OTP `gen_statem` that walks:
+  A transaction asks a market of providers for FX quotes, selects the best one
+  under a `Policy`, then accepts the quote, authorises and pays, failing over
+  and compensating as needed. See `ActorTxSpike.Payment` for the lifecycle and
+  `ActorTxSpike.Events` for the narrative stream.
 
-      queued → awaiting_a → awaiting_b → committed
-                                    ↘ compensating → failed
-
-  Subsystems A and B are supervised workers. Calls are at-least-once;
-  handlers are idempotent by `tx_id`.
+  Transaction ids must not contain `:` (they prefix idempotency keys).
   """
 
-  alias ActorTxSpike.{Store, Transaction, TransactionSupervisor}
+  alias ActorTxSpike.{Payment, TransactionSupervisor}
 
-  @spec submit(map()) :: {:ok, String.t()} | {:error, term()}
-  def submit(payload) when is_map(payload) do
-    id = payload[:id] || payload["id"] || generate_id()
-    payload = Map.put(payload, :id, id)
+  @doc """
+  Submit a transaction. `request` needs `:amount`; `:id` is generated if absent.
 
-    case TransactionSupervisor.start_transaction(id: id, payload: payload) do
+  Options: `:providers` (`[%{id:, server:}]`), `:policy` (`ActorTxSpike.Policy`),
+  and `:opts` (see `ActorTxSpike.Payment` defaults).
+  """
+  @spec submit(map(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def submit(request, opts) when is_map(request) do
+    id = request[:id] || generate_id()
+    request = Map.put(request, :id, id)
+
+    args = [
+      id: id,
+      request: request,
+      providers: Keyword.fetch!(opts, :providers),
+      policy: Keyword.fetch!(opts, :policy),
+      opts: Keyword.get(opts, :opts, [])
+    ]
+
+    case TransactionSupervisor.start_payment(args) do
       {:ok, _pid} -> {:ok, id}
       {:error, {:already_started, _pid}} -> {:ok, id}
-      other -> other
+      {:error, _reason} = error -> error
     end
   end
 
-  @spec await(String.t(), timeout()) :: {:ok, map()} | {:error, term()}
-  def await(id, timeout \\ 5_000) do
-    Transaction.await(id, timeout)
-  end
+  defdelegate await(id, timeout \\ 5_000), to: Payment
+  defdelegate snapshot(id), to: Payment
 
-  @spec snapshot(String.t()) :: map() | nil
-  def snapshot(id), do: Store.get(id)
-
-  @spec restore_inflight() :: [{:ok, pid()} | {:error, term()}]
-  def restore_inflight do
-    Store.inflight()
-    |> Enum.map(fn snapshot ->
-      TransactionSupervisor.start_transaction(
-        id: snapshot.id,
-        payload: snapshot.payload,
-        snapshot: snapshot
-      )
-    end)
-  end
-
-  defp generate_id do
-    Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
-  end
+  defp generate_id, do: "tx-" <> Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)
 end

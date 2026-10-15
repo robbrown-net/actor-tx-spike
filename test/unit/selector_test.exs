@@ -79,6 +79,23 @@ defmodule ActorTxSpike.SelectorTest do
     assert ids(sel) == [:proven, :fresh]
   end
 
+  test "max_bps_from_best stops speed from buying an unacceptably bad price" do
+    best = provider(:best_price, rate: 1.10, latency_ms: 30)
+    fast = provider(:fast_poor, rate: 1.05)
+    request = %{id: "r", amount: 100}
+
+    loose = policy(%{"weights" => %{"cost" => 0.1, "speed" => 0.9}})
+    strict = policy(%{"weights" => %{"cost" => 0.1, "speed" => 0.9}, "max_bps_from_best" => 100})
+
+    assert {:selected, %{provider_id: :fast_poor}} =
+             Selector.select(request, [best, fast], loose, deadline_ms: 500).outcome
+
+    sel = Selector.select(request, [best, fast], strict, deadline_ms: 500)
+    assert {:selected, %{provider_id: :best_price}} = sel.outcome
+    assert {:fast_poor, {:worse_than_best_bps, bps}} = List.keyfind(sel.excluded, :fast_poor, 0)
+    assert_in_delta bps, 454.5, 0.1
+  end
+
   test "ties are broken deterministically by provider id" do
     ps = [provider(:b), provider(:a), provider(:c)]
     sel = Selector.select(@request, ps, policy(%{"weights" => %{"cost" => 1}}))

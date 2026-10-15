@@ -9,13 +9,23 @@ defmodule ActorTxSpike.Provider do
 
   * `{:ok, value}`       provider answered successfully
   * `{:rejected, why}`   provider answered "no" (a business answer, not a fault)
-  * `{:error, reason}`   transient/technical failure; safe to retry elsewhere
-  * `:timeout`           no answer within budget (effect unknown for `execute`)
-  * `:in_doubt`          `execute` only: the effect may have happened
+  * `{:error, reason}`   technical failure; nothing happened, safe to retry
+  * `:timeout`           no answer within budget (effect unknown)
+  * `:in_doubt`          effectful op only: the effect may have happened
   * `:not_found` / `:unknown`  `status` only
 
-  Callbacks take an adapter-specific `config` as the first argument. `execute`
-  must be idempotent for a given `idempotency_key`.
+  ## Lifecycle operations
+
+  `request_quote` has no side effect. The effectful steps are
+  `accept_quote` (lock the rate), `authorise` (hold funds) and `pay`. Each
+  takes an idempotency `key` and must be idempotent for it. Each has an undo
+  keyed by the *same* key: `cancel_accept`, `void_authorisation`, `refund`.
+  Undos must also be idempotent, and must be safe to call for a key whose
+  effect never happened (the provider should remember it was cancelled).
+
+  `status(config, op, key)` looks up what a provider holds for an effect. It
+  is allowed to be slow or stale: callers must treat `:not_found` as
+  "not known yet", not "did not happen".
   """
 
   alias ActorTxSpike.Provider.Quote
@@ -24,15 +34,26 @@ defmodule ActorTxSpike.Provider do
   @type request :: %{required(:id) => String.t(), optional(atom()) => term()}
   @type key :: String.t()
   @type receipt :: map()
+  @type effect_op :: :accept_quote | :authorise | :pay
+  @type undo_op :: :cancel_accept | :void_authorisation | :refund
   @type probe_info :: %{required(:version) => String.t(), optional(atom()) => term()}
+
+  @type effect_result ::
+          {:ok, receipt} | {:rejected, term()} | {:error, term()} | :timeout | :in_doubt
+  @type undo_result :: {:ok, receipt} | {:rejected, term()} | {:error, term()} | :timeout
 
   @callback request_quote(config, request) ::
               {:ok, Quote.t()} | {:rejected, term()} | {:error, term()} | :timeout
 
-  @callback execute(config, Quote.t(), key) ::
-              {:ok, receipt} | {:rejected, term()} | {:error, term()} | :timeout | :in_doubt
+  @callback accept_quote(config, Quote.t(), key) :: effect_result
+  @callback authorise(config, Quote.t(), key) :: effect_result
+  @callback pay(config, Quote.t(), key) :: effect_result
 
-  @callback status(config, key) ::
+  @callback cancel_accept(config, key) :: undo_result
+  @callback void_authorisation(config, key) :: undo_result
+  @callback refund(config, key) :: undo_result
+
+  @callback status(config, effect_op | undo_op, key) ::
               {:ok, receipt} | :not_found | :unknown | {:error, term()} | :timeout
 
   @callback probe(config) :: {:ok, probe_info} | {:error, term()} | :timeout

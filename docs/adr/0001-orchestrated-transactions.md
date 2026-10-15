@@ -160,3 +160,23 @@ A merchant may also hold a **standing guarantee** (e.g. weekly guaranteed
 rate). Per transaction we may route better than the guarantee; the difference
 is our margin or exposure and must be accounted for per guarantee period
 (ledger concern, deferred past the spike's core).
+
+---
+
+## Amendment 3 (2026-10-15): commit-step rules, undo operations, observability
+
+Decided:
+
+- **Compensation is modelled as real provider operations** on the adapter
+  (`cancel_accept`, `void_authorisation`, `refund`), each keyed by the same
+  idempotency key as the effect it undoes, idempotent, and safe for a key whose
+  effect never happened.
+- **Doubt handling** (`Payment`): `status` lookup first. Unconfirmed
+  `accept_quote` / `authorise` are cancelled by key and failed over. An
+  unconfirmed `pay` is never failed over: bounded reconcile attempts, then
+  `needs_review`. Failed compensation also ends in `needs_review`.
+- **Policy** gains `max_bps_from_best` (hard constraint applied before scoring).
+- **Observability is a first-class requirement.** All components emit
+  `ActorTxSpike.Events`; the dashboard and terminal narrative are projections of
+  that single stream. Observing must never slow or break the system
+  (fire-and-forget, bounded buffer).

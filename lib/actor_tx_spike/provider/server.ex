@@ -17,18 +17,32 @@ defmodule ActorTxSpike.Provider.Server do
     GenServer.start_link(__MODULE__, opts, Keyword.take(opts, [:name]))
   end
 
+  @ops [
+    :request_quote,
+    :accept_quote,
+    :authorise,
+    :pay,
+    :cancel_accept,
+    :void_authorisation,
+    :refund,
+    :status
+  ]
+
   @doc """
-  Operations take an optional per-call `timeout` (ms). The server enforces it:
-  an overdue adapter call is killed, returns `:timeout`, and is recorded as a
+  Invoke an adapter operation (`#{inspect(@ops)}`) through the breaker.
+
+  Takes an optional per-call `timeout` (ms). The server enforces it: an
+  overdue adapter call is killed, returns `:timeout`, and is recorded as a
   timeout in the health model. Default: the server's `:call_timeout` (5000).
   """
+  def invoke(server, op, args, timeout \\ :default) when op in @ops,
+    do: request(server, op, args, timeout)
+
   def request_quote(server, request, timeout \\ :default),
-    do: request(server, :request_quote, [request], timeout)
+    do: invoke(server, :request_quote, [request], timeout)
 
-  def execute(server, quote, key, timeout \\ :default),
-    do: request(server, :execute, [quote, key], timeout)
-
-  def status(server, key, timeout \\ :default), do: request(server, :status, [key], timeout)
+  def status(server, op, key, timeout \\ :default),
+    do: invoke(server, :status, [op, key], timeout)
 
   @doc "Probe the provider (sentinel entry point). A changed version quarantines it."
   def probe(server, timeout \\ :default) do
@@ -51,6 +65,7 @@ defmodule ActorTxSpike.Provider.Server do
   def init(opts) do
     {:ok,
      %{
+       id: Keyword.get(opts, :id),
        adapter: Keyword.fetch!(opts, :adapter),
        config: Keyword.get(opts, :config),
        health: Health.new(Keyword.get(opts, :health, [])),
@@ -78,24 +93,35 @@ defmodule ActorTxSpike.Provider.Server do
   def handle_call(:in_flight, _from, state), do: {:reply, MapSet.size(state.in_flight), state}
 
   def handle_call({:observe_version, version}, _from, state) do
+    before = Health.state(state.health)
     {health, verdict} = Health.observe_version(state.health, version)
-    {:reply, verdict, %{state | health: health}}
+    state = %{state | health: health}
+
+    reason =
+      case verdict do
+        {:drift, old, new} -> "version changed #{old} -> #{new}"
+        _ -> "probe observed version #{version}"
+      end
+
+    announce_health(state, before, reason)
+    {:reply, verdict, state}
   end
 
   def handle_call(:release, _from, state) do
-    {:reply, :ok, %{state | health: Health.release(state.health)}}
+    before = Health.state(state.health)
+    state = %{state | health: Health.release(state.health)}
+    announce_health(state, before, "released from quarantine")
+    {:reply, :ok, state}
   end
 
   @impl true
   def handle_cast({:record, ref, outcome, latency_ms}, state) do
     Process.demonitor(ref, [:flush])
-
-    {:noreply,
-     %{
-       state
-       | health: Health.record(state.health, outcome, latency_ms, now()),
-         in_flight: MapSet.delete(state.in_flight, ref)
-     }}
+    before = Health.state(state.health)
+    health = Health.record(state.health, outcome, latency_ms, now())
+    state = %{state | health: health, in_flight: MapSet.delete(state.in_flight, ref)}
+    announce_health(state, before, "call #{outcome} in #{latency_ms}ms")
+    {:noreply, state}
   end
 
   @impl true
@@ -123,7 +149,7 @@ defmodule ActorTxSpike.Provider.Server do
   end
 
   defp invoke_with_timeout(adapter, op, args, timeout) do
-    task = Task.async(fn -> invoke(adapter, op, args) end)
+    task = Task.async(fn -> call_adapter(adapter, op, args) end)
 
     case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
       {:ok, result} -> result
@@ -131,7 +157,7 @@ defmodule ActorTxSpike.Provider.Server do
     end
   end
 
-  defp invoke(adapter, op, args) do
+  defp call_adapter(adapter, op, args) do
     apply(adapter, op, args)
   rescue
     exception -> {:error, {:raised, exception}}
@@ -145,6 +171,30 @@ defmodule ActorTxSpike.Provider.Server do
   defp classify(_op, :timeout), do: :timeout
   defp classify(_op, :in_doubt), do: :timeout
   defp classify(_op, _other), do: :error
+
+  defp announce_health(state, before, reason) do
+    after_state = Health.state(state.health)
+    stats = Health.stats(state.health)
+    id = state.id
+
+    message =
+      if before == after_state,
+        do: "#{id}: #{after_state} (#{reason})",
+        else: "#{id}: #{before} -> #{after_state} (#{reason})"
+
+    ActorTxSpike.Events.emit(nil, {:provider, id}, :health, message, %{
+      provider: id,
+      state: after_state,
+      previous: before,
+      breaker: state.health.breaker,
+      error_rate: stats.error_rate,
+      p95_ms: stats.p95_ms,
+      samples: stats.samples,
+      in_flight: MapSet.size(state.in_flight),
+      version: state.health.version,
+      recovering: state.health.recovering
+    })
+  end
 
   defp now, do: System.monotonic_time(:millisecond)
 end

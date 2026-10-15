@@ -60,6 +60,36 @@ defmodule ActorTxSpike.PolicyTest do
     end
   end
 
+  describe "max_bps_from_best" do
+    test "validation" do
+      assert {:ok, %Policy{max_bps_from_best: 25}} = Policy.new(%{"max_bps_from_best" => 25})
+      assert {:ok, %Policy{max_bps_from_best: nil}} = Policy.new(%{"max_bps_from_best" => nil})
+      assert {:error, [m]} = Policy.new(%{"max_bps_from_best" => -1})
+      assert m =~ "non-negative number"
+    end
+
+    test "no limit keeps everyone; empty set is fine" do
+      cands = [%{net: 100}, %{net: 50}]
+      assert {^cands, []} = Policy.within_best(%Policy{}, cands)
+      assert {[], []} = Policy.within_best(%Policy{max_bps_from_best: 10}, [])
+    end
+
+    test "drops candidates further than the limit from the best, reporting bps" do
+      p = %Policy{max_bps_from_best: 50}
+      cands = [%{net: 1000.0}, %{net: 996.0}, %{net: 990.0}]
+      assert {kept, [{%{net: 990.0}, bps}]} = Policy.within_best(p, cands)
+      assert Enum.map(kept, & &1.net) == [1000.0, 996.0]
+      assert_in_delta bps, 100.0, 0.001
+    end
+
+    test "a non-positive best does not divide by zero" do
+      p = %Policy{max_bps_from_best: 1}
+
+      assert {[%{net: +0.0}, %{net: -1.0}], []} =
+               Policy.within_best(p, [%{net: +0.0}, %{net: -1.0}])
+    end
+  end
+
   test "exclude_state?/2 always excludes :down" do
     {:ok, p} = Policy.new(%{"exclude_states" => []})
     assert Policy.exclude_state?(p, :down)

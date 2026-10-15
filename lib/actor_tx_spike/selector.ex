@@ -19,7 +19,7 @@ defmodule ActorTxSpike.Selector do
   `{:fallback, baseline}` when no usable quote arrives).
   """
 
-  alias ActorTxSpike.{Policy, Selection}
+  alias ActorTxSpike.{Events, Policy, Selection}
   alias ActorTxSpike.Provider.{Quote, Server}
   alias ActorTxSpike.Selection.Candidate
 
@@ -34,6 +34,21 @@ defmodule ActorTxSpike.Selector do
 
     with_state = Enum.map(providers, &{&1, state_of(&1.server)})
 
+    announce(
+      request,
+      :select_started,
+      "asking #{length(providers)} provider(s) for quotes " <>
+        "(deadline #{deadline_ms}ms): #{providers |> Enum.map(& &1.id) |> Enum.join(", ")}",
+      %{providers: Enum.map(providers, & &1.id), deadline_ms: deadline_ms}
+    )
+
+    for {p, state} <- with_state, Policy.exclude_state?(policy, state) do
+      announce(request, :provider_skipped, "not calling #{p.id}: it is #{state}", %{
+        provider: p.id,
+        state: state
+      })
+    end
+
     {callable, skipped} =
       Enum.split_with(with_state, fn {_p, state} -> not Policy.exclude_state?(policy, state) end)
 
@@ -42,7 +57,14 @@ defmodule ActorTxSpike.Selector do
       |> fan_out(callable, deadline_ms)
       |> Enum.reduce({[], []}, &classify(&1, &2, request, policy))
 
-    ranked = rank(candidates, policy)
+    {within, too_dear} = Policy.within_best(policy, candidates)
+
+    failures =
+      Enum.reduce(too_dear, failures, fn {c, bps}, acc ->
+        [{c.provider_id, {:worse_than_best_bps, Float.round(bps, 1)}} | acc]
+      end)
+
+    ranked = rank(within, policy)
 
     outcome =
       case {ranked, baseline} do
@@ -51,13 +73,62 @@ defmodule ActorTxSpike.Selector do
         {[], baseline} -> {:fallback, baseline}
       end
 
-    %Selection{
+    selection = %Selection{
       outcome: outcome,
       ranked: ranked,
       excluded:
         Enum.map(skipped, fn {p, state} -> {p.id, {:state, state}} end) ++ Enum.reverse(failures),
       elapsed_ms: now() - started
     }
+
+    announce_outcome(request, selection)
+    selection
+  end
+
+  defp announce_outcome(request, %Selection{outcome: {:selected, best}} = sel) do
+    others =
+      sel.ranked |> Enum.drop(1) |> Enum.map(&"#{&1.provider_id} (#{Float.round(&1.score, 3)})")
+
+    tail = if others == [], do: "", else: " ahead of #{Enum.join(others, ", ")}"
+
+    announce(
+      request,
+      :selection_made,
+      "selected #{best.provider_id} (score #{Float.round(best.score, 3)}, " <>
+        "net #{Float.round(best.net * 1.0, 2)}, #{best.latency_ms}ms)" <> tail,
+      %{
+        provider: best.provider_id,
+        ranking:
+          Enum.map(
+            sel.ranked,
+            &%{provider: &1.provider_id, score: &1.score, net: &1.net, latency_ms: &1.latency_ms}
+          ),
+        excluded: describe_excluded(sel),
+        elapsed_ms: sel.elapsed_ms
+      }
+    )
+  end
+
+  defp announce_outcome(request, %Selection{outcome: {:fallback, baseline}} = sel) do
+    announce(
+      request,
+      :selection_made,
+      "no usable quote; falling back to baseline #{inspect(baseline)}",
+      %{excluded: describe_excluded(sel)}
+    )
+  end
+
+  defp announce_outcome(request, %Selection{outcome: :none} = sel) do
+    announce(request, :selection_made, "no usable quote from any provider", %{
+      excluded: describe_excluded(sel)
+    })
+  end
+
+  defp describe_excluded(sel),
+    do: Enum.map(sel.excluded, fn {id, why} -> %{provider: id, reason: inspect(why)} end)
+
+  defp announce(request, kind, message, data) do
+    Events.emit(request.id, :selector, kind, message, data)
   end
 
   defp state_of(server) do
@@ -108,19 +179,39 @@ defmodule ActorTxSpike.Selector do
     }
 
     case Policy.check(policy, candidate) do
-      :ok -> {[candidate | cands], fails}
-      {:excluded, reason} -> {cands, [{p.id, reason} | fails]}
+      :ok ->
+        announce(
+          request,
+          :quote_received,
+          "#{p.id} quoted rate #{quote.rate}, fee #{quote.fee} (net #{Float.round(candidate.net * 1.0, 2)}, #{latency}ms)",
+          %{provider: p.id, rate: quote.rate, fee: quote.fee, latency_ms: latency}
+        )
+
+        {[candidate | cands], fails}
+
+      {:excluded, reason} ->
+        announce(request, :quote_excluded, "#{p.id}'s quote is unusable: #{reason}", %{
+          provider: p.id,
+          reason: reason
+        })
+
+        {cands, [{p.id, reason} | fails]}
     end
   end
 
-  defp classify({p, _state, {:rejected, why}, _latency}, {cands, fails}, _request, _policy),
-    do: {cands, [{p.id, {:rejected, why}} | fails]}
+  defp classify({p, _state, other, latency}, {cands, fails}, request, _policy) do
+    reason =
+      if match?({:rejected, _}, other) or match?({:error, _}, other), do: other, else: :timeout
 
-  defp classify({p, _state, :timeout, _latency}, {cands, fails}, _request, _policy),
-    do: {cands, [{p.id, :timeout} | fails]}
+    announce(
+      request,
+      :quote_failed,
+      "#{p.id} gave no quote: #{inspect(reason)} after #{latency}ms",
+      %{provider: p.id, reason: inspect(reason), latency_ms: latency}
+    )
 
-  defp classify({p, _state, {:error, reason}, _latency}, {cands, fails}, _request, _policy),
-    do: {cands, [{p.id, {:error, reason}} | fails]}
+    {cands, [{p.id, reason} | fails]}
+  end
 
   defp rank(candidates, policy) do
     candidates

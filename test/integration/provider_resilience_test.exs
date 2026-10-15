@@ -63,14 +63,14 @@ defmodule ActorTxSpike.ProviderResilienceIntegrationTest do
     p = provider(:p, [])
     {:ok, quote} = Server.request_quote(p.server, %{id: "r"})
 
-    Fake.configure(p.fake, execute_mode: :in_doubt)
-    assert :in_doubt = Server.execute(p.server, quote, "pay-1")
+    Fake.configure(p.fake, pay_mode: :in_doubt)
+    assert :in_doubt = Server.invoke(p.server, :pay, [quote, "pay-1"])
 
     # provider answered "in doubt": reconcile before trying anything else
-    assert {:ok, %{key: "pay-1"}} = Server.status(p.server, "pay-1")
+    assert {:ok, %{key: "pay-1"}} = Server.status(p.server, :pay, "pay-1")
 
     # a blind retry with the same idempotency key must not pay twice
-    assert :in_doubt = Server.execute(p.server, quote, "pay-1")
-    assert map_size(Fake.executions(p.fake)) == 1
+    assert :in_doubt = Server.invoke(p.server, :pay, [quote, "pay-1"])
+    assert Fake.effect_count(p.fake, :pay) == 1
   end
 end

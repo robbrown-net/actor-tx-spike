@@ -1,22 +1,51 @@
 defmodule ActorTxSpike.Provider.Fake do
   @moduledoc """
-  Scriptable fake provider for tests and experiments. Implements the
-  `ActorTxSpike.Provider` behaviour; the adapter `config` is the fake's pid.
+  Scriptable fake provider for tests, experiments and the live demo.
+  Implements the `ActorTxSpike.Provider` behaviour; the adapter `config` is the
+  fake's pid.
 
-  Per-operation modes (`:quote_mode`, `:execute_mode`, `:status_mode`,
-  `:probe_mode`): `:ok`, `:timeout`, `{:error, reason}`, plus `:reject`
-  (quote/execute), `:in_doubt` (execute: the payment HAPPENS but the answer is
-  lost) and `:unknown` (status). Also scriptable: `:rate`, `:fee`,
-  `:latency_ms`, `:version`, `:quote_ttl_ms`.
+  ## Scripting
 
-  Execution is idempotent per key, like a well-behaved provider, and the fake
-  records every execution so tests can assert "no double payment".
+  Each operation has a mode (`:quote_mode`, `:accept_quote_mode`,
+  `:authorise_mode`, `:pay_mode`, `:cancel_accept_mode`,
+  `:void_authorisation_mode`, `:refund_mode`, `:status_mode`, `:probe_mode`):
+
+  * `:ok`
+  * `:timeout`           no answer; the effect did NOT happen
+  * `{:error, reason}`   technical failure; the effect did NOT happen
+  * `:reject`            business "no" (quote/effects/undos)
+  * `:in_doubt`          effectful ops: the effect HAPPENS but the answer is lost
+  * `:unknown`           status only
+
+  A mode may also be a **list**: modes are consumed one per call and the last
+  one sticks, e.g. `pay_mode: [:timeout, :ok]` = fail once, then succeed.
+
+  Also scriptable: `:rate`, `:fee`, `:latency_ms`, `:version`, `:quote_ttl_ms`.
+
+  ## Observability
+
+  The fake narrates what a real service would: it announces receiving each
+  request, how long it is "processing", and what it answers. Every effect is
+  recorded so tests can assert exactly what happened (e.g. no double payment).
   """
   @behaviour ActorTxSpike.Provider
 
   use Agent
 
+  alias ActorTxSpike.Events
   alias ActorTxSpike.Provider.Quote
+
+  @mode_keys %{
+    request_quote: :quote_mode,
+    accept_quote: :accept_quote_mode,
+    authorise: :authorise_mode,
+    pay: :pay_mode,
+    cancel_accept: :cancel_accept_mode,
+    void_authorisation: :void_authorisation_mode,
+    refund: :refund_mode,
+    status: :status_mode,
+    probe: :probe_mode
+  }
 
   @defaults %{
     id: :fake,
@@ -26,14 +55,19 @@ defmodule ActorTxSpike.Provider.Fake do
     version: "1",
     quote_ttl_ms: 60_000,
     quote_mode: :ok,
-    execute_mode: :ok,
+    accept_quote_mode: :ok,
+    authorise_mode: :ok,
+    pay_mode: :ok,
+    cancel_accept_mode: :ok,
+    void_authorisation_mode: :ok,
+    refund_mode: :ok,
     status_mode: :ok,
     probe_mode: :ok
   }
 
   def start_link(opts) do
     settings = Map.merge(@defaults, Map.new(opts))
-    Agent.start_link(fn -> %{settings: settings, executed: %{}, execute_calls: 0} end)
+    Agent.start_link(fn -> %{settings: settings, effects: %{}, calls: %{}} end)
   end
 
   @doc "Change settings on the fly (simulate decay, price moves, drift)."
@@ -41,109 +75,196 @@ defmodule ActorTxSpike.Provider.Fake do
     Agent.update(pid, fn s -> %{s | settings: Map.merge(s.settings, Map.new(changes))} end)
   end
 
-  @doc "Map of idempotency_key => receipt for payments that actually happened."
-  def executions(pid), do: Agent.get(pid, & &1.executed)
+  def settings(pid), do: Agent.get(pid, & &1.settings)
 
-  @doc "How many times execute/3 was invoked (including retries and failures)."
-  def execute_calls(pid), do: Agent.get(pid, & &1.execute_calls)
+  @doc "Map of `{op, key}` => receipt for every effect that actually happened."
+  def effects(pid), do: Agent.get(pid, & &1.effects)
+
+  @doc "How many effects of this op actually happened."
+  def effect_count(pid, op), do: pid |> effects() |> Enum.count(fn {{o, _}, _} -> o == op end)
+
+  @doc "How many times each op was invoked (including failed and retried calls)."
+  def calls(pid), do: Agent.get(pid, & &1.calls)
 
   @impl true
   def request_quote(pid, request) do
-    settings = settings(pid)
-    delay(settings)
+    {mode, s} = begin_call(pid, :request_quote)
+    announce(s, request.id, :received, "received a quote request for #{request[:amount]}")
+    delay(s, request.id)
 
-    case settings.quote_mode do
-      :ok ->
-        {:ok,
-         %Quote{
-           provider: settings.id,
-           request_id: request.id,
-           rate: settings.rate,
-           fee: settings.fee,
-           expires_at_ms: System.system_time(:millisecond) + settings.quote_ttl_ms
-         }}
+    result =
+      case mode do
+        :ok ->
+          {:ok,
+           %Quote{
+             provider: s.id,
+             request_id: request.id,
+             rate: s.rate,
+             fee: s.fee,
+             expires_at_ms: System.system_time(:millisecond) + s.quote_ttl_ms
+           }}
 
-      :reject ->
-        {:rejected, :no_liquidity}
+        :reject ->
+          {:rejected, :no_liquidity}
 
-      other ->
-        failure(other)
-    end
+        other ->
+          failure(other)
+      end
+
+    answered(s, request.id, :request_quote, result)
   end
 
   @impl true
-  def execute(pid, %Quote{} = quote, key) do
-    settings =
-      Agent.get_and_update(pid, &{&1.settings, %{&1 | execute_calls: &1.execute_calls + 1}})
-
-    delay(settings)
-
-    cond do
-      settings.execute_mode == :timeout or match?({:error, _}, settings.execute_mode) ->
-        failure(settings.execute_mode)
-
-      Quote.expired?(quote, System.system_time(:millisecond)) ->
-        {:rejected, :quote_expired}
-
-      settings.execute_mode == :reject ->
-        {:rejected, :declined}
-
-      settings.execute_mode == :in_doubt ->
-        _ = perform(pid, settings, quote, key)
-        :in_doubt
-
-      true ->
-        {:ok, perform(pid, settings, quote, key)}
-    end
-  end
+  def accept_quote(pid, quote, key), do: effect(pid, :accept_quote, quote, key)
 
   @impl true
-  def status(pid, key) do
-    settings = settings(pid)
-    delay(settings)
+  def authorise(pid, quote, key), do: effect(pid, :authorise, quote, key)
 
-    case settings.status_mode do
-      :ok ->
-        case Map.fetch(executions(pid), key) do
-          {:ok, receipt} -> {:ok, receipt}
-          :error -> :not_found
-        end
+  @impl true
+  def pay(pid, quote, key), do: effect(pid, :pay, quote, key)
 
-      :unknown ->
-        :unknown
+  @impl true
+  def cancel_accept(pid, key), do: effect(pid, :cancel_accept, nil, key)
 
-      other ->
-        failure(other)
-    end
+  @impl true
+  def void_authorisation(pid, key), do: effect(pid, :void_authorisation, nil, key)
+
+  @impl true
+  def refund(pid, key), do: effect(pid, :refund, nil, key)
+
+  @impl true
+  def status(pid, op, key) do
+    {mode, s} = begin_call(pid, :status)
+    announce(s, tx_of(key), :received, "received a status lookup for #{op} #{key}")
+    delay(s, tx_of(key))
+
+    result =
+      case mode do
+        :ok ->
+          case Map.fetch(effects(pid), {op, key}) do
+            {:ok, receipt} -> {:ok, receipt}
+            :error -> :not_found
+          end
+
+        :unknown ->
+          :unknown
+
+        other ->
+          failure(other)
+      end
+
+    answered(s, tx_of(key), :status, result)
   end
 
   @impl true
   def probe(pid) do
-    settings = settings(pid)
-    delay(settings)
+    {mode, s} = begin_call(pid, :probe)
+    announce(s, nil, :received, "received a health probe")
+    delay(s, nil)
 
-    case settings.probe_mode do
-      :ok -> {:ok, %{version: settings.version, latency_ms: settings.latency_ms}}
-      other -> failure(other)
-    end
+    result =
+      case mode do
+        :ok -> {:ok, %{version: s.version, latency_ms: s.latency_ms}}
+        other -> failure(other)
+      end
+
+    answered(s, nil, :probe, result)
   end
 
-  defp perform(pid, settings, quote, key) do
+  defp effect(pid, op, quote, key) do
+    {mode, s} = begin_call(pid, op)
+    tx = tx_of(key)
+    announce(s, tx, :received, "received #{op} (key #{key})")
+    delay(s, tx)
+
+    result =
+      cond do
+        mode == :timeout or match?({:error, _}, mode) ->
+          failure(mode)
+
+        quote != nil and Quote.expired?(quote, System.system_time(:millisecond)) ->
+          {:rejected, :quote_expired}
+
+        mode == :reject ->
+          {:rejected, :declined}
+
+        mode == :in_doubt ->
+          _ = perform(pid, s, op, quote, key)
+          :in_doubt
+
+        true ->
+          {:ok, perform(pid, s, op, quote, key)}
+      end
+
+    answered(s, tx, op, result)
+  end
+
+  defp perform(pid, settings, op, quote, key) do
     Agent.get_and_update(pid, fn state ->
-      case Map.fetch(state.executed, key) do
+      case Map.fetch(state.effects, {op, key}) do
         {:ok, receipt} ->
           {receipt, state}
 
         :error ->
-          receipt = %{provider: settings.id, key: key, rate: quote.rate, fee: quote.fee}
-          {receipt, %{state | executed: Map.put(state.executed, key, receipt)}}
+          receipt = %{
+            provider: settings.id,
+            op: op,
+            key: key,
+            rate: quote && quote.rate,
+            fee: quote && quote.fee
+          }
+
+          {receipt, %{state | effects: Map.put(state.effects, {op, key}, receipt)}}
       end
     end)
   end
 
-  defp settings(pid), do: Agent.get(pid, & &1.settings)
-  defp delay(%{latency_ms: ms}) when ms > 0, do: Process.sleep(ms)
-  defp delay(_), do: :ok
+  # Take this call's mode (consuming scripted lists) and count the call.
+  defp begin_call(pid, op) do
+    Agent.get_and_update(pid, fn state ->
+      key = Map.fetch!(@mode_keys, op)
+      {mode, settings} = pop_mode(state.settings, key)
+      calls = Map.update(state.calls, op, 1, &(&1 + 1))
+      {{mode, settings}, %{state | settings: settings, calls: calls}}
+    end)
+  end
+
+  defp pop_mode(settings, key) do
+    case Map.fetch!(settings, key) do
+      [mode] -> {mode, settings}
+      [mode | rest] -> {mode, Map.put(settings, key, rest)}
+      mode -> {mode, settings}
+    end
+  end
+
+  defp delay(%{latency_ms: ms} = s, tx) when ms > 0 do
+    announce(s, tx, :processing, "processing (takes ~#{ms}ms)")
+    Process.sleep(ms)
+  end
+
+  defp delay(_s, _tx), do: :ok
+
+  defp answered(s, tx, op, result) do
+    announce(s, tx, :responded, "#{op} -> #{describe(result)}", %{op: op, result: tag(result)})
+    result
+  end
+
+  defp announce(s, tx, kind, message, data \\ %{}) do
+    Events.emit(tx, {:provider, s.id}, kind, message, data)
+  end
+
+  defp describe({:ok, %Quote{} = q}), do: "quote rate #{q.rate} fee #{q.fee}"
+  defp describe({:ok, _receipt}), do: "ok"
+  defp describe({:rejected, why}), do: "rejected (#{why})"
+  defp describe({:error, why}), do: "error (#{inspect(why)})"
+  defp describe(other) when is_atom(other), do: Atom.to_string(other)
+
+  defp tag({:ok, _}), do: :ok
+  defp tag({tag, _}), do: tag
+  defp tag(other), do: other
+
+  defp tx_of(key), do: key |> String.split(":") |> hd()
+
   defp failure(:timeout), do: :timeout
   defp failure({:error, _} = error), do: error
 end

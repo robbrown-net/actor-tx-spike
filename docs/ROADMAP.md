@@ -17,10 +17,16 @@ See ADR 0001 and Amendment 1 for the domain model.
 - Provider state model + circuit breaker + rolling latency/error stats.
 
 ## Phase 2: Transaction as flow interpreter
+Slices 1 and 2 DONE (2026-10-15); see below.
 Slice 1 DONE (2026-10-15): `Policy` (validated scoring data), `Selector` (deadline-bound
 fan-out quoting, constraints, scoring, baseline fallback), per-call timeouts in
-`Provider.Server`. Slices remaining: 2 commit steps (accept/authorise/pay, keys, in-doubt,
-compensation); 3 cascading policy + deadlines (quote expiry, regional cut-off).
+`Provider.Server`. Slice 2 DONE: `Payment` lifecycle (accept/authorise/pay with per-step idempotency keys,
+bounded retries, compensation via real provider undo operations, failover, in-doubt
+reconciliation, `needs_review` escalation); `max_bps_from_best` policy constraint;
+`Events` narrative stream; `Narrative`, `Panel` dashboard and `Demo` world; randomised
+money-safety invariant test. Legacy spike modules removed.
+Remaining: slice 3 cascading policy (global -> merchant -> customer, standing guarantees)
++ deadlines (regional settlement cut-offs, settlement phases).
 Ideas parked: early stop when a "good enough" quote arrives; hedged request budgets.
 - Declarative flow + scoring policy (data, validated into structs).
 - Lifecycle per ADR Amendment 2: quote -> accept -> authorise -> pay -> settle, with
@@ -38,13 +44,14 @@ Ideas parked: early stop when a "good enough" quote arrives; hedged request budg
 - Property/chaos tests (stalls, drift, crashes mid-commit, restart) asserting no double payment.
 - Load test for latency tails and resource budgets.
 
-## Known issues found along the way
-- A persisted snapshot missing `:payload` crashes `restore_inflight/0` and therefore
-  application boot (found when a unit test left a partial snapshot in the store file).
-  Boot must tolerate malformed/corrupt snapshots (quarantine and report them).
-- Legacy modules are excluded from the unit gate only (`@legacy` in mix.exs); remove
-  entries as Phase 2 replaces them. Integration gate currently ~77% (needs >85%) because
-  of legacy code.
+## Known gaps
+- Transactions are not persisted: a node restart loses in-flight work. The old file store
+  was removed with the legacy code; durable, event-sourced recovery is Phase 3.
+- `Demo`, `Demo.Handler` are excluded from the unit gate (exercised by integration tests);
+  `Mix.Tasks.Demo` is excluded everywhere (thin entry point).
+- Finished transactions linger 30s (configurable) then stop; their story stays in the
+  bounded event buffer only. A durable log is Phase 3.
+- Unit coverage is line-based; branch-level measurement is still to do.
 
 ## Deferred
 - Branch-level coverage measurement (requested; line coverage only today).

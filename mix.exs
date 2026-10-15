@@ -31,7 +31,7 @@ defmodule ActorTxSpike.MixProject do
   defp aliases do
     [
       "test.unit": [
-        "cmd env MIX_ENV=test COVERAGE_THRESHOLD=100 COVERAGE_IGNORE_LEGACY=1 mix test --cover test/unit"
+        "cmd env MIX_ENV=test COVERAGE_THRESHOLD=100 COVERAGE_IGNORE_TOOLING=1 mix test --cover test/unit"
       ],
       "test.integration": [
         "cmd env MIX_ENV=test COVERAGE_THRESHOLD=85 mix test --cover test/integration"
@@ -43,19 +43,14 @@ defmodule ActorTxSpike.MixProject do
     "COVERAGE_THRESHOLD" |> System.get_env("0") |> String.to_integer()
   end
 
-  # Spike-era modules that Phase 2 replaces. Excluded from the unit gate only
-  # (the integration gate still measures them). Remove entries as they go.
-  @legacy [
-    ActorTxSpike,
-    ActorTxSpike.Application,
-    ActorTxSpike.Store,
-    ActorTxSpike.Subsystem,
-    ActorTxSpike.Transaction,
-    ActorTxSpike.TransactionSupervisor
-  ]
+  # Tooling modules (demo world, dashboard server) are exercised by integration
+  # tests but excluded from the strict unit gate. Keep this list short.
+  @tooling [ActorTxSpike.Demo, ActorTxSpike.Demo.Handler]
 
   defp ignored_modules do
-    if System.get_env("COVERAGE_IGNORE_LEGACY") == "1", do: @legacy, else: []
+    # Mix.Tasks.Demo is a thin entry point and is never measured.
+    always = [Mix.Tasks.Demo]
+    if System.get_env("COVERAGE_IGNORE_TOOLING") == "1", do: always ++ @tooling, else: always
   end
 
   defp deps do

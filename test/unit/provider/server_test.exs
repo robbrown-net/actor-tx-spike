@@ -7,8 +7,13 @@ defmodule ActorTxSpike.Provider.ServerTest do
     @behaviour ActorTxSpike.Provider
     def request_quote(:raise, _), do: raise("boom")
     def request_quote(:exit, _), do: exit(:gone)
-    def execute(_, _, _), do: :timeout
-    def status(_, _), do: :timeout
+    def accept_quote(_, _, _), do: :timeout
+    def authorise(_, _, _), do: :timeout
+    def pay(_, _, _), do: :timeout
+    def cancel_accept(_, _), do: :timeout
+    def void_authorisation(_, _), do: :timeout
+    def refund(_, _), do: :timeout
+    def status(_, _, _), do: :timeout
     def probe(_), do: :timeout
   end
 
@@ -22,8 +27,13 @@ defmodule ActorTxSpike.Provider.ServerTest do
       end
     end
 
-    def execute(_, _, _), do: :timeout
-    def status(_, _), do: :timeout
+    def accept_quote(_, _, _), do: :timeout
+    def authorise(_, _, _), do: :timeout
+    def pay(_, _, _), do: :timeout
+    def cancel_accept(_, _), do: :timeout
+    def void_authorisation(_, _), do: :timeout
+    def refund(_, _), do: :timeout
+    def status(_, _, _), do: :timeout
     def probe(_), do: :timeout
   end
 
@@ -48,8 +58,8 @@ defmodule ActorTxSpike.Provider.ServerTest do
     {server, _fake} = start()
     assert Server.state(server) == :unknown
     assert {:ok, quote} = Server.request_quote(server, %{id: "r"})
-    assert {:ok, _} = Server.execute(server, quote, "k")
-    assert {:ok, _} = Server.status(server, "k")
+    assert {:ok, _} = Server.invoke(server, :pay, [quote, "k"])
+    assert {:ok, _} = Server.status(server, :pay, "k")
     assert %{samples: 3} = Server.health(server) |> ActorTxSpike.Provider.Health.stats()
     assert Server.state(server) == :healthy
   end
@@ -62,13 +72,13 @@ defmodule ActorTxSpike.Provider.ServerTest do
     assert {:rejected, _} = Server.request_quote(server, %{id: "r"})
     Fake.configure(fake, quote_mode: :timeout)
     assert :timeout = Server.request_quote(server, %{id: "r"})
-    Fake.configure(fake, execute_mode: :in_doubt)
-    assert :in_doubt = Server.execute(server, quote, "k")
+    Fake.configure(fake, pay_mode: :in_doubt)
+    assert :in_doubt = Server.invoke(server, :pay, [quote, "k"])
     Fake.configure(fake, status_mode: :unknown)
-    assert :unknown = Server.status(server, "k")
+    assert :unknown = Server.status(server, :pay, "k")
     Fake.configure(fake, status_mode: :ok)
-    assert {:ok, _} = Server.status(server, "k")
-    assert :not_found = Server.status(server, "missing")
+    assert {:ok, _} = Server.status(server, :pay, "k")
+    assert :not_found = Server.status(server, :pay, "missing")
 
     outcomes =
       server |> synced() |> Map.fetch!(:window) |> Enum.map(&elem(&1, 0)) |> Enum.reverse()

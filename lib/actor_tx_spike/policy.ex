@@ -14,13 +14,17 @@ defmodule ActorTxSpike.Policy do
   * `weights`: relative importance of net cost to customer, response speed and
     provider reliability. Normalised to sum to 1; omitted weights are 0.
   * hard constraints: `min_validity_ms` (remaining quote life), `max_latency_ms`.
+  * `max_bps_from_best`: never accept a quote whose net value is more than this
+    many basis points worse than the best quote received (nil = no limit).
+    Applied before scoring, so speed/reliability can never "buy" an
+    unacceptably bad price.
   * `exclude_states`: provider health states that are never called.
 
   Scoring is pure and deterministic. Cost and speed are scaled 0..1 *relative to
   the candidate set* (1 = best); reliability is a fixed factor per health state.
   """
 
-  @keys ~w(weights min_validity_ms max_latency_ms exclude_states)
+  @keys ~w(weights min_validity_ms max_latency_ms max_bps_from_best exclude_states)
   @weight_keys ~w(cost speed reliability)
   @states [:unknown, :healthy, :degraded, :stalled, :quarantined]
   @reliability %{healthy: 1.0, unknown: 0.7, degraded: 0.4}
@@ -28,6 +32,7 @@ defmodule ActorTxSpike.Policy do
   defstruct weights: %{cost: 0.6, speed: 0.3, reliability: 0.1},
             min_validity_ms: 0,
             max_latency_ms: nil,
+            max_bps_from_best: nil,
             exclude_states: [:stalled, :quarantined]
 
   @type t :: %__MODULE__{}
@@ -41,6 +46,7 @@ defmodule ActorTxSpike.Policy do
       {:weights, "weights", &parse_weights/1},
       {:min_validity_ms, "min_validity_ms", &parse_min_validity/1},
       {:max_latency_ms, "max_latency_ms", &parse_max_latency/1},
+      {:max_bps_from_best, "max_bps_from_best", &parse_max_bps/1},
       {:exclude_states, "exclude_states", &parse_states/1}
     ]
 
@@ -71,6 +77,25 @@ defmodule ActorTxSpike.Policy do
       p.max_latency_ms != nil and latency > p.max_latency_ms -> {:excluded, :too_slow}
       true -> :ok
     end
+  end
+
+  @doc """
+  Split candidates (with `:net`) into those within `max_bps_from_best` of the
+  best net value and those outside it, as `{kept, [{candidate, bps_worse}]}`.
+  """
+  @spec within_best(t(), [map()]) :: {[map()], [{map(), float()}]}
+  def within_best(%__MODULE__{max_bps_from_best: nil}, candidates), do: {candidates, []}
+  def within_best(%__MODULE__{}, []), do: {[], []}
+
+  def within_best(%__MODULE__{max_bps_from_best: max}, candidates) do
+    best = candidates |> Enum.map(& &1.net) |> Enum.max()
+
+    {kept, dropped} =
+      candidates
+      |> Enum.map(fn c -> {c, if(best > 0, do: (best - c.net) / best * 10_000, else: 0.0)} end)
+      |> Enum.split_with(fn {_c, bps} -> bps <= max end)
+
+    {Enum.map(kept, &elem(&1, 0)), dropped}
   end
 
   @doc "Scores (higher is better) for candidates with `:net`, `:latency_ms`, `:state`."
@@ -128,6 +153,10 @@ defmodule ActorTxSpike.Policy do
   defp parse_max_latency(nil), do: {:ok, nil}
   defp parse_max_latency(v) when is_integer(v) and v > 0, do: {:ok, v}
   defp parse_max_latency(_), do: {:error, "must be nil or a positive integer"}
+
+  defp parse_max_bps(nil), do: {:ok, nil}
+  defp parse_max_bps(v) when is_number(v) and v >= 0, do: {:ok, v}
+  defp parse_max_bps(_), do: {:error, "must be nil or a non-negative number"}
 
   defp parse_states(list) when is_list(list) do
     parsed = Enum.map(list, fn s -> Enum.find(@states, &(to_string(&1) == to_string(s))) end)

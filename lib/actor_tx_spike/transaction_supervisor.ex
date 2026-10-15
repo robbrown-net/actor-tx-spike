@@ -2,7 +2,7 @@ defmodule ActorTxSpike.TransactionSupervisor do
   @moduledoc false
   use DynamicSupervisor
 
-  def start_link(opts \\ []) do
+  def start_link(opts) do
     DynamicSupervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
@@ -11,10 +11,10 @@ defmodule ActorTxSpike.TransactionSupervisor do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
-  def start_transaction(opts) do
+  def start_payment(args) do
     spec = %{
-      id: {:transaction, Keyword.fetch!(opts, :id)},
-      start: {ActorTxSpike.Transaction, :start_link, [opts]},
+      id: {:payment, Keyword.fetch!(args, :id)},
+      start: {ActorTxSpike.Payment, :start_link, [args]},
       restart: :temporary
     }
 
