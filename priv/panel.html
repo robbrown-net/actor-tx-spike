@@ -6,6 +6,7 @@
 <title>Actor TX Monitor</title>
 <style>
   :root {
+    --ease: cubic-bezier(.2,.8,.2,1); --fast:.15s; --med:.3s; --slow:.8s;
     --bg:#0e1116; --panel:#161b22; --panel2:#1c2330; --line:#2a3342; --text:#e6edf3; --dim:#8b98a9;
     --ok:#3fb950; --warn:#d29922; --bad:#f85149; --info:#58a6ff; --violet:#bc8cff; --teal:#39c5cf;
   }
@@ -54,10 +55,10 @@
   .pipe { display:flex; gap:3px; margin:7px 0 4px; }
   .pipe span { flex:1; text-align:center; font-size:10px; padding:3px 0; background:var(--bg); border-radius:4px; color:var(--dim); }
   .pipe span.done { background:#12361f; color:var(--ok); }
-  .pipe span.now { background:#0d2a52; color:var(--info); animation:pulse 1.2s infinite; }
+  .pipe span.now { background:#0d2a52; color:var(--info); animation:pulse 1.6s ease-in-out infinite; }
   .pipe span.bad { background:#3a1517; color:var(--bad); }
   .pipe span.review { background:#2f2410; color:var(--warn); }
-  @keyframes pulse { 50% { opacity:.55; } }
+  @keyframes pulse { 50% { opacity:.65; } }
   .badge { font-size:11px; padding:1px 7px; border-radius:99px; background:var(--bg); }
   .badge.completed { color:var(--ok); } .badge.failed { color:var(--bad); } .badge.needs_review { color:var(--warn); }
   .badge.compensating,.badge.reconciling { color:var(--violet); }
@@ -71,6 +72,37 @@
   .ev.bad .m { color:var(--bad); } .ev.good .m { color:var(--ok); } .ev.warn .m { color:var(--warn); }
   .ev .txid { color:var(--dim); font-weight:600; }
   .empty { color:var(--dim); padding:16px; text-align:center; }
+
+  /* ---- motion: calm, short, small; explains a change rather than decorates ---- */
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+  html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="off"] *::after { animation:none !important; transition:none !important; }
+  @keyframes rise { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  @keyframes rise-sm { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+  @keyframes fade { from { opacity:0; } to { opacity:1; } }
+  @keyframes flash { from { box-shadow:0 0 0 2px var(--flash, var(--info)); } to { box-shadow:0 0 0 0 transparent; } }
+  @keyframes ping { 0% { box-shadow:0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70%,100% { box-shadow:0 0 0 7px transparent; } }
+  @keyframes pop { 0% { transform:scale(1); } 40% { transform:scale(1.12); } 100% { transform:scale(1); } }
+  .rise { animation:rise .4s var(--ease) both; }
+  .ev.rise { animation:rise-sm .3s var(--ease) both; }
+  .fade { animation:fade .22s var(--ease) both; }
+  .flash { animation:flash .9s var(--ease) both; }
+  .pop { animation:pop .38s var(--ease); }
+  .conn.up i { animation:ping 1.6s ease-out infinite; }
+  .card, .tx { transition:border-color var(--med) var(--ease), background-color var(--fast); }
+  .pill, .badge { transition:color var(--med) var(--ease), border-color var(--med) var(--ease), background-color var(--med) var(--ease); }
+  .pipe span { transition:background-color var(--med) var(--ease), color var(--med) var(--ease); }
+  .metrics b { transition:color var(--fast); }
+  .ev { transition:background-color var(--fast); }
+  button { transition:border-color var(--fast), background-color var(--fast), transform .12s var(--ease); }
+  button:not(:disabled):active { transform:scale(.97); }
+  :focus-visible { outline:2px solid var(--info); outline-offset:2px; }
+  input:focus { outline:none; box-shadow:0 0 0 3px color-mix(in srgb, var(--info) 22%, transparent); }
+  .card, section { box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translate(-50%,16px) scale(.97); opacity:0; pointer-events:none;
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:9px 14px; font-size:13px; max-width:90vw;
+    box-shadow:0 8px 24px rgba(0,0,0,.35); transition:opacity .25s, transform .35s var(--ease); z-index:20; }
+  #toast.on { transform:translate(-50%,0) scale(1); opacity:1; }
+  #toast.bad { border-color:var(--bad); }
 </style>
 </head>
 <body>
@@ -80,6 +112,7 @@
   <div class="grp"><label>Amount</label><input type="number" id="amount" value="1000" min="1" step="100">
     <button class="primary" id="submit">Submit transaction</button>
     <button id="auto">Auto traffic: off</button></div>
+  <div class="grp"><button id="motion" title="Turn animation on or off">Motion: on</button></div>
   <div class="grp"><label>Pace <span id="paceVal">1.0×</span></label><input type="range" id="pace" min="0.1" max="2" step="0.1" value="1"></div>
   <div class="grp">
     <label>cost</label><input type="range" id="wCost" min="0" max="1" step="0.05" value="0.6">
@@ -105,27 +138,43 @@
     <div class="scroll" id="story"></div>
   </section>
 </main>
+<div id="toast" role="status" aria-live="polite"></div>
 <script>
 const STAGES = ['quoting','accepting','authorising','paying','completed'];
 const S = { events: [], txs: new Map(), prov: new Map(), snap: null, sel: null, dirty: true };
 
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fmt = n => (typeof n === 'number' ? n.toFixed(4) : n);
+const STATE_COLOUR = { healthy:'var(--ok)', degraded:'var(--warn)', stalled:'var(--bad)', quarantined:'var(--violet)', unknown:'var(--dim)' };
+const connectedAt = { t: 0 };
+
+let toastTimer;
+function toast(msg, bad) {
+  const t = $('toast'); t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 4000);
+}
+function restart(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+
 function post(body) {
   return fetch('/api/control', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })
-    .then(r => r.json()).then(j => { if (!j.ok) alert(j.error || 'failed'); refreshSnapshot(); return j; });
+    .then(r => r.json()).then(j => { if (!j.ok) toast(j.error || 'failed', true); refreshSnapshot(); return j; })
+    .catch(() => toast('could not reach the server', true));
 }
 function refreshSnapshot() {
-  fetch('/api/snapshot').then(r => r.json()).then(s => { S.snap = s; S.dirty = true; syncControls(s); }).catch(()=>{});
+  fetch('/api/snapshot').then(r => r.json()).then(s => { S.snap = s; S.dirty = true; syncControls(s); }).catch(() => {});
 }
 function syncControls(s) {
-  const a = document.getElementById('auto'); a.textContent = 'Auto traffic: ' + (s.auto ? 'on' : 'off'); a.classList.toggle('on', s.auto);
+  const a = $('auto'); a.textContent = 'Auto traffic: ' + (s.auto ? 'on' : 'off'); a.classList.toggle('on', s.auto);
 }
 
 function ingest(ev) {
+  ev.replayed = Date.now() - connectedAt.t < 700;   // history on connect should not animate in
   S.events.push(ev); if (S.events.length > 3000) S.events.shift();
   if (ev.kind === 'health' && ev.data && ev.data.provider) S.prov.set(ev.data.provider, ev.data);
   if (ev.tx) {
     let tx = S.txs.get(ev.tx);
-    if (!tx) { tx = { id: ev.tx, at: ev.at, phase: 'received', reached: -1, amount: null, provider: null, events: [] }; S.txs.set(ev.tx, tx); }
+    if (!tx) { tx = { id: ev.tx, at: ev.at, phase: 'received', reached: -1, amount: null, provider: null, events: [], replayed: ev.replayed }; S.txs.set(ev.tx, tx); }
     tx.events.push(ev);
     if (ev.actor === 'payment') {
       const p = ev.data && ev.data.phase;
@@ -148,78 +197,139 @@ function evClass(ev) {
   return '';
 }
 const actorClass = a => a.startsWith('provider:') ? 'provider' : a;
-const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const fmt = n => (typeof n === 'number' ? n.toFixed(4) : n);
 
+/* ---------- providers: built once per provider, then patched in place ---------- */
+const provEls = new Map();
+const ACTIONS = [['slow','slow'],['stall','stall'],['error','error'],['reject quotes','reject'],['authorise fails','authorise_fails'],
+  ['pay answer lost','pay_answer_lost'],['pay vanishes','pay_vanishes'],['version drift','drift'],['release','release'],['heal','heal']];
+
+function createProvider(p) {
+  const el = document.createElement('div');
+  el.className = 'card unknown';
+  el.innerHTML = `<div class="top"><span class="name">${esc(p.id)}</span><span class="pill unknown" data-f="pill"></span></div>
+    <div class="metrics">
+      <div><span>rate</span><b data-f="rate"></b></div><div><span>fee</span><b data-f="fee"></b></div>
+      <div><span>latency</span><b data-f="latency"></b></div><div><span>breaker</span><b data-f="breaker"></b></div>
+      <div><span>p95</span><b data-f="p95"></b></div><div><span>errors</span><b data-f="errors"></b></div>
+      <div><span>in-flight</span><b data-f="inflight"></b></div><div><span>version</span><b data-f="version"></b></div>
+    </div><div class="faults" data-f="faults"></div>
+    <div class="actions">${ACTIONS.map(([l, d]) => `<button data-p="${esc(p.id)}" data-do="${d}">${l}</button>`).join('')}</div>`;
+  const f = {}; el.querySelectorAll('[data-f]').forEach(n => f[n.dataset.f] = n);
+  return { el, f, state: null };
+}
+function updateProvider(e, p) {
+  const f = e.f, st = p.state;
+  f.rate.textContent = fmt(p.rate); f.fee.textContent = p.fee; f.latency.textContent = p.latency_ms + 'ms';
+  f.breaker.textContent = p.breaker; f.p95.textContent = Math.round(p.p95_ms) + 'ms';
+  f.errors.textContent = Math.round(p.error_rate * 100) + '%'; f.inflight.textContent = p.in_flight;
+  f.version.textContent = p.version || '–';
+  const faults = p.faults.map(x => x.op.replace('_mode','') + '=' + x.mode).join(', ');
+  f.faults.textContent = faults ? 'faults: ' + faults : ''; f.faults.style.display = faults ? '' : 'none';
+  f.pill.textContent = st + (p.recovering > 0 ? ' · recovering' : '');
+  if (e.state !== st) {
+    f.pill.className = 'pill ' + st;
+    e.el.classList.remove('healthy','degraded','stalled','quarantined','unknown'); e.el.classList.add(st);
+    if (e.state !== null) { e.el.style.setProperty('--flash', STATE_COLOUR[st] || 'var(--info)'); restart(e.el, 'flash'); }
+    e.state = st;
+  }
+}
 function renderProviders() {
-  const el = document.getElementById('providers');
   const list = S.snap ? S.snap.providers : [];
-  document.getElementById('provCount').textContent = list.length ? list.length + ' providers' : '';
-  el.innerHTML = list.map(p => {
-    const live = S.prov.get(p.id) || {};
-    const st = p.state;
-    const faults = p.faults.length ? '<div class="faults">faults: ' + p.faults.map(f => esc(f.op.replace('_mode','')) + '=' + esc(f.mode)).join(', ') + '</div>' : '';
-    const btn = (label, what, extra) => `<button data-p="${p.id}" data-do="${what}" ${extra||''}>${label}</button>`;
-    return `<div class="card ${st}">
-      <div class="top"><span class="name">${p.id}</span><span class="pill ${st}">${st}${p.recovering>0?' · recovering':''}</span></div>
-      <div class="metrics">
-        <div><span>rate</span><b>${fmt(p.rate)}</b></div>
-        <div><span>fee</span><b>${p.fee}</b></div>
-        <div><span>latency</span><b>${p.latency_ms}ms</b></div>
-        <div><span>breaker</span><b>${p.breaker}</b></div>
-        <div><span>p95</span><b>${Math.round(p.p95_ms)}ms</b></div>
-        <div><span>errors</span><b>${Math.round(p.error_rate*100)}%</b></div>
-        <div><span>in-flight</span><b>${p.in_flight}</b></div>
-        <div><span>version</span><b>${esc(p.version || '–')}</b></div>
-      </div>${faults}
-      <div class="actions">
-        ${btn('slow','slow')}${btn('stall','stall')}${btn('error','error')}${btn('reject quotes','reject')}
-        ${btn('authorise fails','authorise_fails')}${btn('pay answer lost','pay_answer_lost')}${btn('pay vanishes','pay_vanishes')}
-        ${btn('version drift','drift')}${btn('release','release')}${btn('heal','heal')}
-      </div></div>`;
-  }).join('') || '<div class="empty">waiting for snapshot…</div>';
+  const host = $('providers');
+  $('provCount').textContent = list.length ? list.length + ' providers' : '';
+  if (!list.length) { if (!host.firstChild) host.innerHTML = '<div class="empty">waiting for snapshot…</div>'; return; }
+  const empty = host.querySelector('.empty'); if (empty) empty.remove();
+  for (const p of list) {
+    let e = provEls.get(p.id);
+    if (!e) { e = createProvider(p); provEls.set(p.id, e); host.appendChild(e.el); e.el.classList.add('rise'); }
+    updateProvider(e, p);
+  }
 }
 
-function pipeline(tx) {
+/* ---------- transactions: persistent cards, pipeline chips change class in place ---------- */
+const txEls = new Map();
+const LABELS = { quoting:'quote', accepting:'accept', authorising:'authorise', paying:'pay', completed:'done' };
+function createTx(tx) {
+  const el = document.createElement('div');
+  el.className = 'tx'; el.dataset.tx = tx.id;
+  el.innerHTML = `<div class="row"><span><span class="id">${esc(tx.id)}</span> · <span data-f="amount"></span></span><span class="badge" data-f="badge"></span></div>
+    <div class="pipe">${STAGES.map(s => `<span data-s="${s}">${LABELS[s]}</span>`).join('')}</div>
+    <div class="row"><span data-f="via"></span><span data-f="dur"></span></div>`;
+  const f = {}; el.querySelectorAll('[data-f]').forEach(n => f[n.dataset.f] = n);
+  const chips = [...el.querySelectorAll('[data-s]')];
+  return { el, f, chips, phase: null };
+}
+function updateTx(e, tx) {
   const bad = tx.phase === 'failed', rev = tx.phase === 'needs_review';
-  return '<div class="pipe">' + STAGES.map((s, i) => {
-    let c = '';
+  e.f.amount.textContent = tx.amount ?? '?';
+  e.f.badge.textContent = tx.phase.replace('_', ' '); e.f.badge.className = 'badge ' + tx.phase;
+  e.f.via.textContent = tx.provider ? 'via ' + tx.provider : 'choosing…';
+  e.f.dur.textContent = (((tx.end || Date.now()) - tx.at) / 1000).toFixed(1) + 's';
+  e.chips.forEach((chip, i) => {
+    const s = STAGES[i]; let c = '';
     if (tx.phase === 'completed') c = 'done';
     else if (i < tx.reached) c = 'done';
     else if (i === tx.reached || s === tx.phase) c = bad ? 'bad' : rev ? 'review' : 'now';
-    const label = {quoting:'quote',accepting:'accept',authorising:'authorise',paying:'pay',completed:'done'}[s];
-    return `<span class="${c}">${label}</span>`;
-  }).join('') + '</div>';
+    chip.className = c;
+  });
+  e.el.classList.toggle('sel', S.sel === tx.id);
+  if (e.phase !== tx.phase) {
+    const terminal = ['completed','failed','needs_review'].includes(tx.phase);
+    if (e.phase !== null && terminal) {
+      e.el.style.setProperty('--flash', tx.phase === 'completed' ? 'var(--ok)' : tx.phase === 'failed' ? 'var(--bad)' : 'var(--warn)');
+      restart(e.el, 'flash');
+      if (tx.phase === 'completed') restart(e.f.badge, 'pop');
+    }
+    e.phase = tx.phase;
+  }
 }
-
 function renderTxs() {
-  const el = document.getElementById('txs');
+  const host = $('txs');
   const list = [...S.txs.values()].sort((a, b) => b.at - a.at);
-  document.getElementById('txCount').textContent = list.length ? list.length + ' seen' : '';
-  el.innerHTML = list.map(tx => {
-    const dur = ((tx.end || Date.now()) - tx.at) / 1000;
-    const note = ['compensating','reconciling'].includes(tx.phase) ? `<span class="badge ${tx.phase}">${tx.phase}</span>` : `<span class="badge ${tx.phase}">${tx.phase.replace('_',' ')}</span>`;
-    return `<div class="tx ${S.sel === tx.id ? 'sel' : ''}" data-tx="${tx.id}">
-      <div class="row"><span><span class="id">${tx.id}</span> · ${tx.amount ?? '?'}</span>${note}</div>
-      ${pipeline(tx)}
-      <div class="row"><span>${tx.provider ? 'via ' + tx.provider : 'choosing…'}</span><span>${dur.toFixed(1)}s</span></div></div>`;
-  }).join('') || '<div class="empty">No transactions yet. Press “Submit transaction”.</div>';
+  $('txCount').textContent = list.length ? list.length + ' seen' : '';
+  if (!list.length) { if (!host.firstChild) host.innerHTML = '<div class="empty">No transactions yet. Press “Submit transaction”.</div>'; return; }
+  const empty = host.querySelector('.empty'); if (empty) empty.remove();
+  for (const tx of list) {
+    let e = txEls.get(tx.id);
+    if (!e) {
+      e = createTx(tx); txEls.set(tx.id, e); host.insertBefore(e.el, host.firstChild);
+      if (!tx.replayed) e.el.classList.add('rise');
+    }
+    updateTx(e, tx);
+  }
 }
 
+/* ---------- story: append-only; rebuilt (without animation) only when the selection changes ---------- */
+const story = { key: null, last: 0 };
+function evNode(ev, tx, animate) {
+  const when = tx ? '+' + (ev.at - tx.at) + 'ms' : new Date(ev.at).toLocaleTimeString([], { hour12: false });
+  const txTag = !tx && ev.tx ? `<span class="txid">${esc(ev.tx)} </span>` : '';
+  const d = document.createElement('div');
+  d.className = 'ev ' + evClass(ev) + (animate && !ev.replayed ? ' rise' : '');
+  d.innerHTML = `<span class="t">${when}</span><span class="a ${actorClass(ev.actor)}">${esc(ev.actor)}</span><span class="m">${txTag}${esc(ev.message)}</span>`;
+  return d;
+}
 function renderStory() {
-  const el = document.getElementById('story');
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  const host = $('story');
+  const atBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 40;
   const tx = S.sel && S.txs.get(S.sel);
   const events = tx ? tx.events : S.events.slice(-250);
-  const t0 = tx ? tx.at : null;
-  document.getElementById('storyTitle').textContent = tx ? 'Story: ' + tx.id : 'Story: everything';
-  document.getElementById('clearSel').style.display = tx ? '' : 'none';
-  el.innerHTML = events.filter(e => tx || e.kind !== 'health' || true).map(ev => {
-    const when = t0 !== null ? '+' + (ev.at - t0) + 'ms' : new Date(ev.at).toLocaleTimeString([], {hour12:false});
-    const txTag = !tx && ev.tx ? `<span class="txid">${ev.tx} </span>` : '';
-    return `<div class="ev ${evClass(ev)}"><span class="t">${when}</span><span class="a ${actorClass(ev.actor)}">${esc(ev.actor)}</span><span class="m">${txTag}${esc(ev.message)}</span></div>`;
-  }).join('') || '<div class="empty">Nothing yet.</div>';
-  if (atBottom) el.scrollTop = el.scrollHeight;
+  const key = tx ? tx.id : '*';
+  $('storyTitle').textContent = tx ? 'Story: ' + tx.id : 'Story: everything';
+  $('clearSel').style.display = tx ? '' : 'none';
+  if (key !== story.key) {
+    host.textContent = ''; story.key = key; story.last = 0;
+    for (const ev of events) host.appendChild(evNode(ev, tx, false));
+    story.last = events.length ? events[events.length - 1].seq : 0;
+    restart(host, 'fade');
+    host.scrollTop = tx ? 0 : host.scrollHeight;
+  } else {
+    for (const ev of events) if (ev.seq > story.last) { host.appendChild(evNode(ev, tx, true)); story.last = ev.seq; }
+    while (!tx && host.children.length > 250) host.removeChild(host.firstChild);
+    if (atBottom) host.scrollTop = host.scrollHeight;
+  }
+  if (!host.children.length) host.innerHTML = '<div class="empty">Nothing yet.</div>';
+  else { const e = host.querySelector(':scope > .empty'); if (e && host.children.length > 1) e.remove(); }
 }
 
 function frame() { if (S.dirty) { S.dirty = false; renderProviders(); renderTxs(); renderStory(); } requestAnimationFrame(frame); }
@@ -230,20 +340,31 @@ document.addEventListener('click', e => {
   const tx = e.target.closest('.tx[data-tx]');
   if (tx) { S.sel = S.sel === tx.dataset.tx ? null : tx.dataset.tx; S.dirty = true; }
 });
-document.getElementById('clearSel').onclick = () => { S.sel = null; S.dirty = true; };
-document.getElementById('submit').onclick = () => post({ action:'submit', amount:+document.getElementById('amount').value });
-document.getElementById('auto').onclick = () => post({ action:'auto', on: !(S.snap && S.snap.auto) });
-document.getElementById('pace').oninput = e => {
-  document.getElementById('paceVal').textContent = (+e.target.value).toFixed(1) + '×';
+$('clearSel').onclick = () => { S.sel = null; S.dirty = true; };
+$('submit').onclick = () => post({ action:'submit', amount:+$('amount').value });
+$('auto').onclick = () => post({ action:'auto', on: !(S.snap && S.snap.auto) });
+$('pace').oninput = e => {
+  $('paceVal').textContent = (+e.target.value).toFixed(1) + '×';
   post({ action:'pace', factor:+e.target.value });
 };
-document.getElementById('applyPolicy').onclick = () => post({ action:'policy',
-  weights:{ cost:+wCost.value, speed:+wSpeed.value, reliability:+wRel.value }, max_bps_from_best:+bps.value });
+$('applyPolicy').onclick = () => post({ action:'policy',
+  weights:{ cost:+$('wCost').value, speed:+$('wSpeed').value, reliability:+$('wRel').value }, max_bps_from_best:+$('bps').value });
 
-const conn = document.getElementById('conn');
+// motion switch (remembered per browser; storage may be unavailable)
+function setMotion(on) {
+  document.documentElement.dataset.motion = on ? 'on' : 'off';
+  $('motion').textContent = 'Motion: ' + (on ? 'on' : 'off');
+  try { localStorage.setItem('actor-tx-motion', on ? 'on' : 'off'); } catch (_) {}
+}
+let storedMotion = 'on';
+try { storedMotion = localStorage.getItem('actor-tx-motion') || 'on'; } catch (_) {}
+setMotion(storedMotion !== 'off');
+$('motion').onclick = () => setMotion(document.documentElement.dataset.motion === 'off');
+
+const conn = $('conn');
 function connect() {
   const es = new EventSource('/events');
-  es.onopen = () => { conn.classList.add('up'); conn.lastElementChild.textContent = 'live'; };
+  es.onopen = () => { connectedAt.t = Date.now(); conn.classList.add('up'); conn.lastElementChild.textContent = 'live'; };
   es.onerror = () => { conn.classList.remove('up'); conn.lastElementChild.textContent = 'reconnecting…'; };
   es.onmessage = m => ingest(JSON.parse(m.data));
 }
