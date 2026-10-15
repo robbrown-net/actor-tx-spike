@@ -1,4 +1,4 @@
-defmodule ActorTxSpikeTest do
+defmodule ActorTxSpike.IntegrationTest do
   use ExUnit.Case, async: false
 
   alias ActorTxSpike.{Store, Subsystem}
