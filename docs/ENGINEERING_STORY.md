@@ -147,6 +147,10 @@ These came from the owner and are standing rules.
 | Slice 1 | `Policy` + `Selector`: deadline-bound quote-and-select |
 | Slice 2 | `Payment` lifecycle, undo operations, `max_bps`, `Events`, dashboard, demo world, fault-storm invariant test; legacy removed |
 | Docs pass | Architecture suite, quality snapshot, this story |
+| Quality gaps | System suite (real process over HTTP/SSE), regression pack, mutation testing, CI workflow; fixed a dead-provider crash the new tests exposed |
+| Monitoring | `Metrics` sampler, rollups and a Performance view |
+| Slice 3 | Cascading policy, standing guarantees and ledger, regional cut-offs, deadline enforcement, settlement step |
+| Dashboard motion | Persistent-DOM rewrite and calm motion (from David's handover notes) |
 
 ## 8. Open questions
 
@@ -154,9 +158,9 @@ These came from the owner and are standing rules.
 |---|---|---|
 | Q1 | Do real providers truly support idempotency keys *and* undo-by-key? | ADR 0002 assumes yes; if not, the safety rules change |
 | Q2 | How stale can `status` be, and is there any real-time signal? | Sets `reconcile` timing and `needs_review` volume |
-| Q3 | How are standing guarantees accounted for (margin / exposure ledger)? | A ledger concern the spike has not touched |
+| Q3 | How should guarantee margin and exposure be accounted for durably (periods, rollovers, reconciliation with finance)? | The in-memory ledger records margin and exposure per merchant and period; real accounting rules are unknown |
 | Q4 | Where does merchant/customer policy come from and who may edit it? | Cascade needs an owner and an audit trail |
-| Q5 | How do settlement phases and regional cut-offs interact with failover? | Deadlines cut across the lifecycle |
+| Q5 | Which settlement *phases* exist per region, and what are their individual deadlines? | One `settle` step and one cut-off exist; real settlement is multi-phase |
 | Q6 | What is the money type and rounding policy? | The spike uses floats; this must be decided before real money |
 | Q7 | What regulatory duties apply (KYC/AML, record retention, audit)? | Shapes the durable store and `needs_review` workflow |
 | Q8 | How should provider quote and call costs be accounted (rate limits, fees to us)? | Hedging is not free |
@@ -180,7 +184,11 @@ These came from the owner and are standing rules.
 | R11 | No CI; gates are manual | medium | medium | Add CI |
 | R12 | Single node = single failure domain | certain | high in production | Distribution phase; single-owner-per-transaction design |
 | R13 | `Payment.handle_result/3` is growing | medium | low | Refactor to a step table before slice 3 |
-| R14 | Time zones, DST and cut-offs are error-prone | medium | high | Timezone database, property tests |
+| R14 | Time zones, DST and cut-offs are error-prone; offset rules are supplied by the caller | medium | high | Back the offset function with a timezone database; property tests |
+| R15 | Settlement failure leaves a made payment needing human action (no undo) | medium | high | UC-4 review tooling, alerting, ageing SLO |
+| R16 | Guarantee exposure is only recorded, not limited | medium | medium | Exposure limits and guarantee-aware routing |
+| R17 | Metrics and narrative are in memory: no history across restarts | certain | medium | Durable tier (Phase 3) |
+| R18 | CI has never run on GitHub | medium | low | Run and fix; make required |
 
 ## 10. Roadmap
 
@@ -192,13 +200,13 @@ Status as of 2026-10-15. See also [ROADMAP.md](ROADMAP.md).
 | 1 | Provider model, fake, health, breaker | ✅ done |
 | 2.1 | Policy + quote-and-select | ✅ done |
 | 2.2 | Lifecycle, undo, reconcile, narrative, dashboard | ✅ done |
-| 2.3 | Cascading policy, standing guarantees, deadlines, regional cut-offs, settlement phases | 🔲 next |
-| 3 | Sentinel, event-sourced durable log, durable store, performance metrics and charts, supervision | 🔲 |
-| 4 | Chaos / property / load testing, system suite, regression pack, CI | 🔲 |
+| 2.3 | Cascading policy, standing guarantees, deadlines, regional cut-offs, settlement step | ✅ done (multi-phase settlement and timezone data remain) |
+| 3 | Sentinel (configurable, persistent), event-sourced durable log, durable store, supervision of providers; performance metrics | 🟡 metrics and charts done; the rest 🔲 |
+| 4 | Load / soak / chaos testing, system suite, regression pack, CI | 🟡 system suite, regression pack, mutation testing, CI workflow done; load testing 🔲 |
 | 5 | Distribution: single owner per transaction across nodes, partition convergence, provider discovery | 🔲 |
 | 6 | Production hardening: auth, TLS, money types, compliance, operations runbook | 🔲 |
 
-Near-term docs/quality work: system suite, regression pack, branch coverage, Dialyzer, CI.
+Near-term: run CI, Dialyzer, load/soak mode, durable store, UC-4 review tooling, timezone data.
 
 ## 11. Reading order for a newcomer
 

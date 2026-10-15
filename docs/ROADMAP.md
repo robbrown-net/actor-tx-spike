@@ -37,7 +37,12 @@ Ideas parked: early stop when a "good enough" quote arrives; hedged request budg
 - Baseline outcome + best-so-far during quoting.
 - Cascading policy resolution: global -> merchant -> customer; standing guarantees.
 
+Slice 3 DONE (2026-10-15): `PolicySet` cascade, `Guarantee` + `Ledger`, `Cutoff`, deadline
+enforcement and the `settle` step (ADR 0007). Remaining in this phase: multi-phase settlement,
+timezone database behind the offset function.
+
 ## Phase 3: Sentinel and observability
+Metrics sampler, rollups and Performance view DONE (see docs/architecture/07).
 - Scheduled probes (configurable interval) + passive observation; drift detection.
 - Event-sourced transaction log; `status/1`; telemetry (CPU, memory, storage, network proxies).
 - Durable store behind a behaviour; atomic writes; retention/compaction.

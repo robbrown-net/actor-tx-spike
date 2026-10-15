@@ -14,6 +14,9 @@ flowchart LR
         PAY["Payment (1 process per transaction)"]
         SEL["Selector (fan-out quoting)"]
         POL["Policy (validated data)"]
+        PSET["PolicySet (global, merchant, customer cascade)"]
+        CUT["Cutoff (regional deadlines)"]
+        GUA["Guarantee and Ledger"]
     end
     subgraph ProviderLayer["Provider layer"]
         PSRV["Provider.Server xN (breaker, health, bulkhead, timeouts)"]
@@ -23,6 +26,7 @@ flowchart LR
     end
     subgraph Observability
         EV["Events (ring buffer + pub/sub)"]
+        MET["Metrics (sampler, rollups)"]
         NARR["Narrative (terminal)"]
         DASH["priv/panel.html (dashboard)"]
     end
@@ -31,6 +35,11 @@ flowchart LR
     API --> TS --> PAY
     PAY --> SEL
     SEL --> POL
+    API --> PSET
+    PAY --> CUT
+    PAY --> GUA
+    EV --> MET
+    MET --> PANEL
     SEL --> PSRV
     PAY --> PSRV
     PSRV --> HEALTH
@@ -54,6 +63,8 @@ flowchart LR
 flowchart TD
     APP["ActorTxSpike.Supervisor (one_for_one)"]
     APP --> EVS["Events"]
+    APP --> MET["Metrics"]
+    APP --> LED["Ledger"]
     APP --> REG["Registry (payment ids)"]
     APP --> TSUP["TransactionSupervisor"]
     TSUP --> P1["Payment tx-1 (temporary)"]
@@ -83,6 +94,11 @@ flowchart TD
 | `Provider.Health` | Breaker, rolling stats, drift quarantine, recovery | **yes** |
 | `Provider.Server` | Admission, bulkhead, enforced timeouts, health events | no |
 | `Provider.Fake` | Scriptable provider and its narration | no |
+| `PolicySet` | Cascading objectives with entitlement and validation | **yes** |
+| `Cutoff` | Regional cut-offs: fixed offset or date-aware offset function | **yes** |
+| `Guarantee` | Margin / exposure against a standing guarantee | **yes** |
+| `Ledger` | Accumulates guarantee outcomes per merchant and period | no |
+| `Metrics` (+ `Stats`, `Rollup`, `VM`) | Resource and application metrics with bounded rollups | mostly |
 | `Events`, `Narrative` | Narrative stream and rendering | no |
 | `Panel`, `Demo` | Dashboard server and demo world | no |
 

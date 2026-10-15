@@ -40,7 +40,8 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 6. System asks that provider to **accept** the quote (rate lock).
 7. System asks that provider to **authorise** the payment (funds hold).
 8. System asks that provider to **pay**.
-9. System records completion and informs waiters; Merchant reads the outcome.
+9. System asks that provider to **settle** the payment (before the regional cut-off).
+10. System records completion, margin against any standing guarantee, and informs waiters; Merchant reads the outcome.
 
 **Extensions**
 
@@ -59,7 +60,12 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | 8b | Pay answer lost / timeout | Ask provider repeatedly. Found: complete. Unresolved: **stop in `needs_review`, never fail over.** |
 | 6–8c | Undo itself cannot be completed | Escalate to `needs_review`. |
 | any | Candidate's quote expired before its turn | Skipped. |
-| 9a | All candidates exhausted | Outcome `failed: exhausted`, all effects undone. |
+| 9a | Settlement refused or keeps failing | `needs_review {:settlement_failed}`: the payment was made and is **not** undone. |
+| 9b | Settlement answer lost | Reconcile by status; unresolved → `needs_review {:in_doubt, :settle}`. |
+| any | Regional cut-off passes before payment | Stop, undo what was done, `failed {:deadline_missed, region}`. |
+| 9c | Cut-off passes after payment, before settlement | `needs_review {:settlement_overdue, region}`. |
+| 10a | Falls short of a standing guarantee | Exposure recorded in the ledger and narrated loudly. |
+| any | All candidates exhausted | Outcome `failed: exhausted`, all effects undone. |
 
 ## UC-2 Observe and diagnose the running system ✅
 
@@ -91,10 +97,19 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Main scenario** | 1. Reviewer opens the queue. 2. Sees the story and provider evidence. 3. Re-queries provider status. 4. Chooses an action. 5. System executes with idempotency keys and records the decision. |
 | **Status** | Escalation exists (`needs_review` state and narrative); review tooling does not. |
 
-## UC-5 Tune routing policy 🟡
+## UC-5 Tune routing policy ✅
 
 | | |
 |---|---|
-| **Primary actor** | Operator (global), Merchant (per-merchant, planned) |
+| **Primary actor** | Operator (global), Merchant (paid override), special customer |
 | **Main scenario** | 1. Actor edits weights (cost / speed / reliability) and constraints (min validity, max latency, max bps from best, excluded states). 2. System validates; invalid policy is rejected with every error. 3. New transactions use the new policy. |
-| **Status** | Single global policy implemented. Cascade (global → merchant → customer) and standing guarantees are Slice 3. |
+| **Status** | Implemented: global → merchant (only if entitled) → customer cascade with partial overrides; every layer validated when the set is built; the layers used are narrated per transaction. Standing guarantees are accounted in a ledger. Who may edit which layer (authorisation) and an audit trail are not built. |
+
+## UC-6 Monitor performance and resource use ✅
+
+| | |
+|---|---|
+| **Primary actor** | Operator |
+| **Success guarantee** | Operator can see memory, CPU, scheduler load, network, throughput and latency over time without the monitoring itself becoming a cost. |
+| **Main scenario** | 1. Operator opens the Performance view. 2. Charts update every 1.5 s from `GET /api/metrics`. 3. Operator picks a window (1 / 5 / 15 min or one-minute rollups). |
+| **Not yet** | Long-term storage metrics (no durable store), alerting, retention beyond the in-memory rollups. |

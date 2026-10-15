@@ -1,22 +1,25 @@
 # Quality snapshot
 
-Measured **2026-10-15** on commit `b1286f2` plus the documentation pass (no production code changed
-except three trivial lint fixes). Everything here was produced by tools run against the repo;
-nothing is estimated unless marked.
+Measured **2026-10-15** after Slice 3, the metrics layer and the quality-gap work.
+Everything here was produced by tools run against the repository; nothing is estimated
+unless marked.
 
 ## 1. Headline
 
 | Area | Result | Target | Verdict |
 |---|---|---|---|
-| Unit coverage (line) | **100.0%** (17 modules) | 100% | ✅ |
-| Integration coverage (line) | **86.0%** | > 85% | ✅ (thin headroom) |
-| System-test coverage | **none: suite does not exist** | n/a | ⚠️ gap |
-| Regression-pack coverage | **none: pack does not exist** | n/a | ⚠️ gap |
-| Tests | 126 (111 unit, 15 integration), 0 failures | n/a | ✅ |
-| Static analysis (Credo strict, 69 checks) | **0 issues** | 0 | ✅ |
-| Dependency vulnerabilities (mix_audit, hex.audit) | **none** | none | ✅ |
+| Unit coverage (line) | **100.0%** (all measured modules) | 100% | ✅ |
+| Integration coverage (line) | **86.8%** | > 85% | ✅ (headroom ~2 pts) |
+| System tests | **10 scenarios**, real process over HTTP/SSE, all pass | n/a | ✅ (no line coverage by nature) |
+| Regression pack | **23 tests** tagged to defects found | n/a | ✅ |
+| Mutation score (sampled) | **100%** of 93 valid mutants killed over the pure core, after strengthening | n/a | ✅ with caveat |
+| Tests | 201 (173 unit, 18 integration, 10 system), 0 failures | n/a | ✅ |
+| Static analysis (Credo strict) | **0 issues**, 508 functions | 0 | ✅ |
+| Compilation | `--warnings-as-errors` clean | clean | ✅ |
+| Dependency vulnerabilities | **none** (mix_audit, hex.audit) | none | ✅ |
 | Security scan (Sobelow) | 2 findings, both non-applicable / false positive | n/a | ✅ with notes |
 | Runtime dependencies | **0** | minimise | ✅ |
+| CI | workflow committed, **not yet run** (needs the repository's Actions) | green | ⚠️ |
 
 ## 2. Size (SLOC)
 
@@ -24,132 +27,167 @@ Non-blank, non-comment, non-docstring lines.
 
 | Area | Files | Code | Docs/comments | Blank |
 |---|---|---|---|---|
-| `lib/` (Elixir) | 17 | **1,724** | 278 | 413 |
-| `test/` (Elixir) | 14 | **1,479** | 37 | 362 |
-| `priv/panel.html` (HTML/CSS/JS) | 1 | 243 | n/a | n/a |
-| Documentation (Markdown) | 20+ | see docs | | |
+| `lib/` (Elixir) | 25 | **2,459** | 394 | 560 |
+| `test/` (Elixir) | 23 | **2,631** | 71 | 637 |
+| `priv/panel.html` | 1 | 514 (HTML/CSS/JS) | | |
+| `scripts/mutate.py` | 1 | ~110 (Python) | | |
+| Documentation (Markdown) | 30+ | | | |
 
-Test-to-code ratio: **0.86**. Largest modules: `Payment` 401, `Demo` 217, `Provider.Fake` 187,
-`Panel` 169, `Selector` 167. Average module ≈ 100 lines.
+Test-to-code ratio **1.07**. Largest modules: `Payment` 512, `Demo` 293, `Provider.Fake` 191,
+`Panel` 171, `Selector` 167, `Metrics` 167.
 
 ## 3. Coverage detail
 
-Line coverage via Erlang `cover` (the Mix built-in). **Line coverage only: it cannot see untaken
-branches inside a covered line**, so 100% is necessary, not sufficient.
+Line coverage via Erlang `cover` (the Mix built-in). **Line coverage cannot see untaken
+branches inside a covered line**; that gap is why mutation testing was added (section 4).
 
 | Module | Unit | Integration |
 |---|---|---|
-| ActorTxSpike | 100% | 60% |
-| ActorTxSpike.Application | 100% | 100% |
-| ActorTxSpike.Events | 100% | 83% |
-| ActorTxSpike.Narrative | 100% | 13% |
-| ActorTxSpike.Panel | 100% | 73% |
-| ActorTxSpike.Payment | 100% | 88% |
-| ActorTxSpike.Policy | 100% | 79% |
-| ActorTxSpike.Provider (behaviour) | 100% | 100% |
-| ActorTxSpike.Provider.Fake | 100% | 96% |
-| ActorTxSpike.Provider.Health | 100% | 86% |
-| ActorTxSpike.Provider.Quote | 100% | 100% |
-| ActorTxSpike.Provider.Server | 100% | 94% |
-| ActorTxSpike.Selector | 100% | 86% |
-| ActorTxSpike.Selection (+Candidate) | 100% | 100% |
-| ActorTxSpike.TransactionSupervisor | 100% | 100% |
-| ActorTxSpike.Demo / Demo.Handler | excluded (tooling) | 98% / 100% |
-| Mix.Tasks.Demo | excluded everywhere | n/a |
-| **Total** | **100%** | **86.0%** |
+| ActorTxSpike (API) | 100% | 73% |
+| Application, Provider (behaviour), Quote, Selection, Candidate, TransactionSupervisor | 100% | 100% |
+| Payment | 100% | 89% |
+| Selector | 100% | 88% |
+| Policy | 100% | 79% |
+| PolicySet | 100% | 88% |
+| Cutoff | 100% | 88% |
+| Guarantee | 100% | 92% |
+| Ledger | 100% | 95% |
+| Events | 100% | 83% |
+| Narrative | 100% | 13% |
+| Panel | 100% | 73% |
+| Provider.Health | 100% | 86% |
+| Provider.Server | 100% | 94% |
+| Provider.Fake | 100% | 95% |
+| Metrics / Stats / Rollup / VM | 100% | 91% / 63% / 94% / 96% |
+| Demo / Demo.Handler | excluded (tooling) | 90% / 100% |
+| Mix.Tasks.Demo | excluded everywhere (thin entry point) | n/a |
+| **Total** | **100%** | **86.8%** |
 
-**How honest is the 100%?** `Demo` and `Demo.Handler` are excluded from the unit gate by design
-(they are demo tooling, exercised by integration tests). The exclusion list is in `mix.exs`.
+Exclusions are explicit in `mix.exs`. `Narrative` is covered by unit tests only, which is
+why its integration figure is low.
 
-### Suites that do not exist
+### Suites
 
-| Suite | Status | What it would contain |
+| Suite | Command | Count | Measures |
+|---|---|---|---|
+| Unit | `mix test.unit` | 173 | line coverage gate 100% |
+| Integration | `mix test.integration` | 18 | line coverage gate > 85% |
+| System | `mix test.system` | 10 | scenarios (below), no line coverage |
+| Regression pack | `mix test.regression` | 23 | pass/fail |
+| Mutation (on demand) | `python3 scripts/mutate.py` | sampled | kill rate |
+
+### System scenario coverage (use case → test)
+
+| Use case / extension | System test |
+|---|---|
+| Boot, dashboard, five-provider snapshot | boots and serves… |
+| UC-1 main scenario incl. settlement, coherent narrative | main scenario |
+| UC-1 ext 7a authorise rejected → undo → failover | authorise rejected… |
+| UC-1 ext 8b lost payment answer reconciled | lost payment answer… |
+| UC-1 ext 8c unresolvable payment → needs_review, no failover | unresolvable payment… |
+| UC-3 drift quarantine by the sentinel | version drift… |
+| UC-5 policy validation; cascade, entitlement, guarantee ledger | invalid policy…; cascade… |
+| UC-2 auto traffic | automatic traffic… |
+| Deadline: cut-off passes mid-transaction | deadline… |
+| **Not covered by a system test:** UC-4 review workflow (unbuilt), settlement refusal, performance view | |
+
+### Defects found, and the test that guards each
+
+| # | Defect | Guard |
 |---|---|---|
-| **System tests** | missing | Boot the real demo; drive it purely over HTTP/SSE (submit, auto traffic, fault injection, policy change); assert the narrative and outcomes; run for a soak period. |
-| **Regression pack** | missing | A tagged set pinning every defect found so far (below) so it can run on its own as a fast pre-merge check. |
+| 1 | Recovered provider re-admitted too eagerly / quiet provider never leaves degraded | `Health` gradual-recovery tests |
+| 2 | Malformed persisted snapshot crashed boot (legacy store, removed) | none: code removed; re-test with the durable store |
+| 3 | Tests left partial snapshots in the persisted store file | none: store removed |
+| 4 | Caller dying mid-call leaked a concurrency / probe slot | `Server` caller-dies test |
+| 5 | Transaction ids collided across demo restarts, returning a stale result | idempotent-ingress test; demo uses unique prefixes |
+| 6 | Late status confirmation of a payment ignored | `Payment` stale-status test |
+| 7 | **A provider server dying mid-transaction crashed the Payment process** (found while writing the test suite) | `Payment` dead-provider regression test |
+| 8 | Boundary and message conditions untested despite 100% line coverage | mutation-driven tests in Policy, Health, Selector, Ledger, Cutoff |
+| 9 | Ledger totals returned integer 0 vs float | float-typed totals tests |
 
-Defects found so far, and the test that currently guards each (candidates for the tagged pack):
+## 4. Mutation testing
 
-| # | Defect | Guarding test today |
+`scripts/mutate.py` applies one small change at a time (flip a comparison, swap `and`/`or`,
+drop a negation, off-by-one) to the pure core and runs the relevant unit tests.
+
+| File | First run | After new tests |
 |---|---|---|
-| 1 | Recovered provider re-admitted too eagerly / quiet provider never leaves degraded | `Health` "recovery is gradual…" |
-| 2 | Malformed persisted snapshot crashed application boot (legacy store, since removed) | none: code removed; re-test when the durable store is built |
-| 3 | Tests left partial snapshots in the persisted store file, breaking the next boot | none: store removed |
-| 4 | Caller dying mid-call leaked a concurrency slot / probe slot | `Server` "a caller that dies mid-call releases its slot…" |
-| 5 | Transaction ids collided across demo restarts, returning a stale result | `Demo` tests use a unique prefix; real fix (globally unique ids) is open |
-| 6 | Late status confirmation of a payment was ignored | `Payment` "…stale status is still honoured" |
-| 7 | Default-argument functions hid unreachable lines from coverage | covered by the 100% gate |
+| `policy.ex` | 80% (5 survivors) | 100% (26/26) |
+| `provider/health.ex` | 73% (3 survivors) | 100% (11/11) |
+| `selector.ex` | 50% (2 survivors, 3 invalid) | 100% (4/4 valid) |
+| `cutoff.ex` | 86% (1 survivor) | 100% after assertion on exact message |
+| `ledger.ex` | 60% (2 survivors) | 100% of non-equivalent; 1 equivalent mutant (`< 0` vs `<= 0` adds 0 to a sum) |
+| `policy_set.ex`, `guarantee.ex`, `metrics/stats.ex` | 100% | n/a |
 
-## 4. Static analysis
+Caveats: sampled (up to 25–30 mutants per file), regex-based, run on demand. It covers the
+pure core, not `Payment`, `Panel` or `Demo`. A mature tool is not usable here (`muzak` is
+incompatible with Elixir 1.18).
 
-### Credo (`mix credo --strict`, 69 checks, 31 files, 370 functions)
-**No issues.** (Three trivial findings from the first run were fixed: `Enum.map_join`, alias ordering, nesting depth.)
+## 5. Static analysis
+
+### Credo (`mix credo --strict`, 508 functions): **no issues**.
 
 ### Complexity (own AST analysis; cyclomatic = 1 + decision points)
 | Measure | Value |
 |---|---|
-| Functions / clauses | 159 / 270 |
+| Functions / clauses | 228 / 365 |
 | Max per clause | **7** (`Provider.Fake.effect/4`) |
-| Mean per clause | 1.35 |
+| Mean per clause | 1.40 |
 | Clauses over 10 | 0 |
-| Max per function, all clauses summed | 16 (`Payment.handle_result/3`, 13 clauses) |
-| Functions over 10 (summed) | 3 (`handle_result/3`, `Demo.preset/4`, `Demo.do_control/2`) |
+| Max per function, all clauses summed | 16 (`Payment.handle_result/3`, 13 clauses; `Demo.do_control/2`, 7 clauses) |
+| Functions over 10 (summed) | 4 (`do_control/2`, `handle_result/3`, `Demo.preset/4`, `Panel.route/6`) |
 
-The summed hot spots are tables of small clauses (pattern-matching dispatch), not deeply nested
-logic. `Payment.handle_result/3` is the one to watch as slice 3 adds more paths.
+The hot spots are tables of small pattern-matching clauses, not deeply nested logic.
+`Payment.handle_result/3` should move to a step table before the next lifecycle change.
 
 ### Duplication (6-line normalised windows)
 | Area | Repeated windows | Lines involved |
 |---|---|---|
 | `lib/` | 0 | **0%** |
-| `test/` | 8 | ~46 lines (**3.0%**), mostly repeated provider/Server setup helpers |
+| `test/` | 9 | ~48 lines (**1.8%**) |
 
-Credo's duplicated-code check also reports nothing.
-
-## 5. Security
+## 6. Security
 
 | Check | Result |
 |---|---|
-| `mix deps.audit` (mix_audit) | No vulnerabilities |
-| `mix hex.audit` | No retired or advisory packages |
-| Sobelow | 2 findings (see below) |
-| Dangerous calls in `lib/` | no `String.to_atom`, `binary_to_term`, `Code.eval*`, `System.cmd`, `:os.cmd`; one `apply/3` on a fixed adapter module and operation allow-list |
+| `mix deps.audit` / `mix hex.audit` | No vulnerabilities; no retired packages |
+| Sobelow | 2 findings (below) |
+| Dangerous calls in `lib/` | no `String.to_atom`, `binary_to_term`, `Code.eval*`, `System.cmd`, `:os.cmd`; one `apply/3` on a fixed adapter module with an operation allow-list |
 
 Sobelow findings:
 
-1. *HTTPS not enabled* (`config/prod.exs`): Phoenix check; this project has no Phoenix endpoint. **Not applicable**, but see risk R-4.
-2. *Directory traversal in `File.read!`* (`Panel.page/0`, low confidence): the path is a compile-time constant under `priv/`; no user input reaches it. **False positive.**
+1. *HTTPS not enabled* (`config/prod.exs`): a Phoenix check; no Phoenix endpoint here. **Not applicable**, but see the dashboard notes.
+2. *Directory traversal in `File.read!`* (`Panel.page/0`, low confidence): the path is a constant under `priv/`; no user input reaches it. **False positive.**
 
 Manual review of the dashboard server (the only network-facing code):
 
 | Aspect | State |
 |---|---|
-| Binding | Loopback only by default (`127.0.0.1`) |
+| Binding | Loopback only by default |
 | Authentication / authorisation | **None.** Anyone on the machine can use the control API |
-| CSRF | POSTs require `Content-Type: application/json` (forces a CORS preflight a foreign page cannot pass) |
-| Body size | Limited to 64 KiB; invalid length closes the connection |
-| Connection handling | One process per connection; no connection limit, no read-timeout beyond 5 s on request parsing |
+| CSRF | POSTs require `application/json` (forces a CORS preflight a foreign page cannot pass) |
+| Body size | Limited to 64 KiB |
+| Connection handling | One process per connection; no connection limit |
 | TLS | None |
-| Information exposure | Narrative may contain amounts and provider details; not for exposure beyond loopback |
+| Information exposure | Narrative contains amounts and provider details; loopback only |
 
 **Do not bind the dashboard to a non-loopback address without adding authentication and TLS.**
 
-## 6. Process quality
+## 7. Process quality
 
 | Aspect | State |
 |---|---|
-| CI | none: gates run locally only |
-| Pre-commit gate | manual (`mix test.unit && mix test.integration`) |
+| CI | workflow committed; not yet executed on GitHub |
 | Format | `mix format --check-formatted` clean |
 | Type checking | none (no Dialyzer yet); typespecs partial |
-| Branch / mutation coverage | not measured |
-| Performance / load tests | none |
+| Branch coverage | not available in the toolchain; mutation testing used instead |
+| Load / soak testing | none; the metrics layer is ready to observe one |
 
-## 7. Recommended next quality actions
+## 8. Recommended next quality actions
 
-1. Add CI running format, Credo, both gates, mix_audit.
-2. Create the system suite and tagged regression pack.
-3. Add Dialyzer (dialyxir) and complete typespecs.
-4. Add mutation testing to test whether the 100% really bites.
-5. Add a load/soak test feeding the metrics design in [07](../architecture/07-observability-and-performance.md).
-6. Authentication and connection limits before any non-loopback exposure.
+1. Run the CI workflow and make it a required check.
+2. Add Dialyzer (dialyxir) and complete typespecs.
+3. Build a load / soak mode and use the Performance view to set SLOs.
+4. Widen mutation testing to `Payment` (needs an equivalent-mutant review).
+5. Authentication and connection limits before any non-loopback exposure.
+6. Record-and-replay contract tests once a real provider adapter exists.

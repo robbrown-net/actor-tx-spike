@@ -1,7 +1,7 @@
 # 02 · Domain model (Larman style)
 
 A conceptual model of the problem domain: the things the business talks about, not
-software classes. Entities marked 🔲 are planned.
+software classes. Entities marked 🔲 are planned (only `SettlementBatch` remains).
 
 ```mermaid
 classDiagram
@@ -54,6 +54,16 @@ classDiagram
         +period
         +guaranteedRate
     }
+    class LedgerEntry {
+        +guaranteedNet
+        +achievedNet
+        +margin
+    }
+    class Cutoff {
+        +region
+        +localTime
+        +utcOffset
+    }
     class SettlementBatch {
         +region
         +cutoff
@@ -76,7 +86,10 @@ classDiagram
     Transaction "1" --> "0..*" Effect : causes
     Provider "1" --> "0..*" Effect : performs
     Transaction "1" --> "0..*" NarrativeEvent : narrated by
-    Merchant "1" --> "0..*" StandingGuarantee : may hold 🔲
+    Merchant "1" --> "0..*" StandingGuarantee : may hold
+    StandingGuarantee "1" --> "0..*" LedgerEntry : accounted by
+    Transaction "1" --> "0..1" LedgerEntry : settles against guarantee
+    Transaction "0..*" --> "0..1" Cutoff : must finish before
     Transaction "0..*" --> "0..1" SettlementBatch : settled in 🔲
 ```
 
@@ -95,6 +108,9 @@ classDiagram
 | **In doubt** | We asked, got no definite answer; the effect may or may not have happened. |
 | **Reconcile** | Ask the provider (`status`) what it holds for a key. |
 | **Needs review** | A state we refuse to resolve by guessing; a human decides. |
+| **Cut-off** | The latest moment (regional local time) by which a payment must be made and settled. |
+| **Standing guarantee** | A rate a merchant is guaranteed for a period; the gap to what we achieve is margin or exposure. |
+| **Settlement** | The final step after payment; has no undo, so failure escalates. |
 | **Baseline** | A valid default route returned when no quote is usable. |
 | **Health state** | `unknown / healthy / degraded / stalled / quarantined`: our view of a provider. |
 | **Breaker** | Per-provider circuit: `closed / open / half_open`. |

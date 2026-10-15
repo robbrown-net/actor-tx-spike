@@ -12,7 +12,10 @@ erDiagram
     CUSTOMER ||--o{ TRANSACTION : "is paid by"
     POLICY ||--o{ TRANSACTION : "resolved for"
     MERCHANT ||--o{ POLICY : "may override (PLANNED)"
-    MERCHANT ||--o{ STANDING_GUARANTEE : "may hold (PLANNED)"
+    MERCHANT ||--o{ STANDING_GUARANTEE : "may hold"
+    STANDING_GUARANTEE ||--o{ LEDGER_ENTRY : "accounted by"
+    TRANSACTION ||--o| LEDGER_ENTRY : "settles against"
+    TRANSACTION }o--o| CUTOFF : "must finish before"
     TRANSACTION ||--o{ QUOTE : receives
     PROVIDER ||--o{ QUOTE : issues
     QUOTE ||--o| CANDIDATE : "becomes if admissible"
@@ -101,6 +104,20 @@ erDiagram
         string period
         float guaranteed_rate
     }
+    LEDGER_ENTRY {
+        string tx_id PK
+        string merchant_id FK
+        string period
+        float guaranteed_net
+        float achieved_net
+        float margin
+    }
+    CUTOFF {
+        string region PK
+        int hour
+        int minute
+        string utc_offset_rule
+    }
     SETTLEMENT_BATCH {
         string id PK
         string region
@@ -118,8 +135,10 @@ erDiagram
 | Effect | Provider-side only (in the fake); our side is in the narrative | Own table keyed by idempotency key (outbox/inbox) |
 | ProviderHealth / HealthSample | `Provider.Server` state (rolling window of 20) | Time series with retention (see [07](07-observability-and-performance.md)) |
 | NarrativeEvent | `Events` ring buffer, 1,000 events | Append-only log, partitioned, retention policy |
-| Policy | Value held by the demo | Versioned config, cascade global → merchant → customer |
-| Merchant, Customer, StandingGuarantee, SettlementBatch | do not exist | Slice 3 and Phase 3 |
+| StandingGuarantee, LedgerEntry | `Guarantee` struct; `Ledger` process (in memory, idempotent per transaction) | Durable ledger |
+| Cutoff | `Cutoff` struct supplied per region | Reference data with a timezone database |
+| Policy layers (merchant, customer) | `PolicySet` value | Versioned, audited configuration |
+| Merchant, Customer, SettlementBatch | merchant and customer exist only as ids in requests / policy layers | Phase 3 |
 
 ## 6.3 Invariants the model must keep
 

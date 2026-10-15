@@ -6,7 +6,7 @@ Latency assumption: **soft real-time (milliseconds)**. That is why this spike is
 
 ## What it demonstrates
 
-A transaction asks several providers for FX quotes, scores them under a policy, then accepts the best quote, authorises and pays, failing over and compensating when providers misbehave. See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning and [docs/ROADMAP.md](docs/ROADMAP.md) for status.
+A transaction asks several providers for FX quotes, scores them under a cascading policy (global → merchant → customer), then accepts the best quote, authorises, pays and settles before a regional cut-off, failing over and compensating when providers misbehave, and accounting margin against any standing guarantee. See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning and [docs/ROADMAP.md](docs/ROADMAP.md) for status.
 
 ```text
 submit ─► Payment (one process per transaction, owns the lifecycle)
@@ -32,7 +32,10 @@ export PATH="$PWD/.tooling/otp/bin:$PWD/.tooling/elixir/bin:$PATH"
 mix test                 # everything
 mix test.unit            # unit suite, fails below 100% line coverage
 mix test.integration     # integration suite, fails below 85% line coverage
+mix test.regression      # tests pinned to defects found so far
+mix test.system          # boots the real system and drives it over HTTP/SSE
 mix demo                 # live world + dashboard on http://127.0.0.1:4040
+python3 scripts/mutate.py  # mutation testing of the pure core (slow, on demand)
 ```
 
 ### Watch it work

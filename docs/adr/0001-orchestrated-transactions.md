@@ -1,6 +1,6 @@
 # ADR 0001: Orchestrated transactions with declarative flows
 
-Status: accepted. Later decisions: ADRs 0002–0006 (safety rules, provider model, observability, tests, toolchain).
+Status: accepted. Later decisions: ADRs 0002–0007 (safety rules, provider model, observability, tests, toolchain, cascade/guarantees/deadlines).
 Date: 2026-10-15
 
 ## Context

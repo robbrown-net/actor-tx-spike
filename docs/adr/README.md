@@ -8,3 +8,4 @@
 | [0004](0004-observability-as-a-first-class-requirement.md) | Single narrative stream; dashboard as projection and control surface | accepted |
 | [0005](0005-test-strategy-and-quality-gates.md) | Unit 100% / integration >85% gates; invariant testing | accepted |
 | [0006](0006-toolchain-and-dependencies.md) | Local toolchain, no Homebrew, zero runtime dependencies | accepted |
+| [0007](0007-cascading-policy-guarantees-and-deadlines.md) | Cascading policy, standing guarantees, cut-offs, settlement | accepted |

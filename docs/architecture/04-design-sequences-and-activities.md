@@ -41,7 +41,9 @@ sequenceDiagram
     AD-->>P: {:ok, receipt}
     P->>PS: pay(quote, key "tx:prov:pay")
     AD-->>P: {:ok, receipt}
-    P->>EV: tx_completed
+    P->>PS: settle(key "tx:prov:settle")
+    AD-->>P: {:ok, receipt}
+    P->>EV: guarantee margin (if any), tx_completed
     M->>P: await(id)
     P-->>M: {:ok, summary}
 ```
@@ -125,6 +127,26 @@ sequenceDiagram
     Note over SEL: not called until released
 ```
 
+## 4.4b Deadline: cut-off passes mid-transaction
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Payment
+    participant A as Provider A
+    participant EV as Events
+
+    P->>EV: deadline_set (UK cut-off in 90 s)
+    P->>A: accept_quote
+    A-->>P: ok
+    Note over P: cut-off passes
+    P->>EV: deadline_missed
+    P->>A: cancel_accept (undo)
+    A-->>P: ok
+    P->>EV: tx_failed {deadline_missed, UK}
+    Note over P: after pay but before settle:<br/>needs_review {settlement_overdue}, never undone
+```
+
 ## 4.5 Activity: one transaction step (swimlane view)
 
 ```mermaid
@@ -182,7 +204,11 @@ stateDiagram-v2
     quoting --> failed : no usable quote
     accepting --> authorising : accepted
     authorising --> paying : authorised
-    paying --> completed : paid
+    paying --> settling : paid
+    settling --> completed : settled
+    settling --> needs_review : refused / overdue / unresolved
+    settling --> reconciling : timeout / answer lost
+    reconciling --> completed : settle confirmed
     accepting --> reconciling : timeout / answer lost
     authorising --> reconciling : timeout / answer lost
     paying --> reconciling : timeout / answer lost

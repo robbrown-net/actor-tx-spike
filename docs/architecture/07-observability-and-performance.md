@@ -1,14 +1,16 @@
 # 07 · Observability and performance monitoring (design)
 
-**Status: design.** The narrative (what is happening) is built. Resource and performance
-metrics (how much it costs) are **not collected yet**; this document is the plan.
+**Status: built (first version).** The narrative (what is happening) and the resource /
+performance metrics (how much it costs) both exist. This document records the design and
+marks what is implemented. Not yet built: long-term storage metrics (there is no durable
+store), alerting, retention beyond the in-memory rollups, and the 1-hour tier.
 
 ## 7.1 Two kinds of observability
 
 | Question | Mechanism | Status |
 |---|---|---|
 | *What is the system doing, and why?* | `Events` narrative → dashboard / terminal | ✅ built |
-| *How healthy and how expensive is it?* | Metrics sampled from the VM and application | 🔲 designed here |
+| *How healthy and how expensive is it?* | `ActorTxSpike.Metrics` sampler → `/api/metrics` → Performance view | ✅ built (1 s sampling, 1 min rollups) |
 
 Keep the two separate: the narrative is high-cardinality and per-transaction; metrics are
 low-cardinality numbers sampled over time.
@@ -109,11 +111,22 @@ partitioning and a retention policy (e.g. full detail 30 days, summaries after).
 | Event stream lag to dashboard | < 1 s |
 | Monitoring overhead | < 1% CPU, bounded memory |
 
-## 7.6 Implementation plan
+## 7.6 Implementation status
 
-1. `Metrics.Sampler` (VM stats) and `Metrics.Counters` (application counters in ETS).
-2. Rollup process and retention tiers; expose `GET /api/metrics?window=`.
-3. Dashboard "Performance" tab with the charts above.
-4. Load generator and benchmark mode (replay, steady, burst) so the charts have something to show and SLOs are verified.
-5. Durable tier once the Phase 3 store exists.
-6. Optional: adopt `:telemetry` conventions so external tools (Prometheus, OpenTelemetry) can attach.
+| Item | Status |
+|---|---|
+| VM sampler: memory by category, CPU, scheduler utilisation, run queue, reductions, GC, processes, ports | ✅ `Metrics` + `Metrics.VM` |
+| Network: TCP bytes in/out, socket count | ✅ |
+| Top processes by memory and mailbox | ✅ (every 5th sample) |
+| Application metrics from the narrative: throughput by outcome, failovers, end-to-end p50/p95/p99, provider health | ✅ |
+| Own overhead measured per sample | ✅ (about 1.5–2.5 ms per sample in the demo) |
+| Raw ring (15 min, 1 s) and 1-minute rollups (24 h) | ✅ bounded |
+| Performance view with charts and window selector | ✅ |
+| 1-hour rollups, durable tier, storage growth chart | 🔲 needs the Phase 3 store |
+| Alerts into the narrative; SLO tracking | 🔲 |
+| Load generator / benchmark mode | 🔲 |
+| `:telemetry` conventions for external tools | 🔲 |
+
+Known limits: per-process CPU attribution uses reductions in the top-process table only;
+host CPU/memory (`os_mon`) is not collected; network figures cover this VM's TCP sockets,
+including the dashboard's own polling.
