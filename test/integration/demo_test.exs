@@ -27,6 +27,14 @@ defmodule ActorTxSpike.DemoIntegrationTest do
 
   defp ctl(cmd), do: Demo.control(cmd)
 
+  defp wait_until(fun, tries \\ 200) do
+    cond do
+      fun.() -> :ok
+      tries == 0 -> flunk("condition not met")
+      true -> Process.sleep(10) && wait_until(fun, tries - 1)
+    end
+  end
+
   defp provider(snapshot, id), do: Enum.find(snapshot.providers, &(&1.id == id))
 
   test "a submitted transaction completes and shows up everywhere", %{prefix: prefix} do
@@ -91,7 +99,7 @@ defmodule ActorTxSpike.DemoIntegrationTest do
 
   test "auto traffic submits on a timer and can be switched off" do
     assert {:ok, %{auto: true}} = ctl(%{"action" => "auto", "on" => true})
-    Process.sleep(150)
+    wait_until(fn -> Demo.snapshot().submitted >= 2 end)
     assert {:ok, %{auto: false}} = ctl(%{"action" => "auto", "on" => false})
     assert Demo.snapshot().submitted >= 2
     # a stray tick after switching off is ignored
@@ -103,13 +111,11 @@ defmodule ActorTxSpike.DemoIntegrationTest do
     demo = Process.whereis(Demo)
     send(demo, :market)
     send(demo, :sentinel)
-    Process.sleep(60)
-    assert provider(Demo.snapshot(), :bluebird).version == "1"
+    wait_until(fn -> provider(Demo.snapshot(), :bluebird).version == "1" end)
 
     {:ok, _} = ctl(%{"action" => "provider", "id" => "bluebird", "do" => "drift"})
     send(demo, :sentinel)
-    Process.sleep(80)
-    assert provider(Demo.snapshot(), :bluebird).state == :quarantined
+    wait_until(fn -> provider(Demo.snapshot(), :bluebird).state == :quarantined end)
 
     {:ok, _} = ctl(%{"action" => "provider", "id" => "bluebird", "do" => "release"})
     assert provider(Demo.snapshot(), :bluebird).state != :quarantined

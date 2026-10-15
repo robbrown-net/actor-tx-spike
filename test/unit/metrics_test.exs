@@ -10,7 +10,13 @@ defmodule ActorTxSpike.MetricsTest do
 
     {:ok, pid} =
       Metrics.start_link(
-        [name: name, interval_ms: :manual, clock: fn -> Agent.get(clock, & &1) end] ++ opts
+        [
+          name: name,
+          interval_ms: :manual,
+          subscribe: false,
+          clock: fn -> Agent.get(clock, & &1) end
+        ] ++
+          opts
       )
 
     {pid, advance}

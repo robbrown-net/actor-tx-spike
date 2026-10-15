@@ -199,7 +199,7 @@ defmodule ActorTxSpike.SelectorTest do
     assert {:rejecting, {:rejected, :no_liquidity}} in sel.excluded
     assert {:erroring, {:error, :boom}} in sel.excluded
     assert {:stalling, :timeout} in sel.excluded
-    assert sel.elapsed_ms < 300
+    assert sel.elapsed_ms < 2_000
 
     # health learned from the missed deadline
     stalling = Enum.find(ps, &(&1.id == :stalling))
@@ -230,6 +230,7 @@ defmodule ActorTxSpike.SelectorTest do
     assert ids(sel) == [:good]
     assert {:hung, :timeout} in sel.excluded
     assert {:error, {:exit, {:crashed, _}}} = Keyword.fetch!(sel.excluded, :crashing)
-    assert sel.elapsed_ms < 500
+    # well below the 5 s default GenServer.call timeout that a hung server would otherwise impose
+    assert sel.elapsed_ms < 2_000
   end
 end

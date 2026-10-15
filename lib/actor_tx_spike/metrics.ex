@@ -41,7 +41,8 @@ defmodule ActorTxSpike.Metrics do
     VM.enable_scheduler_accounting()
     interval = Keyword.get(opts, :interval_ms, 1_000)
     if is_integer(interval), do: :timer.send_interval(interval, :tick)
-    _history = Events.subscribe()
+    # `subscribe: false` lets tests feed events by hand, isolated from the global stream.
+    if Keyword.get(opts, :subscribe, true), do: Events.subscribe()
 
     {:ok,
      %{
