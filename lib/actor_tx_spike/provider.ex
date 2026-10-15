@@ -34,7 +34,7 @@ defmodule ActorTxSpike.Provider do
   @type request :: %{required(:id) => String.t(), optional(atom()) => term()}
   @type key :: String.t()
   @type receipt :: map()
-  @type effect_op :: :accept_quote | :authorise | :pay
+  @type effect_op :: :accept_quote | :authorise | :pay | :settle
   @type undo_op :: :cancel_accept | :void_authorisation | :refund
   @type probe_info :: %{required(:version) => String.t(), optional(atom()) => term()}
 
@@ -48,6 +48,9 @@ defmodule ActorTxSpike.Provider do
   @callback accept_quote(config, Quote.t(), key) :: effect_result
   @callback authorise(config, Quote.t(), key) :: effect_result
   @callback pay(config, Quote.t(), key) :: effect_result
+
+  @doc "Final settlement of a payment already made. Has no undo."
+  @callback settle(config, key) :: effect_result
 
   @callback cancel_accept(config, key) :: undo_result
   @callback void_authorisation(config, key) :: undo_result

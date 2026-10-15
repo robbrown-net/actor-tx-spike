@@ -1,7 +1,7 @@
 defmodule ActorTxSpike.PaymentTest do
   use ExUnit.Case, async: true
 
-  alias ActorTxSpike.{Events, Payment, Policy}
+  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, Payment, Policy, PolicySet}
   alias ActorTxSpike.Provider.{Fake, Server}
 
   @fast [backoff_ms: 5, reconcile_interval_ms: 5, step_timeout_ms: 500, deadline_ms: 500]
@@ -28,13 +28,19 @@ defmodule ActorTxSpike.PaymentTest do
   defp submit(market, opts \\ [], extra \\ []) do
     id = "tx#{System.unique_integer([:positive])}"
     providers = market |> Map.values() |> Enum.map(&%{id: &1.id, server: &1.server})
+    request = Map.merge(%{id: id, amount: 100}, Keyword.get(extra, :request, %{}))
+
+    policy_opts =
+      if Keyword.has_key?(extra, :policy_set),
+        do: [policy_set: extra[:policy_set]],
+        else: [policy: Keyword.get(extra, :policy, policy())]
+
+    passthrough = Keyword.take(extra, [:cutoffs, :guarantees, :ledger])
 
     {:ok, ^id} =
       ActorTxSpike.submit(
-        %{id: id, amount: 100},
-        providers: providers,
-        policy: Keyword.get(extra, :policy, policy()),
-        opts: Keyword.merge(@fast, opts)
+        request,
+        [providers: providers, opts: Keyword.merge(@fast, opts)] ++ policy_opts ++ passthrough
       )
 
     id
@@ -46,13 +52,14 @@ defmodule ActorTxSpike.PaymentTest do
     m = market()
     id = submit(m)
 
-    assert {:ok, %{provider: :best, steps: [:accept_quote, :authorise, :pay], rate: 1.10}} =
+    assert {:ok,
+            %{provider: :best, steps: [:accept_quote, :authorise, :pay, :settle], rate: 1.10}} =
              Payment.await(id)
 
-    for op <- [:accept_quote, :authorise, :pay], do: assert(count(m, :best, op) == 1)
+    for op <- [:accept_quote, :authorise, :pay, :settle], do: assert(count(m, :best, op) == 1)
     assert count(m, :second, :pay) == 0
 
-    assert %{phase: :completed, provider: :best, done: [:accept_quote, :authorise, :pay]} =
+    assert %{phase: :completed, provider: :best, done: [:accept_quote, :authorise, :pay, :settle]} =
              Payment.snapshot(id)
   end
 
@@ -298,6 +305,187 @@ defmodule ActorTxSpike.PaymentTest do
     assert {:ok, ^id} = ActorTxSpike.submit(%{id: id, amount: 10}, opts)
     assert {:ok, %{id: ^id}} = ActorTxSpike.await(id)
     assert %{phase: :completed} = ActorTxSpike.snapshot(id)
+  end
+
+  # ---- Slice 3: settlement, deadlines, cascading policy, guarantees ----------
+
+  test "settlement is the final step; a transient settle error is retried" do
+    m = market(%{best: [rate: 1.10, settle_mode: [{:error, :blip}, :ok]]})
+    id = submit(m)
+
+    assert {:ok, %{provider: :best, steps: steps}} = Payment.await(id)
+    assert List.last(steps) == :settle
+    assert Fake.calls(m.best.fake)[:settle] == 2
+    assert count(m, :best, :settle) == 1
+  end
+
+  test "a settlement the provider refuses is escalated: the payment is NOT undone" do
+    m = market(%{best: [rate: 1.10, settle_mode: :reject]})
+    id = submit(m)
+
+    assert {:error, {:needs_review, {:settlement_failed, {:rejected, :declined}}}} =
+             Payment.await(id)
+
+    assert count(m, :best, :pay) == 1
+    assert count(m, :best, :refund) == 0
+    assert count(m, :second, :pay) == 0
+  end
+
+  test "a settlement that keeps erroring is escalated" do
+    m = market(%{best: [rate: 1.10, settle_mode: {:error, :down}]})
+    id = submit(m)
+    assert {:error, {:needs_review, {:settlement_failed, {:error, :down}}}} = Payment.await(id)
+  end
+
+  test "a settlement whose answer was lost is reconciled; an unconfirmable one is escalated" do
+    lost = market(%{best: [rate: 1.10, settle_mode: :in_doubt]})
+    assert {:ok, %{provider: :best}} = Payment.await(submit(lost))
+    assert count(lost, :best, :settle) == 1
+
+    vanishing = market(%{best: [rate: 1.10, settle_mode: :timeout]})
+    id = submit(vanishing, reconcile_attempts: 2)
+    assert {:error, {:needs_review, {:in_doubt, :settle}}} = Payment.await(id)
+    assert count(vanishing, :best, :pay) == 1
+  end
+
+  test "a cut-off that has already passed stops the transaction before anything is done" do
+    m = market()
+    past = Cutoff.fixed("UK", System.system_time(:millisecond) - 1_000)
+    id = submit(m, [], request: %{destination_region: "UK"}, cutoffs: %{"UK" => past})
+
+    assert {:error, {:deadline_missed, "UK"}} = Payment.await(id)
+    for op <- [:accept_quote, :authorise, :pay], do: assert(count(m, :best, op) == 0)
+  end
+
+  test "missing the cut-off mid-flight undoes what was done" do
+    m = market(%{best: [rate: 1.10, latency_ms: 100]})
+    cutoff = Cutoff.fixed("EU", System.system_time(:millisecond) + 250)
+    id = submit(m, [], request: %{destination_region: "EU"}, cutoffs: %{"EU" => cutoff})
+
+    assert {:error, {:deadline_missed, "EU"}} = Payment.await(id)
+    assert count(m, :best, :accept_quote) == 1
+    assert count(m, :best, :cancel_accept) == 1
+    assert count(m, :best, :pay) == 0
+  end
+
+  test "a cut-off that passes after payment but before settlement is escalated, not undone" do
+    m = market(%{best: [rate: 1.10, latency_ms: 150]})
+    cutoff = Cutoff.fixed("US", System.system_time(:millisecond) + 525)
+    id = submit(m, [], request: %{destination_region: "US"}, cutoffs: %{"US" => cutoff})
+
+    assert {:error, {:needs_review, {:settlement_overdue, "US"}}} = Payment.await(id)
+    assert count(m, :best, :pay) == 1
+    assert count(m, :best, :refund) == 0
+  end
+
+  test "a request with no region (or an unknown one) has no deadline" do
+    m = market()
+    cutoffs = %{"UK" => Cutoff.fixed("UK", 1)}
+
+    assert {:ok, _} =
+             Payment.await(
+               submit(m, [], request: %{destination_region: "MARS"}, cutoffs: cutoffs)
+             )
+
+    assert {:ok, _} = Payment.await(submit(m, [], cutoffs: cutoffs))
+  end
+
+  describe "cascading policy" do
+    setup do
+      {:ok, set} =
+        PolicySet.new(%{
+          "global" => %{"weights" => %{"cost" => 1}},
+          "merchants" => %{
+            "acme" => %{
+              "overrides_allowed" => true,
+              "policy" => %{"weights" => %{"cost" => 0, "speed" => 1}}
+            }
+          }
+        })
+
+      # cheap but slow vs dear but fast
+      m =
+        market(%{
+          best: [rate: 1.10, latency_ms: 60],
+          second: [rate: 1.05],
+          third: [rate: 1.00, latency_ms: 60]
+        })
+
+      {:ok, set: set, m: m}
+    end
+
+    test "the global objective routes to the best price", %{set: set, m: m} do
+      id = submit(m, [], policy_set: set, request: %{merchant_id: "nobody"})
+      assert {:ok, %{provider: :best, policy: "global"}} = Payment.await(id)
+    end
+
+    test "an entitled merchant's objective routes differently and the story says why", %{
+      set: set,
+      m: m
+    } do
+      Events.subscribe()
+      id = submit(m, [], policy_set: set, request: %{merchant_id: "acme"})
+
+      assert {:ok, %{provider: :second, policy: "global + merchant:acme"}} = Payment.await(id)
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :policy_resolved, message: msg}}, 1_000
+      assert msg =~ "global + merchant:acme"
+    end
+  end
+
+  describe "standing guarantees" do
+    test "margin against the guarantee is narrated and recorded in the ledger" do
+      Events.subscribe()
+      {:ok, ledger} = Ledger.start_link(name: :"ledger_#{System.unique_integer([:positive])}")
+      {:ok, g} = Guarantee.new(%{"merchant_id" => "acme", "period" => "2026-W42", "rate" => 1.05})
+      m = market()
+
+      id =
+        submit(m, [],
+          request: %{merchant_id: "acme", amount: 1_000},
+          guarantees: %{"acme" => g},
+          ledger: ledger
+        )
+
+      assert {:ok, %{guarantee: %{margin: margin}}} = Payment.await(id)
+      assert_in_delta margin, 50.0, 1.0e-6
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :guarantee_margin, message: msg}}, 1_000
+      assert msg =~ "margin 50.0"
+      assert %{count: 1, margin_total: total} = Ledger.summary(ledger, "acme", "2026-W42")
+      assert_in_delta total, 50.0, 1.0e-6
+    end
+
+    test "falling short of the guarantee is exposure, loudly" do
+      Events.subscribe()
+      {:ok, ledger} = Ledger.start_link(name: :"ledger_#{System.unique_integer([:positive])}")
+      {:ok, g} = Guarantee.new(%{"merchant_id" => "acme", "period" => "W1", "rate" => 1.20})
+
+      id =
+        submit(market(), [],
+          request: %{merchant_id: "acme", amount: 1_000},
+          guarantees: %{"acme" => g},
+          ledger: ledger
+        )
+
+      assert {:ok, %{guarantee: %{margin: margin}}} = Payment.await(id)
+      assert margin < 0
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :guarantee_exposure, message: msg}}, 1_000
+      assert msg =~ "EXPOSURE"
+      assert %{exposure_total: exposure} = Ledger.summary(ledger, "acme", "W1")
+      assert exposure < 0
+    end
+
+    test "a missing ledger does not break the transaction" do
+      {:ok, g} = Guarantee.new(%{"merchant_id" => "acme", "period" => "W1", "rate" => 1.0})
+
+      id =
+        submit(market(), [],
+          request: %{merchant_id: "acme"},
+          guarantees: %{"acme" => g},
+          ledger: :no_such_ledger
+        )
+
+      assert {:ok, %{guarantee: %{margin: _}}} = Payment.await(id)
+    end
   end
 
   test "submit/2 returns startup errors instead of crashing" do

@@ -170,7 +170,7 @@ defmodule ActorTxSpike.DashboardIntegrationTest do
 
     assert resp =~ ~s("result":"#{prefix}-1")
 
-    assert {:ok, %{steps: [:accept_quote, :authorise, :pay]}} =
+    assert {:ok, %{steps: [:accept_quote, :authorise, :pay, :settle]}} =
              ActorTxSpike.await("#{prefix}-1", 5_000)
 
     {:ok, s} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false])

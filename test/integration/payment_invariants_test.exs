@@ -35,6 +35,7 @@ defmodule ActorTxSpike.PaymentInvariantsIntegrationTest do
           accept_quote_mode: script(@fault_pool, 6),
           authorise_mode: script(@fault_pool, 6),
           pay_mode: script(@fault_pool, 6),
+          settle_mode: script(@fault_pool, 6),
           cancel_accept_mode: script(@undo_pool, 6),
           void_authorisation_mode: script(@undo_pool, 6),
           status_mode: script(@status_pool, 6)
@@ -88,6 +89,7 @@ defmodule ActorTxSpike.PaymentInvariantsIntegrationTest do
 
     for {id, result} <- results do
       pays = effects_for(market, id, :pay)
+      settles = effects_for(market, id, :settle)
       accepts = effects_for(market, id, :accept_quote)
       authorises = effects_for(market, id, :authorise)
       cancels = effects_for(market, id, :cancel_accept)
@@ -98,8 +100,9 @@ defmodule ActorTxSpike.PaymentInvariantsIntegrationTest do
 
       case result do
         {:ok, %{provider: provider}} ->
-          # 3. exactly once, by the reported provider
+          # 3. paid and settled exactly once, by the reported provider
           assert [{^provider, _key}] = pays
+          assert [{^provider, _key}] = settles
           # 5. everything at *other* providers was undone
           for {p, key} <- accepts, p != provider, do: assert({p, key} in cancels)
           for {p, key} <- authorises, p != provider, do: assert({p, key} in voids)
@@ -108,8 +111,9 @@ defmodule ActorTxSpike.PaymentInvariantsIntegrationTest do
           :ok
 
         {:error, _reason} ->
-          # 4. failed means never paid
+          # 4. failed means never paid, so never settled
           assert pays == []
+          assert settles == []
           # 5. and fully compensated
           for acc <- accepts, do: assert(acc in cancels, "#{id}: #{inspect(acc)} not cancelled")
           for auth <- authorises, do: assert(auth in voids, "#{id}: #{inspect(auth)} not voided")

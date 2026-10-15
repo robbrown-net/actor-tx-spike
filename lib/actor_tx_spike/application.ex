@@ -7,6 +7,7 @@ defmodule ActorTxSpike.Application do
     children = [
       ActorTxSpike.Events,
       ActorTxSpike.Metrics,
+      {ActorTxSpike.Ledger, []},
       {Registry, keys: :unique, name: ActorTxSpike.Registry},
       ActorTxSpike.TransactionSupervisor
     ]

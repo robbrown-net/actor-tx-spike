@@ -79,7 +79,7 @@ defmodule ActorTxSpike.LiveSystemTest do
     end
 
     steps = for e <- story, e["kind"] == "step_succeeded", do: e["data"]["op"]
-    assert steps == ["accept_quote", "authorise", "pay"]
+    assert steps == ["accept_quote", "authorise", "pay", "settle"]
     # providers narrate their own side
     assert Enum.any?(story, &(&1["actor"] =~ "provider:" and &1["kind"] == "responded"))
   end
@@ -176,6 +176,51 @@ defmodule ActorTxSpike.LiveSystemTest do
     control(port, %{"action" => "auto", "on" => false})
 
     assert Enum.count(completed, &(&1["kind"] == "tx_completed")) >= 3
+  end
+
+  test "UC-5 cascade and standing guarantee: merchant policy and margin are narrated and ledgered",
+       %{port: port} do
+    %{"ok" => true, "result" => id} =
+      control(port, %{
+        "action" => "submit",
+        "amount" => 1_000,
+        "merchant" => "acme",
+        "customer" => "vip-1"
+      })
+
+    story = await_story(port, id, "tx_completed")
+    resolved = Enum.find(story, &(&1["kind"] == "policy_resolved"))
+    assert resolved["message"] =~ "global + merchant:acme + customer:vip-1"
+    assert Enum.any?(story, &(&1["kind"] in ["guarantee_margin", "guarantee_exposure"]))
+
+    {200, body} = http(port, "GET", "/api/snapshot")
+    ledger = JSON.decode!(body)["ledger"]
+    assert Enum.any?(ledger, &(&1["merchant_id"] == "acme" and &1["count"] >= 1))
+
+    # a merchant without the paid entitlement is ignored, and the story says so
+    %{"result" => id2} =
+      control(port, %{"action" => "submit", "amount" => 500, "merchant" => "globex"})
+
+    story2 = await_story(port, id2, "tx_completed")
+
+    assert Enum.find(story2, &(&1["kind"] == "policy_resolved"))["message"] =~
+             "ignored: not_entitled"
+  end
+
+  test "deadline: a regional cut-off that has passed stops the transaction and undoes its work",
+       %{port: port} do
+    # a cut-off a moment away; with realistic provider latency the transaction crosses it
+    control(port, %{"action" => "pace", "factor" => 1.0})
+    control(port, %{"action" => "cutoff", "region" => "UK", "in_seconds" => 1.5})
+    %{"result" => id} = control(port, %{"action" => "submit", "amount" => 750, "region" => "UK"})
+    story = await_story(port, id, "tx_failed")
+    control(port, %{"action" => "cutoff", "region" => "UK", "in_seconds" => 0})
+    control(port, %{"action" => "pace", "factor" => 0.05})
+
+    kinds = Enum.map(story, & &1["kind"])
+    assert "deadline_set" in kinds
+    assert "deadline_missed" in kinds
+    refute "tx_completed" in kinds
   end
 
   # ---- helpers -----------------------------------------------------------

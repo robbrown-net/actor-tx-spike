@@ -30,16 +30,17 @@ defmodule ActorTxSpike.Payment do
   """
   use GenServer
 
-  alias ActorTxSpike.{Events, Selector}
+  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, PolicySet, Selector}
   alias ActorTxSpike.Provider.{Quote, Server}
 
   @undo %{accept_quote: :cancel_accept, authorise: :void_authorisation, pay: :refund}
-  @phase %{accept_quote: :accepting, authorise: :authorising, pay: :paying}
-  @next %{accept_quote: :authorise, authorise: :pay, pay: nil}
+  @phase %{accept_quote: :accepting, authorise: :authorising, pay: :paying, settle: :settling}
+  @next %{accept_quote: :authorise, authorise: :pay, pay: :settle, settle: nil}
   @verb %{
     accept_quote: "accept the quote",
     authorise: "authorise the payment",
     pay: "make the payment",
+    settle: "settle the payment",
     cancel_accept: "cancel the accepted quote",
     void_authorisation: "void the authorisation",
     refund: "refund"
@@ -86,6 +87,11 @@ defmodule ActorTxSpike.Payment do
       providers: Keyword.fetch!(args, :providers),
       policy: Keyword.fetch!(args, :policy),
       opts: Map.new(Keyword.merge(@defaults, Keyword.get(args, :opts, []))),
+      cutoff: Keyword.get(args, :cutoff),
+      deadline_ms: nil,
+      policy_layers: Keyword.get(args, :policy_layers, []),
+      guarantee: Keyword.get(args, :guarantee),
+      ledger: Keyword.get(args, :ledger, Ledger),
       phase: :received,
       candidates: [],
       current: nil,
@@ -112,6 +118,8 @@ defmodule ActorTxSpike.Payment do
     state =
       note(state, :tx_received, "transaction received: amount #{amount}", %{amount: amount})
 
+    state = announce_policy(state)
+    state = announce_deadline(state)
     state = %{state | phase: :quoting}
     {:noreply, run(state, :selection, fn -> do_select(state) end)}
   end
@@ -130,6 +138,7 @@ defmodule ActorTxSpike.Payment do
        id: state.id,
        phase: state.phase,
        provider: state.current && state.current.provider_id,
+       deadline_ms: state.deadline_ms,
        done: Enum.reverse(state.done),
        history: Enum.reverse(state.history),
        result: state.result
@@ -232,7 +241,7 @@ defmodule ActorTxSpike.Payment do
     step_succeeded(state, op)
   end
 
-  defp handle_result({:status, :pay}, unresolved, state) do
+  defp handle_result({:status, op}, unresolved, state) when op in [:pay, :settle] do
     c = state.current
 
     if state.reconcile_n < state.opts.reconcile_attempts do
@@ -240,18 +249,18 @@ defmodule ActorTxSpike.Payment do
         note(
           state,
           :reconcile_pending,
-          "#{c.provider_id} cannot yet confirm the payment (#{inspect(unresolved)}); " <>
+          "#{c.provider_id} cannot yet confirm #{op} (#{inspect(unresolved)}); " <>
             "asking again (#{state.reconcile_n}/#{state.opts.reconcile_attempts})",
           %{provider: c.provider_id}
         )
 
-      Process.send_after(self(), {:reconcile_again, :pay}, state.opts.reconcile_interval_ms)
+      Process.send_after(self(), {:reconcile_again, op}, state.opts.reconcile_interval_ms)
       %{state | reconcile_n: state.reconcile_n + 1}
     else
       needs_review(
         state,
-        {:in_doubt, :pay},
-        "payment with #{c.provider_id} is unresolved; NOT failing over (risk of double payment)"
+        {:in_doubt, op},
+        "#{op} with #{c.provider_id} is unresolved; NOT failing over (the payment may already have happened)"
       )
     end
   end
@@ -360,6 +369,15 @@ defmodule ActorTxSpike.Payment do
     end
   end
 
+  defp step_failed(state, :settle, reason) do
+    # The payment already happened and cannot be undone: a human must settle it.
+    needs_review(
+      state,
+      {:settlement_failed, reason},
+      "#{state.current.provider_id} could not settle a payment that was already made: #{inspect(reason)}"
+    )
+  end
+
   defp step_failed(state, op, reason) do
     c = state.current
 
@@ -385,6 +403,16 @@ defmodule ActorTxSpike.Payment do
     next_undo(state)
   end
 
+  defp next_undo(%{undo_queue: [], after_undo: {:abort, reason}} = state) do
+    finish(
+      state,
+      :failed,
+      {:error, reason},
+      :tx_failed,
+      "stopping: #{inspect(reason)}; everything done so far has been undone"
+    )
+  end
+
   defp next_undo(%{undo_queue: []} = state) do
     {:failover, reason} = state.after_undo
 
@@ -401,13 +429,17 @@ defmodule ActorTxSpike.Payment do
   defp complete(state) do
     c = state.current
 
+    {state, guarantee} = settle_guarantee(state, c)
+
     summary = %{
       id: state.id,
       provider: c.provider_id,
       rate: c.quote.rate,
       fee: c.quote.fee,
       net: c.net,
-      steps: Enum.reverse(state.done)
+      steps: Enum.reverse(state.done),
+      guarantee: guarantee,
+      policy: PolicySet.describe(state.policy_layers)
     }
 
     finish(
@@ -448,9 +480,38 @@ defmodule ActorTxSpike.Payment do
   end
 
   defp run_step(state, op) do
+    cond do
+      deadline_passed?(state) and op == :settle ->
+        needs_review(
+          state,
+          {:settlement_overdue, region(state)},
+          "the #{region(state)} cut-off has passed before settlement was confirmed"
+        )
+
+      deadline_passed?(state) ->
+        state =
+          note(
+            state,
+            :deadline_missed,
+            "the #{region(state)} cut-off has passed; stopping and undoing",
+            %{
+              region: region(state)
+            }
+          )
+
+        undos = Enum.map(state.done, &{@undo[&1], &1})
+        start_compensation(state, undos, {:abort, {:deadline_missed, region(state)}})
+
+      true ->
+        do_run_step(state, op)
+    end
+  end
+
+  defp do_run_step(state, op) do
     c = state.current
     key = key(state, op)
     timeout = state.opts.step_timeout_ms
+    args = if op == :settle, do: [key], else: [c.quote, key]
 
     state =
       note(
@@ -460,7 +521,7 @@ defmodule ActorTxSpike.Payment do
         %{provider: c.provider_id, op: op, key: key, attempt: state.attempt}
       )
 
-    run(state, {:step, op}, fn -> Server.invoke(c.server, op, [c.quote, key], timeout) end)
+    run(state, {:step, op}, fn -> Server.invoke(c.server, op, args, timeout) end)
   end
 
   defp run_undo(state, undo) do
@@ -512,8 +573,75 @@ defmodule ActorTxSpike.Payment do
     :exit, reason -> {:error, {:exit, reason}}
   end
 
+  defp announce_policy(%{policy_layers: []} = state), do: state
+
+  defp announce_policy(state) do
+    note(state, :policy_resolved, "routing policy: #{PolicySet.describe(state.policy_layers)}", %{
+      layers: PolicySet.describe(state.policy_layers)
+    })
+  end
+
+  defp announce_deadline(%{cutoff: nil} = state), do: state
+
+  defp announce_deadline(state) do
+    now = System.system_time(:millisecond)
+    deadline = Cutoff.next_ms(state.cutoff, now)
+    seconds = Float.round((deadline - now) / 1_000, 1)
+
+    note(
+      %{state | deadline_ms: deadline},
+      :deadline_set,
+      "#{state.cutoff.region} cut-off in #{seconds}s",
+      %{region: state.cutoff.region, deadline_ms: deadline, seconds: seconds}
+    )
+  end
+
+  defp deadline_passed?(%{deadline_ms: nil}), do: false
+
+  defp deadline_passed?(%{deadline_ms: deadline}),
+    do: System.system_time(:millisecond) >= deadline
+
+  defp region(state), do: state.cutoff.region
+
+  defp settle_guarantee(%{guarantee: nil} = state, _candidate), do: {state, nil}
+
+  defp settle_guarantee(%{guarantee: %Guarantee{} = g} = state, candidate) do
+    amount = state.request[:amount]
+    result = Guarantee.evaluate(g, amount, candidate.net)
+
+    try do
+      Ledger.record(state.ledger, %{
+        tx_id: state.id,
+        merchant_id: g.merchant_id,
+        period: g.period,
+        amount: amount,
+        guaranteed_net: result.guaranteed_net,
+        achieved_net: result.achieved_net,
+        margin: result.margin
+      })
+    catch
+      :exit, _ -> :ok
+    end
+
+    {kind, word} =
+      if result.margin >= 0,
+        do: {:guarantee_margin, "margin"},
+        else: {:guarantee_exposure, "EXPOSURE"}
+
+    state =
+      note(
+        state,
+        kind,
+        "guarantee #{g.period} for #{g.merchant_id}: #{word} #{Float.round(result.margin, 2)} " <>
+          "(guaranteed #{Float.round(result.guaranteed_net, 2)}, achieved #{Float.round(result.achieved_net, 2)})",
+        Map.merge(result, %{merchant_id: g.merchant_id, period: g.period})
+      )
+
+    {state, result}
+  end
+
   defp key(state, op) do
-    short = %{accept_quote: "accept", authorise: "authorise", pay: "pay"}
+    short = %{accept_quote: "accept", authorise: "authorise", pay: "pay", settle: "settle"}
     "#{state.id}:#{state.current.provider_id}:#{short[op]}"
   end
 

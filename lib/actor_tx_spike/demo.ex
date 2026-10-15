@@ -10,7 +10,7 @@ defmodule ActorTxSpike.Demo do
   """
   use GenServer
 
-  alias ActorTxSpike.Events
+  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, PolicySet}
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   @providers [
@@ -21,7 +21,7 @@ defmodule ActorTxSpike.Demo do
     zenith: [rate: 1.0810, fee: 1.0, latency_ms: 900]
   ]
 
-  @modes ~w(quote_mode accept_quote_mode authorise_mode pay_mode cancel_accept_mode
+  @modes ~w(quote_mode accept_quote_mode authorise_mode pay_mode settle_mode cancel_accept_mode
             void_authorisation_mode refund_mode status_mode probe_mode)a
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -49,20 +49,24 @@ defmodule ActorTxSpike.Demo do
         {id, %{id: id, fake: fake, server: server, base: Fake.settings(fake)}}
       end
 
-    {:ok, policy} =
-      ActorTxSpike.Policy.new(%{
-        "weights" => %{"cost" => 0.6, "speed" => 0.3, "reliability" => 0.1},
-        "max_bps_from_best" => 100,
-        "min_validity_ms" => 1_000
-      })
+    global = %{
+      "weights" => %{"cost" => 0.6, "speed" => 0.3, "reliability" => 0.1},
+      "max_bps_from_best" => 100,
+      "min_validity_ms" => 1_000
+    }
+
+    {:ok, policy_set} = PolicySet.new(demo_policy_set(global))
+
+    {:ok, acme_guarantee} =
+      Guarantee.new(%{"merchant_id" => "acme", "period" => iso_week(), "rate" => 1.078})
 
     state = %{
       providers: providers,
-      policy: policy,
-      policy_data: %{
-        "weights" => %{"cost" => 0.6, "speed" => 0.3, "reliability" => 0.1},
-        "max_bps_from_best" => 100
-      },
+      policy_set: policy_set,
+      policy_data: Map.delete(global, "min_validity_ms"),
+      global: global,
+      cutoffs: %{},
+      guarantees: %{"acme" => acme_guarantee},
       auto: false,
       auto_interval_ms: Keyword.get(opts, :auto_interval_ms, 4_000),
       sentinel_interval_ms: Keyword.get(opts, :sentinel_interval_ms, 10_000),
@@ -131,7 +135,19 @@ defmodule ActorTxSpike.Demo do
 
   defp do_control(%{"action" => "submit"} = cmd, state) do
     amount = cmd |> Map.get("amount", 1_000) |> to_number()
-    submit(state, amount)
+
+    extras =
+      for {key, field} <- [
+            {"merchant", :merchant_id},
+            {"customer", :customer_id},
+            {"region", :destination_region}
+          ],
+          value = cmd[key],
+          is_binary(value) and value != "",
+          into: %{},
+          do: {field, value}
+
+    submit(state, amount, extras)
   end
 
   defp do_control(%{"action" => "auto", "on" => on}, state) do
@@ -152,13 +168,19 @@ defmodule ActorTxSpike.Demo do
   defp do_control(%{"action" => "policy"} = cmd, state) do
     data = Map.take(cmd, ["weights", "max_bps_from_best", "min_validity_ms", "max_latency_ms"])
 
-    case ActorTxSpike.Policy.new(data) do
-      {:ok, policy} ->
-        Events.emit(nil, :operator, :policy_changed, "policy changed: #{inspect(data)}", data)
-        {{:ok, %{policy: data}}, %{state | policy: policy, policy_data: data}}
+    with {:ok, _policy} <- ActorTxSpike.Policy.new(data),
+         {:ok, set} <- PolicySet.new(demo_policy_set(data)) do
+      Events.emit(
+        nil,
+        :operator,
+        :policy_changed,
+        "global policy changed: #{inspect(data)}",
+        data
+      )
 
-      {:error, errors} ->
-        {{:error, Enum.join(errors, "; ")}, state}
+      {{:ok, %{policy: data}}, %{state | policy_set: set, policy_data: data, global: data}}
+    else
+      {:error, errors} -> {{:error, Enum.join(errors, "; ")}, state}
     end
   end
 
@@ -182,17 +204,38 @@ defmodule ActorTxSpike.Demo do
     end
   end
 
+  defp do_control(%{"action" => "cutoff", "region" => region} = cmd, state)
+       when is_binary(region) do
+    seconds = cmd |> Map.get("in_seconds", 0) |> to_number()
+
+    if seconds > 0 do
+      at = System.system_time(:millisecond) + round(seconds * 1_000)
+
+      Events.emit(nil, :operator, :cutoff_set, "operator: #{region} cut-off in #{seconds}s", %{
+        region: region
+      })
+
+      {{:ok, %{region: region, in_seconds: seconds}},
+       %{state | cutoffs: Map.put(state.cutoffs, region, Cutoff.fixed(region, at))}}
+    else
+      {{:ok, %{region: region, cleared: true}},
+       %{state | cutoffs: Map.delete(state.cutoffs, region)}}
+    end
+  end
+
   defp do_control(_other, state), do: {{:error, "unknown command"}, state}
 
-  defp submit(state, amount) do
+  defp submit(state, amount, extras \\ %{}) do
     n = state.counter + 1
     id = "#{state.prefix}-#{n}"
     providers = for {pid, p} <- state.providers, do: %{id: pid, server: p.server}
 
     result =
-      ActorTxSpike.submit(%{id: id, amount: amount},
+      ActorTxSpike.submit(Map.merge(%{id: id, amount: amount}, extras),
         providers: providers,
-        policy: state.policy,
+        policy_set: state.policy_set,
+        cutoffs: state.cutoffs,
+        guarantees: state.guarantees,
         opts: state.payment_opts
       )
 
@@ -213,6 +256,8 @@ defmodule ActorTxSpike.Demo do
   defp preset("authorise_fails", _cmd, _p, _state), do: {:ok, [authorise_mode: :reject]}
   defp preset("pay_answer_lost", _cmd, _p, _state), do: {:ok, [pay_mode: [:in_doubt, :ok]]}
   defp preset("pay_vanishes", _cmd, _p, _state), do: {:ok, [pay_mode: :timeout]}
+  defp preset("settle_fails", _cmd, _p, _state), do: {:ok, [settle_mode: :reject]}
+  defp preset("settle_vanishes", _cmd, _p, _state), do: {:ok, [settle_mode: :timeout]}
 
   defp preset("drift", _cmd, p, _state),
     do: {:ok, [version: "v#{System.unique_integer([:positive])}-#{p.id}"]}
@@ -261,10 +306,52 @@ defmodule ActorTxSpike.Demo do
     %{
       providers: providers,
       policy: state.policy_data,
+      merchants: [
+        %{id: "acme", entitled: true, guarantee: 1.078},
+        %{id: "globex", entitled: false}
+      ],
+      customers: [%{id: "vip-1"}],
+      cutoffs:
+        for(
+          {region, c} <- state.cutoffs,
+          do: %{
+            region: region,
+            remaining_ms: Cutoff.remaining_ms(c, System.system_time(:millisecond))
+          }
+        ),
+      ledger: Ledger.all(),
       auto: state.auto,
       pace: state.pace,
       submitted: state.counter
     }
+  end
+
+  # acme has paid for routing overrides (cost-led, with a rate guarantee);
+  # globex has not (its override is ignored); vip-1 is a speed-led special customer.
+  defp demo_policy_set(global) do
+    %{
+      "global" => global,
+      "merchants" => %{
+        "acme" => %{
+          "overrides_allowed" => true,
+          "policy" => %{"weights" => %{"cost" => 0.9, "speed" => 0.05, "reliability" => 0.05}}
+        },
+        "globex" => %{"overrides_allowed" => false, "policy" => %{"weights" => %{"cost" => 1.0}}}
+      },
+      "customers" => %{
+        "vip-1" => %{
+          "policy" => %{
+            "weights" => %{"cost" => 0.1, "speed" => 0.8, "reliability" => 0.1},
+            "max_bps_from_best" => 150
+          }
+        }
+      }
+    }
+  end
+
+  defp iso_week do
+    {year, week} = :calendar.iso_week_number(Date.to_erl(Date.utc_today()))
+    "#{year}-W#{String.pad_leading(Integer.to_string(week), 2, "0")}"
   end
 
   defp to_number(n) when is_number(n), do: n

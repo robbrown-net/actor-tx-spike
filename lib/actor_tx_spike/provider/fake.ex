@@ -7,7 +7,7 @@ defmodule ActorTxSpike.Provider.Fake do
   ## Scripting
 
   Each operation has a mode (`:quote_mode`, `:accept_quote_mode`,
-  `:authorise_mode`, `:pay_mode`, `:cancel_accept_mode`,
+  `:authorise_mode`, `:pay_mode`, `:settle_mode`, `:cancel_accept_mode`,
   `:void_authorisation_mode`, `:refund_mode`, `:status_mode`, `:probe_mode`):
 
   * `:ok`
@@ -40,6 +40,7 @@ defmodule ActorTxSpike.Provider.Fake do
     accept_quote: :accept_quote_mode,
     authorise: :authorise_mode,
     pay: :pay_mode,
+    settle: :settle_mode,
     cancel_accept: :cancel_accept_mode,
     void_authorisation: :void_authorisation_mode,
     refund: :refund_mode,
@@ -58,6 +59,7 @@ defmodule ActorTxSpike.Provider.Fake do
     accept_quote_mode: :ok,
     authorise_mode: :ok,
     pay_mode: :ok,
+    settle_mode: :ok,
     cancel_accept_mode: :ok,
     void_authorisation_mode: :ok,
     refund_mode: :ok,
@@ -122,6 +124,9 @@ defmodule ActorTxSpike.Provider.Fake do
 
   @impl true
   def pay(pid, quote, key), do: effect(pid, :pay, quote, key)
+
+  @impl true
+  def settle(pid, key), do: effect(pid, :settle, nil, key)
 
   @impl true
   def cancel_accept(pid, key), do: effect(pid, :cancel_accept, nil, key)

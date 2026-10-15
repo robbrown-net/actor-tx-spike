@@ -10,6 +10,7 @@ defmodule ActorTxSpike.Provider.ServerTest do
     def accept_quote(_, _, _), do: :timeout
     def authorise(_, _, _), do: :timeout
     def pay(_, _, _), do: :timeout
+    def settle(_, _), do: :timeout
     def cancel_accept(_, _), do: :timeout
     def void_authorisation(_, _), do: :timeout
     def refund(_, _), do: :timeout
@@ -30,6 +31,7 @@ defmodule ActorTxSpike.Provider.ServerTest do
     def accept_quote(_, _, _), do: :timeout
     def authorise(_, _, _), do: :timeout
     def pay(_, _, _), do: :timeout
+    def settle(_, _), do: :timeout
     def cancel_accept(_, _), do: :timeout
     def void_authorisation(_, _), do: :timeout
     def refund(_, _), do: :timeout

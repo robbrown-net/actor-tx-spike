@@ -22,6 +22,7 @@ defmodule ActorTxSpike.Provider.Server do
     :accept_quote,
     :authorise,
     :pay,
+    :settle,
     :cancel_accept,
     :void_authorisation,
     :refund,

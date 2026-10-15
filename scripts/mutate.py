@@ -7,7 +7,7 @@ at a time (flip a comparison, swap and/or, drop a negation, off-by-one) and
 run the relevant tests. A mutant the tests fail on is KILLED; one they pass on
 SURVIVED (a gap). Mutants that do not compile are discarded.
 
-Usage: python3 scripts/mutate.py [--max-per-file N]
+Usage: python3 scripts/mutate.py [--max-per-file N] [--only cutoff.ex,policy_set.ex]
 Requires the toolchain on PATH (see README). Restores every file afterwards.
 """
 import re, subprocess, sys, os, json
@@ -16,7 +16,15 @@ TARGETS = {
     "lib/actor_tx_spike/policy.ex": ["test/unit/policy_test.exs", "test/unit/selector_test.exs"],
     "lib/actor_tx_spike/provider/health.ex": ["test/unit/provider/health_test.exs", "test/unit/provider/server_test.exs"],
     "lib/actor_tx_spike/selector.ex": ["test/unit/selector_test.exs", "test/unit/policy_test.exs"],
+    "lib/actor_tx_spike/cutoff.ex": ["test/unit/cutoff_test.exs"],
+    "lib/actor_tx_spike/policy_set.ex": ["test/unit/policy_set_test.exs"],
+    "lib/actor_tx_spike/guarantee.ex": ["test/unit/guarantee_ledger_test.exs"],
+    "lib/actor_tx_spike/ledger.ex": ["test/unit/guarantee_ledger_test.exs"],
+    "lib/actor_tx_spike/metrics/stats.ex": ["test/unit/metrics/stats_test.exs"],
 }
+if "--only" in sys.argv:
+    wanted = sys.argv[sys.argv.index("--only") + 1].split(",")
+    TARGETS = {k: v for k, v in TARGETS.items() if any(k.endswith(w) for w in wanted)}
 RULES = [
     (re.compile(r"(?<![<>=!])>=(?!=)"), ">"), (re.compile(r"(?<![<>=!])<=(?!=)"), "<"),
     (re.compile(r"(?<![<>=!|-])>(?![=>])"), ">="), (re.compile(r"(?<![<>=!|-])<(?![=<-])"), "<="),

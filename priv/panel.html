@@ -130,9 +130,13 @@
   <h1>Actor TX Monitor</h1>
   <span class="conn" id="conn"><i></i><span>connecting…</span></span>
   <div class="grp"><label>Amount</label><input type="number" id="amount" value="1000" min="1" step="100">
+    <label>Merchant</label><select id="merchant"><option value="">–</option><option value="acme">acme (overrides, guarantee)</option><option value="globex">globex (no overrides)</option></select>
+    <label>Customer</label><select id="customer"><option value="">–</option><option value="vip-1">vip-1 (speed-led)</option></select>
+    <label>Region</label><select id="region"><option value="">–</option><option value="UK">UK</option><option value="EU">EU</option></select>
     <button class="primary" id="submit">Submit transaction</button>
     <button id="auto">Auto traffic: off</button></div>
   <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button></div>
+  <div class="grp"><label>Cut-off in</label><input type="number" id="cutoffSecs" value="20" min="1" style="width:60px"><label>s</label><button id="setCutoff">Set cut-off for region</button><button id="clearCutoff">Clear</button></div>
   <div class="grp"><button id="motion" title="Turn animation on or off">Motion: on</button></div>
   <div class="grp"><label>Pace <span id="paceVal">1.0×</span></label><input type="range" id="pace" min="0.1" max="2" step="0.1" value="1"></div>
   <div class="grp">
@@ -169,10 +173,11 @@
   <div class="chart"><h3><span>End-to-end latency</span><span id="e2eNow"></span></h3><svg id="cE2e" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lE2e"></div></div>
   <div class="chart"><h3><span>Provider latency p95</span><span></span></h3><svg id="cProv" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lProv"></div></div>
   <div class="chart"><h3><span>Hottest processes</span><span></span></h3><table class="top" id="topTable"></table></div>
+  <div class="chart"><h3><span>Guarantee ledger</span><span></span></h3><table class="top" id="ledgerTable"><tr><td>no guaranteed transactions yet</td></tr></table></div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>
-const STAGES = ['quoting','accepting','authorising','paying','completed'];
+const STAGES = ['quoting','accepting','authorising','paying','settling','completed'];
 const S = { events: [], txs: new Map(), prov: new Map(), snap: null, sel: null, dirty: true };
 
 const $ = id => document.getElementById(id);
@@ -196,7 +201,15 @@ function post(body) {
 function refreshSnapshot() {
   fetch('/api/snapshot').then(r => r.json()).then(s => { S.snap = s; S.dirty = true; syncControls(s); }).catch(() => {});
 }
+function renderLedger(s) {
+  const t = $('ledgerTable');
+  const rows = s.ledger || [];
+  t.innerHTML = rows.length ? '<tr><th>merchant</th><th>period</th><th>tx</th><th>margin</th><th>exposure</th></tr>' +
+    rows.map(r => `<tr><td>${esc(r.merchant_id)}</td><td>${esc(r.period)}</td><td>${r.count}</td><td style="color:${r.margin_total >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.margin_total.toFixed(2)}</td><td>${r.exposure_total.toFixed(2)}</td></tr>`).join('')
+    : '<tr><td>no guaranteed transactions yet</td></tr>';
+}
 function syncControls(s) {
+  renderLedger(s);
   const a = $('auto'); a.textContent = 'Auto traffic: ' + (s.auto ? 'on' : 'off'); a.classList.toggle('on', s.auto);
 }
 
@@ -223,9 +236,9 @@ function ingest(ev) {
 
 function evClass(ev) {
   const k = ev.kind;
-  if (['step_failed','tx_failed','quote_failed','quote_excluded','undo_retry'].includes(k)) return 'bad';
-  if (['needs_review','in_doubt','reconcile_pending','cancel_by_key','failover','step_retry','provider_skipped'].includes(k)) return 'warn';
-  if (['tx_completed','step_succeeded','reconciled','selection_made','undone'].includes(k)) return 'good';
+  if (['step_failed','tx_failed','quote_failed','quote_excluded','undo_retry','deadline_missed','guarantee_exposure'].includes(k)) return 'bad';
+  if (['needs_review','in_doubt','reconcile_pending','cancel_by_key','failover','step_retry','provider_skipped','deadline_set','cutoff_set'].includes(k)) return 'warn';
+  if (['tx_completed','step_succeeded','reconciled','selection_made','undone','guarantee_margin','policy_resolved'].includes(k)) return 'good';
   return '';
 }
 const actorClass = a => a.startsWith('provider:') ? 'provider' : a;
@@ -233,7 +246,7 @@ const actorClass = a => a.startsWith('provider:') ? 'provider' : a;
 /* ---------- providers: built once per provider, then patched in place ---------- */
 const provEls = new Map();
 const ACTIONS = [['slow','slow'],['stall','stall'],['error','error'],['reject quotes','reject'],['authorise fails','authorise_fails'],
-  ['pay answer lost','pay_answer_lost'],['pay vanishes','pay_vanishes'],['version drift','drift'],['release','release'],['heal','heal']];
+  ['pay answer lost','pay_answer_lost'],['pay vanishes','pay_vanishes'],['settlement fails','settle_fails'],['settlement vanishes','settle_vanishes'],['version drift','drift'],['release','release'],['heal','heal']];
 
 function createProvider(p) {
   const el = document.createElement('div');
@@ -280,7 +293,7 @@ function renderProviders() {
 
 /* ---------- transactions: persistent cards, pipeline chips change class in place ---------- */
 const txEls = new Map();
-const LABELS = { quoting:'quote', accepting:'accept', authorising:'authorise', paying:'pay', completed:'done' };
+const LABELS = { quoting:'quote', accepting:'accept', authorising:'authorise', paying:'pay', settling:'settle', completed:'done' };
 function createTx(tx) {
   const el = document.createElement('div');
   el.className = 'tx'; el.dataset.tx = tx.id;
@@ -475,7 +488,9 @@ document.addEventListener('click', e => {
   if (tx) { S.sel = S.sel === tx.dataset.tx ? null : tx.dataset.tx; S.dirty = true; }
 });
 $('clearSel').onclick = () => { S.sel = null; S.dirty = true; };
-$('submit').onclick = () => post({ action:'submit', amount:+$('amount').value });
+$('submit').onclick = () => post({ action:'submit', amount:+$('amount').value, merchant:$('merchant').value, customer:$('customer').value, region:$('region').value });
+$('setCutoff').onclick = () => { const r = $('region').value; if (!r) return toast('choose a region first', true); post({ action:'cutoff', region:r, in_seconds:+$('cutoffSecs').value }); };
+$('clearCutoff').onclick = () => { const r = $('region').value; if (!r) return toast('choose a region first', true); post({ action:'cutoff', region:r, in_seconds:0 }); };
 $('auto').onclick = () => post({ action:'auto', on: !(S.snap && S.snap.auto) });
 $('pace').oninput = e => {
   $('paceVal').textContent = (+e.target.value).toFixed(1) + '×';
