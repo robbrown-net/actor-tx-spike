@@ -44,6 +44,45 @@ defmodule ActorTxSpike.Provider.HealthTest do
     end
   end
 
+  describe "boundaries and guards" do
+    test "an error rate exactly at the threshold is degraded" do
+      h =
+        Health.new(failure_threshold: 99, degraded_error_rate: 0.2)
+        |> Health.record(:error, 1, 0)
+
+      h = Enum.reduce(1..4, h, fn _, acc -> Health.record(acc, :success, 1, 0) end)
+      assert %{error_rate: 0.2} = Health.stats(h)
+      assert Health.state(h) == :degraded
+    end
+
+    test "just under the threshold is healthy" do
+      h = Health.new(failure_threshold: 99, degraded_error_rate: 0.2)
+      h = Enum.reduce(1..6, h, fn _, acc -> Health.record(acc, :success, 1, 0) end)
+      h = Health.record(h, :error, 1, 0)
+      # 1 error in 7 = 0.14
+      assert Health.state(h) == :healthy
+    end
+
+    test "latency exactly at slow_ms is degraded" do
+      assert Health.new(slow_ms: 100) |> Health.record(:success, 100, 0) |> Health.state() ==
+               :degraded
+
+      assert Health.new(slow_ms: 100) |> Health.record(:success, 99, 0) |> Health.state() ==
+               :healthy
+    end
+
+    test "record/4 rejects unknown outcomes and non-integer latency" do
+      h = Health.new()
+      assert_raise FunctionClauseError, fn -> Health.record(h, :bogus, 5, 0) end
+      assert_raise FunctionClauseError, fn -> Health.record(h, :success, 5.5, 0) end
+    end
+
+    test "a failure on a provider that is not recovering leaves recovering at zero" do
+      h = Health.new(failure_threshold: 99) |> Health.record(:error, 5, 0)
+      assert h.recovering == 0
+    end
+  end
+
   describe "stats/1" do
     test "empty window" do
       assert %{samples: 0, error_rate: +0.0, mean_ms: 0, p95_ms: 0} = Health.stats(Health.new())
@@ -96,6 +135,8 @@ defmodule ActorTxSpike.Provider.HealthTest do
       assert {:ok, _} = Health.checkout(closed, 2)
     end
 
+    @tag :regression
+
     test "recovery is gradual: a streak of successes is required to be healthy" do
       h = fail(Health.new(failure_threshold: 5, cool_down_ms: 0, recovery_successes: 3), 5, 0)
       {:ok, probing} = Health.checkout(h, 0)
@@ -109,6 +150,8 @@ defmodule ActorTxSpike.Provider.HealthTest do
       assert h.recovering == 0
       assert Health.state(h) == :healthy
     end
+
+    @tag :regression
 
     test "a failure while recovering restarts the streak" do
       h = fail(Health.new(failure_threshold: 5, cool_down_ms: 0, recovery_successes: 3), 5, 0)
@@ -130,11 +173,15 @@ defmodule ActorTxSpike.Provider.HealthTest do
       assert reopened.opened_at == 20
     end
 
+    @tag :regression
+
     test "late results arriving while open do not change the breaker" do
       h = fail(Health.new(failure_threshold: 1), 1, 0)
       assert Health.record(h, :success, 1, 5).breaker == :open
       assert Health.record(h, :error, 1, 5).breaker == :open
     end
+
+    @tag :regression
 
     test "abandoned probe frees the probe slot" do
       h = fail(Health.new(failure_threshold: 1, cool_down_ms: 0), 1, 0)

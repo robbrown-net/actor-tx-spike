@@ -54,6 +54,8 @@ defmodule ActorTxSpike.PaymentInvariantsIntegrationTest do
         do: {pid_id, key}
   end
 
+  @tag :regression
+
   test "money-safety invariants hold under a random fault storm" do
     :rand.seed(:exsss, {7, 11, 13})
     market = build_market()

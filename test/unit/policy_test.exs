@@ -29,6 +29,8 @@ defmodule ActorTxSpike.PolicyTest do
                Policy.new(%{weights: %{reliability: 2}, max_latency_ms: nil})
     end
 
+    @tag :regression
+
     test "collects every validation error" do
       assert {:error, errors} =
                Policy.new(%{
@@ -50,6 +52,16 @@ defmodule ActorTxSpike.PolicyTest do
       assert m =~ "unknown weights"
       assert {:error, [m]} = Policy.new(%{"weights" => "heavy"})
       assert m =~ "must be a map"
+    end
+
+    test "zero minimum validity is valid; error messages are exact" do
+      assert {:ok, %Policy{min_validity_ms: 0}} = Policy.new(%{"min_validity_ms" => 0})
+
+      assert {:error, ["max_latency_ms: must be nil or a positive integer"]} =
+               Policy.new(%{"max_latency_ms" => 0})
+
+      assert {:error, ["max_bps_from_best: must be nil or a non-negative number"]} =
+               Policy.new(%{"max_bps_from_best" => -5})
     end
 
     test "other field type errors" do
@@ -80,6 +92,22 @@ defmodule ActorTxSpike.PolicyTest do
       assert {kept, [{%{net: 990.0}, bps}]} = Policy.within_best(p, cands)
       assert Enum.map(kept, & &1.net) == [1000.0, 996.0]
       assert_in_delta bps, 100.0, 0.001
+    end
+
+    test "a candidate exactly at the limit is kept (boundary is inclusive)" do
+      p = %Policy{max_bps_from_best: 100}
+      # 990 is exactly 100 bps below 1000
+      assert {[%{net: 1000.0}, %{net: 990.0}], []} =
+               Policy.within_best(p, [%{net: 1000.0}, %{net: 990.0}])
+    end
+
+    test "zero is a valid limit: only the best survives" do
+      assert {:ok, %Policy{max_bps_from_best: +0.0}} = Policy.new(%{"max_bps_from_best" => 0.0})
+      assert {:ok, %Policy{max_bps_from_best: 0}} = Policy.new(%{"max_bps_from_best" => 0})
+      p = %Policy{max_bps_from_best: 0}
+
+      assert {[%{net: 10.0}], [{%{net: 9.0}, _}]} =
+               Policy.within_best(p, [%{net: 10.0}, %{net: 9.0}])
     end
 
     test "a non-positive best does not divide by zero" do

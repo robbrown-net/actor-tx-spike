@@ -8,17 +8,29 @@ defmodule Mix.Tasks.Demo do
       mix demo --port 4545
       mix demo --auto          # start with automatic traffic
       mix demo --quiet         # do not print the narrative to the terminal
+      mix demo --pace 0.05     # scale provider latencies (1.0 = human-watchable)
+      mix demo --sentinel-ms 500   # probe interval
   """
   use Mix.Task
 
   @impl true
   def run(args) do
     {opts, _, _} =
-      OptionParser.parse(args, strict: [port: :integer, auto: :boolean, quiet: :boolean])
+      OptionParser.parse(args,
+        strict: [
+          port: :integer,
+          auto: :boolean,
+          quiet: :boolean,
+          pace: :float,
+          sentinel_ms: :integer
+        ]
+      )
 
     Mix.Task.run("app.start")
 
-    {:ok, _} = ActorTxSpike.Demo.start_link()
+    demo_opts = if opts[:sentinel_ms], do: [sentinel_interval_ms: opts[:sentinel_ms]], else: []
+    {:ok, _} = ActorTxSpike.Demo.start_link(demo_opts)
+    if opts[:pace], do: ActorTxSpike.Demo.control(%{"action" => "pace", "factor" => opts[:pace]})
 
     {:ok, panel} =
       ActorTxSpike.Panel.start_link(handler: ActorTxSpike.Demo.Handler, port: opts[:port] || 4040)

@@ -1,7 +1,7 @@
 defmodule ActorTxSpike.SelectorTest do
   use ExUnit.Case, async: true
 
-  alias ActorTxSpike.{Policy, Selection, Selector}
+  alias ActorTxSpike.{Events, Policy, Selection, Selector}
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   defmodule StubServer do
@@ -79,6 +79,8 @@ defmodule ActorTxSpike.SelectorTest do
     assert ids(sel) == [:proven, :fresh]
   end
 
+  @tag :regression
+
   test "max_bps_from_best stops speed from buying an unacceptably bad price" do
     best = provider(:best_price, rate: 1.10, latency_ms: 30)
     fast = provider(:fast_poor, rate: 1.05)
@@ -136,6 +138,45 @@ defmodule ActorTxSpike.SelectorTest do
     assert {:drifted, {:state, :quarantined}} in sel.excluded
   end
 
+  @tag :regression
+
+  test "the narrative says who was not called, and who won ahead of whom" do
+    Events.subscribe()
+    stalled = provider(:parked, [quote_mode: {:error, :down}], failure_threshold: 1)
+    assert {:error, :down} = Server.request_quote(stalled.server, %{id: "x"})
+    wait_until(fn -> Server.state(stalled.server) == :stalled end)
+
+    request = %{id: "narr-1", amount: 100}
+
+    Selector.select(
+      request,
+      [stalled, provider(:a, rate: 1.1), provider(:b, rate: 1.0)],
+      policy(%{"weights" => %{"cost" => 1}})
+    )
+
+    messages = for {:tx_event, %{tx_id: "narr-1", message: m}} <- drain(), do: m
+    assert "not calling parked: it is stalled" in messages
+    assert Enum.any?(messages, &(&1 =~ ~r/^selected a \(.*\) ahead of b \(/))
+
+    Selector.select(
+      %{request | id: "narr-2"},
+      [provider(:solo)],
+      policy(%{"weights" => %{"cost" => 1}})
+    )
+
+    solo = for {:tx_event, %{tx_id: "narr-2", message: m}} <- drain(), m =~ "selected solo", do: m
+    assert [msg] = solo
+    refute msg =~ "ahead of"
+  end
+
+  defp drain(acc \\ []) do
+    receive do
+      {:tx_event, _} = e -> drain([e | acc])
+    after
+      50 -> Enum.reverse(acc)
+    end
+  end
+
   test "a dead provider server is reported as :down" do
     dead = provider(:dead)
     GenServer.stop(dead.server)
@@ -177,6 +218,7 @@ defmodule ActorTxSpike.SelectorTest do
   end
 
   @tag :capture_log
+  @tag :regression
   test "a hung or crashing provider server cannot hold the selection past the deadline" do
     {:ok, hung} = StubServer.start_link(:hang)
     {:ok, crashing} = StubServer.start_link(:crash)

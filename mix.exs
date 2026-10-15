@@ -35,7 +35,9 @@ defmodule ActorTxSpike.MixProject do
       ],
       "test.integration": [
         "cmd env MIX_ENV=test COVERAGE_THRESHOLD=85 mix test --cover test/integration"
-      ]
+      ],
+      "test.regression": ["cmd env MIX_ENV=test mix test --only regression"],
+      "test.system": ["cmd env MIX_ENV=test mix test --include system test/system"]
     ]
   end
 

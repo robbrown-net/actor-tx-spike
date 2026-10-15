@@ -122,6 +122,8 @@ defmodule ActorTxSpike.PaymentTest do
     assert count(m, :best, :cancel_accept) == 1
   end
 
+  @tag :regression
+
   test "a payment whose answer was lost is confirmed by status: paid exactly once" do
     m = market(%{best: [rate: 1.10, pay_mode: :in_doubt]})
     id = submit(m)
@@ -130,6 +132,8 @@ defmodule ActorTxSpike.PaymentTest do
     assert count(m, :best, :pay) == 1
     assert count(m, :second, :pay) == 0
   end
+
+  @tag :regression
 
   test "an unconfirmable payment is never failed over: it goes to needs_review" do
     m = market(%{best: [rate: 1.10, pay_mode: :timeout]})
@@ -142,6 +146,8 @@ defmodule ActorTxSpike.PaymentTest do
     assert Fake.calls(m.best.fake)[:status] == 2
   end
 
+  @tag :regression
+
   test "payment confirmation that arrives late (stale status) is still honoured" do
     m = market(%{best: [rate: 1.10, pay_mode: :in_doubt, status_mode: [:unknown, :ok]]})
     id = submit(m)
@@ -150,6 +156,8 @@ defmodule ActorTxSpike.PaymentTest do
     assert Fake.calls(m.best.fake)[:status] == 2
     assert count(m, :best, :pay) == 1
   end
+
+  @tag :regression
 
   test "failed compensation is escalated, not ignored" do
     rejecting =
@@ -203,6 +211,8 @@ defmodule ActorTxSpike.PaymentTest do
     assert {:error, {:no_quote, {:fallback, :usual_route}}} = Payment.await(id)
   end
 
+  @tag :regression
+
   test "a quote that expires while we fail over is skipped" do
     m =
       market(%{
@@ -230,6 +240,29 @@ defmodule ActorTxSpike.PaymentTest do
     assert {:error, :timeout} = Payment.await(id, 20)
   end
 
+  @tag :regression
+  test "a provider server that dies mid-transaction does not crash the transaction" do
+    Events.subscribe()
+    m = market(%{best: [rate: 1.10, latency_ms: 150]})
+    id = submit(m)
+
+    receive do
+      {:tx_event, %{tx_id: ^id, kind: :step_succeeded}} -> :ok
+    after
+      3_000 -> flunk("accept never succeeded")
+    end
+
+    payment = GenServer.whereis(Payment.via(id))
+    GenServer.stop(m.best.server)
+
+    # undo calls also fail: escalated, not crashed
+    assert {:error, {:needs_review, {:compensation_failed, undo, {:error, {:exit, _}}}}} =
+             Payment.await(id)
+
+    assert undo in [:void_authorisation, :cancel_accept]
+    assert Process.alive?(payment)
+  end
+
   test "finished transactions linger and then stop" do
     id = submit(market(), linger_ms: 20)
     assert {:ok, _} = Payment.await(id)
@@ -254,6 +287,8 @@ defmodule ActorTxSpike.PaymentTest do
     assert :failover in kinds
     assert List.last(kinds) == :tx_completed
   end
+
+  @tag :regression
 
   test "submit/2 generates ids and tolerates a duplicate id" do
     providers = for {_, p} <- market(), do: %{id: p.id, server: p.server}

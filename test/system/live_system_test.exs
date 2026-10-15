@@ -1,0 +1,328 @@
+defmodule ActorTxSpike.LiveSystemTest do
+  @moduledoc """
+  System tests: boot the *real* system as a separate OS process (`mix demo`)
+  and drive it only through its network surface (HTTP + server-sent events),
+  exactly as a browser or another service would. No module is called directly.
+
+  Run with `mix test.system`. Because the system under test is a separate
+  process, line coverage is not measured here; instead
+  `docs/quality/QUALITY_SNAPSHOT.md` tracks use-case scenario coverage.
+  """
+  use ExUnit.Case, async: false
+
+  @moduletag :system
+  @moduletag timeout: 120_000
+
+  @providers ~w(northwind bluebird cobalt meridian zenith)
+
+  setup_all do
+    port = free_port()
+    mix = System.find_executable("mix") || flunk("mix not found on PATH")
+
+    os_port =
+      Port.open({:spawn_executable, mix}, [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        args: [
+          "demo",
+          "--port",
+          Integer.to_string(port),
+          "--quiet",
+          "--pace",
+          "0.05",
+          "--sentinel-ms",
+          "300"
+        ],
+        cd: File.cwd!()
+      ])
+
+    # `mix` re-execs into the Erlang VM, so match on the unique port in its command line.
+    on_exit(fn ->
+      System.cmd("pkill", ["-f", "demo --port #{port}"])
+      Process.sleep(200)
+    end)
+
+    wait_until_up(port, 60_000, os_port)
+
+    {:ok, port: port}
+  end
+
+  setup %{port: port} do
+    for p <- @providers, do: control(port, %{"action" => "provider", "id" => p, "do" => "heal"})
+    control(port, %{"action" => "auto", "on" => false})
+    :ok
+  end
+
+  test "boots and serves the dashboard and a five-provider snapshot", %{port: port} do
+    assert {200, page} = http(port, "GET", "/")
+    assert page =~ "Actor TX Monitor"
+
+    assert {200, body} = http(port, "GET", "/api/snapshot")
+    snapshot = JSON.decode!(body)
+    assert Enum.sort(Enum.map(snapshot["providers"], & &1["id"])) == Enum.sort(@providers)
+    assert snapshot["policy"]["max_bps_from_best"] == 100
+  end
+
+  test "UC-1 main scenario: a submitted transaction completes with a coherent story", %{
+    port: port
+  } do
+    id = submit(port, 1_000)
+    story = await_story(port, id, "tx_completed")
+    kinds = Enum.map(story, & &1["kind"])
+
+    assert hd(kinds) == "tx_received"
+
+    for k <-
+          ~w(select_started quote_received selection_made provider_chosen step_succeeded tx_completed) do
+      assert k in kinds, "missing #{k} in #{inspect(kinds)}"
+    end
+
+    steps = for e <- story, e["kind"] == "step_succeeded", do: e["data"]["op"]
+    assert steps == ["accept_quote", "authorise", "pay"]
+    # providers narrate their own side
+    assert Enum.any?(story, &(&1["actor"] =~ "provider:" and &1["kind"] == "responded"))
+  end
+
+  test "UC-1 ext 7a: authorise rejected -> undone -> failed over -> still completes", %{
+    port: port
+  } do
+    # make the best-priced provider reject authorisation
+    control(port, %{"action" => "provider", "id" => "cobalt", "do" => "authorise_fails"})
+    id = submit(port, 4_000)
+    story = await_story(port, id, "tx_completed")
+    kinds = Enum.map(story, & &1["kind"])
+
+    assert "step_failed" in kinds
+    assert "undone" in kinds
+    assert "failover" in kinds
+    done = Enum.find(story, &(&1["kind"] == "tx_completed"))
+    refute done["message"] =~ "via cobalt"
+  end
+
+  test "UC-1 ext 8c: unresolvable payment stops in needs_review without failing over", %{
+    port: port
+  } do
+    for p <- @providers,
+        do: control(port, %{"action" => "provider", "id" => p, "do" => "pay_vanishes"})
+
+    id = submit(port, 2_500)
+    story = await_story(port, id, "needs_review")
+    kinds = Enum.map(story, & &1["kind"])
+
+    assert "in_doubt" in kinds
+    assert "reconcile_pending" in kinds
+    refute "failover" in kinds
+    refute "tx_completed" in kinds
+  end
+
+  test "UC-1 ext 8b: a lost payment answer is reconciled and completes", %{port: port} do
+    for p <- @providers,
+        do: control(port, %{"action" => "provider", "id" => p, "do" => "pay_answer_lost"})
+
+    id = submit(port, 800)
+    story = await_story(port, id, "tx_completed")
+    kinds = Enum.map(story, & &1["kind"])
+
+    assert "in_doubt" in kinds
+    assert "reconciled" in kinds
+  end
+
+  test "UC-3: a version drift is detected by the sentinel and quarantines the provider", %{
+    port: port
+  } do
+    control(port, %{"action" => "provider", "id" => "bluebird", "do" => "drift"})
+    wait_for(fn -> provider_state(port, "bluebird") == "quarantined" end, 10_000)
+
+    # the quarantined provider is not called for new work
+    id = submit(port, 1_200)
+    story = await_story(port, id, "tx_completed")
+    assert Enum.any?(story, &(&1["kind"] == "provider_skipped" and &1["message"] =~ "bluebird"))
+
+    control(port, %{"action" => "provider", "id" => "bluebird", "do" => "release"})
+    wait_for(fn -> provider_state(port, "bluebird") != "quarantined" end, 10_000)
+  end
+
+  test "UC-5: an invalid policy is rejected with the reason; a valid one is accepted", %{
+    port: port
+  } do
+    assert {422, body} = post(port, %{"action" => "policy", "weights" => %{"cost" => -1}})
+    assert JSON.decode!(body)["error"] =~ "weights"
+
+    assert {200, _} =
+             post(port, %{
+               "action" => "policy",
+               "weights" => %{"cost" => 1},
+               "max_bps_from_best" => 100
+             })
+
+    assert {422, _} = post(port, %{"action" => "provider", "id" => "nobody", "do" => "heal"})
+  end
+
+  test "UC-2: automatic traffic keeps completing transactions", %{port: port} do
+    control(port, %{"action" => "auto", "on" => true})
+    {:ok, stream} = open_stream(port)
+
+    completed =
+      collect(
+        stream,
+        "",
+        [],
+        fn events -> Enum.count(events, &(&1["kind"] == "tx_completed")) >= 3 end,
+        30_000
+      )
+
+    :gen_tcp.close(stream)
+    control(port, %{"action" => "auto", "on" => false})
+
+    assert Enum.count(completed, &(&1["kind"] == "tx_completed")) >= 3
+  end
+
+  # ---- helpers -----------------------------------------------------------
+
+  defp free_port do
+    {:ok, l} = :gen_tcp.listen(0, [])
+    {:ok, port} = :inet.port(l)
+    :gen_tcp.close(l)
+    port
+  end
+
+  defp wait_until_up(port, timeout, os_port) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    poll_up(port, deadline, os_port)
+  end
+
+  defp poll_up(port, deadline, os_port) do
+    receive do
+      {^os_port, {:exit_status, status}} -> flunk("mix demo exited early with #{status}")
+    after
+      250 -> :ok
+    end
+
+    case :gen_tcp.connect(~c"127.0.0.1", port, [], 200) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+
+      {:error, _} ->
+        if System.monotonic_time(:millisecond) > deadline, do: flunk("system did not start")
+        poll_up(port, deadline, os_port)
+    end
+  end
+
+  defp http(port, method, path, body \\ nil) do
+    payload = if body, do: JSON.encode!(body), else: ""
+    type = if body, do: "content-type: application/json\r\n", else: ""
+
+    raw =
+      "#{method} #{path} HTTP/1.1\r\nhost: x\r\n#{type}content-length: #{byte_size(payload)}\r\n\r\n#{payload}"
+
+    {:ok, s} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false])
+    :ok = :gen_tcp.send(s, raw)
+    resp = recv_all(s, "")
+    :gen_tcp.close(s)
+    [head, body] = String.split(resp, "\r\n\r\n", parts: 2)
+    [_, status] = Regex.run(~r/HTTP\/1\.1 (\d+)/, head)
+    {String.to_integer(status), body}
+  end
+
+  defp recv_all(s, acc) do
+    case :gen_tcp.recv(s, 0, 1_500) do
+      {:ok, d} -> recv_all(s, acc <> d)
+      _ -> acc
+    end
+  end
+
+  defp post(port, body), do: http(port, "POST", "/api/control", body)
+
+  defp control(port, body) do
+    {_status, resp} = post(port, body)
+    JSON.decode!(resp)
+  end
+
+  defp submit(port, amount) do
+    %{"ok" => true, "result" => id} = control(port, %{"action" => "submit", "amount" => amount})
+    id
+  end
+
+  defp provider_state(port, id) do
+    {200, body} = http(port, "GET", "/api/snapshot")
+    JSON.decode!(body)["providers"] |> Enum.find(&(&1["id"] == id)) |> Map.get("state")
+  end
+
+  defp wait_for(fun, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+
+    Stream.repeatedly(fn ->
+      cond do
+        fun.() ->
+          :ok
+
+        System.monotonic_time(:millisecond) > deadline ->
+          flunk("condition not met in #{timeout}ms")
+
+        true ->
+          Process.sleep(100) && :wait
+      end
+    end)
+    |> Enum.find(&(&1 == :ok))
+  end
+
+  defp open_stream(port) do
+    {:ok, s} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false])
+    :ok = :gen_tcp.send(s, "GET /events HTTP/1.1\r\nhost: x\r\n\r\n")
+    {:ok, s}
+  end
+
+  # Read the SSE stream until `done.(events)` is true; returns all decoded events.
+  defp collect(socket, buffer, events, done, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_collect(socket, buffer, events, done, deadline)
+  end
+
+  defp do_collect(socket, buffer, events, done, deadline) do
+    if System.monotonic_time(:millisecond) > deadline, do: flunk("stream condition not met")
+
+    case :gen_tcp.recv(socket, 0, 1_000) do
+      {:ok, data} ->
+        {parsed, rest} = parse_sse(buffer <> data)
+        events = events ++ parsed
+        if done.(events), do: events, else: do_collect(socket, rest, events, done, deadline)
+
+      {:error, :timeout} ->
+        do_collect(socket, buffer, events, done, deadline)
+
+      {:error, reason} ->
+        flunk("stream closed: #{inspect(reason)}")
+    end
+  end
+
+  defp parse_sse(text) do
+    parts = String.split(text, "\n\n")
+    {complete, [rest]} = Enum.split(parts, -1)
+
+    events =
+      for chunk <- complete,
+          [_, json] <- [Regex.run(~r/data: (\{.*\})/s, chunk)],
+          do: JSON.decode!(json)
+
+    {events, rest}
+  end
+
+  defp await_story(port, tx_id, terminal_kind) do
+    {:ok, s} = open_stream(port)
+
+    events =
+      collect(
+        s,
+        "",
+        [],
+        fn evs ->
+          Enum.any?(evs, &(&1["tx"] == tx_id and &1["kind"] == terminal_kind))
+        end,
+        30_000
+      )
+
+    :gen_tcp.close(s)
+    Enum.filter(events, &(&1["tx"] == tx_id))
+  end
+end

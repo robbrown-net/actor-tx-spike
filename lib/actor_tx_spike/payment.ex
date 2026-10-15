@@ -500,8 +500,16 @@ defmodule ActorTxSpike.Payment do
   end
 
   defp run(state, tag, fun) do
-    task = Task.async(fn -> {tag, fun.()} end)
+    task = Task.async(fn -> {tag, guarded(fun)} end)
     %{state | pending: task.ref}
+  end
+
+  # A provider server that has died must not take the transaction down with it:
+  # treat it as a technical error and let retry / compensation / escalation decide.
+  defp guarded(fun) do
+    fun.()
+  catch
+    :exit, reason -> {:error, {:exit, reason}}
   end
 
   defp key(state, op) do

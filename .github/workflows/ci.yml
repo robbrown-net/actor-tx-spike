@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.2"
+          elixir-version: "1.18.3"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - name: Format
+        run: mix format --check-formatted
+      - name: Static analysis (Credo, strict)
+        run: mix credo --strict
+      - name: Dependency audit
+        run: mix deps.audit && mix hex.audit
+      - name: Security scan (Sobelow)
+        run: mix sobelow --skip --exit Low || true
+      - name: Unit tests (gate 100%)
+        run: mix test.unit
+      - name: Integration tests (gate 85%)
+        run: mix test.integration
+      - name: Regression pack
+        run: mix test.regression
+      - name: System tests (real process over HTTP/SSE)
+        run: mix test.system

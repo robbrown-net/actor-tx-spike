@@ -60,11 +60,15 @@ defmodule ActorTxSpike.PanelTest do
     assert post(port, ~s({"action":"x"})) =~ ~r/200 OK.*\{"ok":true\}/s
   end
 
+  @tag :regression
+
   test "control rejects non-JSON content types, bad JSON and non-objects", %{port: port} do
     assert post(port, ~s({"action":"ok"}), "text/plain") =~ "400 Bad Request"
     assert post(port, "{oops") =~ "400 Bad Request"
     assert post(port, "[1,2]") =~ "400 Bad Request"
   end
+
+  @tag :regression
 
   test "oversized or invalid bodies get no response", %{port: port} do
     raw =
@@ -87,6 +91,8 @@ defmodule ActorTxSpike.PanelTest do
     assert read_until(s, "", "live one") =~ ~s("actor":"provider:alpha")
     :gen_tcp.close(s)
   end
+
+  @tag :regression
 
   test "a client that vanishes mid-stream or mid-request is tolerated", %{port: port} do
     {:ok, s} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false])

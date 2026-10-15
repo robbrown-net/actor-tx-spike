@@ -106,6 +106,8 @@ defmodule ActorTxSpike.Provider.ServerTest do
     wait_until(fn -> Server.state(server) == :healthy end)
   end
 
+  @tag :regression
+
   test "adapter exceptions and exits become errors and count as failures" do
     {:ok, server} = Server.start_link(adapter: Misbehaving, config: :raise)
     assert {:error, {:raised, %RuntimeError{}}} = Server.request_quote(server, %{id: "r"})
@@ -114,6 +116,8 @@ defmodule ActorTxSpike.Provider.ServerTest do
     assert {:error, {:exit, :gone}} = Server.request_quote(server2, %{id: "r"})
     assert %{window: [{:error, _}]} = synced(server2)
   end
+
+  @tag :regression
 
   test "an overdue adapter call returns :timeout, is recorded, and frees its slot" do
     {:ok, server} = Server.start_link(adapter: Blocking, config: self())
@@ -142,6 +146,8 @@ defmodule ActorTxSpike.Provider.ServerTest do
     assert {:error, :released} = Task.await(task)
     wait_until(fn -> Server.in_flight(server) == 0 end)
   end
+
+  @tag :regression
 
   test "a caller that dies mid-call releases its slot and probe slot" do
     {:ok, server} = Server.start_link(adapter: Blocking, config: self(), max_in_flight: 1)

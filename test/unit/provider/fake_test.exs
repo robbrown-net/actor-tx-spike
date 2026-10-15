@@ -82,6 +82,8 @@ defmodule ActorTxSpike.Provider.FakeTest do
     assert :not_found = Fake.status(fake, :refund, "t:k")
   end
 
+  @tag :regression
+
   test "in_doubt retried with the same key does not duplicate the payment", %{fake: fake} do
     q = quoted(fake)
     Fake.configure(fake, pay_mode: :in_doubt)
