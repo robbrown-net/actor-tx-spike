@@ -105,6 +105,21 @@ defmodule ActorTxSpike.Provider.ServerTest do
     assert %{window: [{:error, _}]} = synced(server2)
   end
 
+  test "an overdue adapter call returns :timeout, is recorded, and frees its slot" do
+    {:ok, server} = Server.start_link(adapter: Blocking, config: self())
+    assert :timeout = Server.request_quote(server, %{id: "r"}, 20)
+    assert_receive {:blocked, worker}
+    wait_until(fn -> not Process.alive?(worker) end)
+
+    wait_until(fn -> Server.in_flight(server) == 0 end)
+    assert [{:timeout, _}] = synced(server).window
+  end
+
+  test "the server-level call_timeout is the default" do
+    {:ok, server} = Server.start_link(adapter: Blocking, config: self(), call_timeout: 20)
+    assert :timeout = Server.request_quote(server, %{id: "r"})
+  end
+
   test "bulkhead rejects when in-flight limit is reached" do
     {:ok, server} = Server.start_link(adapter: Blocking, config: self(), max_in_flight: 1)
     task = Task.async(fn -> Server.request_quote(server, %{id: "r"}) end)

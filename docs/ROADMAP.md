@@ -17,6 +17,11 @@ See ADR 0001 and Amendment 1 for the domain model.
 - Provider state model + circuit breaker + rolling latency/error stats.
 
 ## Phase 2: Transaction as flow interpreter
+Slice 1 DONE (2026-10-15): `Policy` (validated scoring data), `Selector` (deadline-bound
+fan-out quoting, constraints, scoring, baseline fallback), per-call timeouts in
+`Provider.Server`. Slices remaining: 2 commit steps (accept/authorise/pay, keys, in-doubt,
+compensation); 3 cascading policy + deadlines (quote expiry, regional cut-off).
+Ideas parked: early stop when a "good enough" quote arrives; hedged request budgets.
 - Declarative flow + scoring policy (data, validated into structs).
 - Lifecycle per ADR Amendment 2: quote -> accept -> authorise -> pay -> settle, with
   per-step idempotency keys, deadlines (quote expiry, regional cut-off), in_doubt

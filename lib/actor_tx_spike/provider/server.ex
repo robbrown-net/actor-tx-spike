@@ -3,8 +3,9 @@ defmodule ActorTxSpike.Provider.Server do
   Facade process for one provider: a circuit breaker, health model and
   bulkhead in front of an `ActorTxSpike.Provider` adapter.
 
-  The adapter call runs in the *caller's* process, so one slow provider never
-  blocks this server (or other callers). The server only does admission
+  The adapter call runs in a task owned by the *caller* (never in this server),
+  so one slow provider never blocks this server or other callers, and every
+  call has an enforced timeout. The server only does admission
   (`checkout`), bookkeeping (`record`) and in-flight accounting, monitoring
   callers so a crashed caller cannot leak a slot.
   """
@@ -16,13 +17,22 @@ defmodule ActorTxSpike.Provider.Server do
     GenServer.start_link(__MODULE__, opts, Keyword.take(opts, [:name]))
   end
 
-  def request_quote(server, request), do: request(server, :request_quote, [request])
-  def execute(server, quote, key), do: request(server, :execute, [quote, key])
-  def status(server, key), do: request(server, :status, [key])
+  @doc """
+  Operations take an optional per-call `timeout` (ms). The server enforces it:
+  an overdue adapter call is killed, returns `:timeout`, and is recorded as a
+  timeout in the health model. Default: the server's `:call_timeout` (5000).
+  """
+  def request_quote(server, request, timeout \\ :default),
+    do: request(server, :request_quote, [request], timeout)
+
+  def execute(server, quote, key, timeout \\ :default),
+    do: request(server, :execute, [quote, key], timeout)
+
+  def status(server, key, timeout \\ :default), do: request(server, :status, [key], timeout)
 
   @doc "Probe the provider (sentinel entry point). A changed version quarantines it."
-  def probe(server) do
-    result = request(server, :probe, [])
+  def probe(server, timeout \\ :default) do
+    result = request(server, :probe, [], timeout)
 
     case result do
       {:ok, %{version: version}} -> GenServer.call(server, {:observe_version, version})
@@ -45,6 +55,7 @@ defmodule ActorTxSpike.Provider.Server do
        config: Keyword.get(opts, :config),
        health: Health.new(Keyword.get(opts, :health, [])),
        max_in_flight: Keyword.get(opts, :max_in_flight, 10),
+       call_timeout: Keyword.get(opts, :call_timeout, 5_000),
        in_flight: MapSet.new()
      }}
   end
@@ -55,7 +66,7 @@ defmodule ActorTxSpike.Provider.Server do
          {:ok, health} <- Health.checkout(state.health, now()) do
       ref = Process.monitor(pid)
 
-      {:reply, {:ok, state.adapter, state.config, ref},
+      {:reply, {:ok, state.adapter, state.config, ref, state.call_timeout},
        %{state | health: health, in_flight: MapSet.put(state.in_flight, ref)}}
     else
       true -> {:reply, {:error, :overloaded}, state}
@@ -97,11 +108,12 @@ defmodule ActorTxSpike.Provider.Server do
      }}
   end
 
-  defp request(server, op, args) do
+  defp request(server, op, args, timeout) do
     case GenServer.call(server, :checkout) do
-      {:ok, adapter, config, ref} ->
+      {:ok, adapter, config, ref, default_timeout} ->
+        timeout = if timeout == :default, do: default_timeout, else: timeout
         started = now()
-        result = invoke(adapter, op, [config | args])
+        result = invoke_with_timeout(adapter, op, [config | args], timeout)
         GenServer.cast(server, {:record, ref, classify(op, result), now() - started})
         result
 
@@ -110,12 +122,21 @@ defmodule ActorTxSpike.Provider.Server do
     end
   end
 
+  defp invoke_with_timeout(adapter, op, args, timeout) do
+    task = Task.async(fn -> invoke(adapter, op, args) end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      _overdue -> :timeout
+    end
+  end
+
   defp invoke(adapter, op, args) do
     apply(adapter, op, args)
   rescue
     exception -> {:error, {:raised, exception}}
   catch
-    :exit, reason -> {:error, {:exit, reason}}
+    kind, reason -> {:error, {kind, reason}}
   end
 
   defp classify(_op, {:ok, _}), do: :success
