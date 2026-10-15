@@ -98,6 +98,26 @@
   :focus-visible { outline:2px solid var(--info); outline-offset:2px; }
   input:focus { outline:none; box-shadow:0 0 0 3px color-mix(in srgb, var(--info) 22%, transparent); }
   .card, section { box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
+
+  /* ---- performance view ---- */
+  .views { display:flex; gap:4px; background:var(--panel2); padding:3px; border-radius:8px; border:1px solid var(--line); }
+  .views button { border:none; background:transparent; padding:4px 10px; }
+  .views button.on { background:var(--panel); box-shadow:0 1px 3px rgba(0,0,0,.25); color:var(--text); }
+  #perf { display:none; padding:12px; gap:12px; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+  body.perf #perf { display:grid; }
+  body.perf main { display:none; }
+  .chart { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:150px; }
+  .chart h3 { margin:0 0 4px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:600; display:flex; justify-content:space-between; }
+  .chart svg { width:100%; height:92px; display:block; }
+  .chart .grid { stroke:var(--line); stroke-width:1; }
+  .legend { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; color:var(--dim); margin-top:4px; }
+  .legend i { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+  .legend b { color:var(--text); font-variant-numeric:tabular-nums; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; }
+  .tile { background:var(--panel2); border-radius:8px; padding:6px 10px; }
+  .tile b { display:block; font-size:18px; font-variant-numeric:tabular-nums; } .tile span { font-size:11px; color:var(--dim); text-transform:uppercase; }
+  table.top { width:100%; font-size:12px; border-collapse:collapse; } table.top td, table.top th { padding:2px 6px; text-align:left; border-bottom:1px solid var(--line); }
+  .wide { grid-column:1/-1; }
   #toast { position:fixed; left:50%; bottom:20px; transform:translate(-50%,16px) scale(.97); opacity:0; pointer-events:none;
     background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:9px 14px; font-size:13px; max-width:90vw;
     box-shadow:0 8px 24px rgba(0,0,0,.35); transition:opacity .25s, transform .35s var(--ease); z-index:20; }
@@ -112,6 +132,7 @@
   <div class="grp"><label>Amount</label><input type="number" id="amount" value="1000" min="1" step="100">
     <button class="primary" id="submit">Submit transaction</button>
     <button id="auto">Auto traffic: off</button></div>
+  <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button></div>
   <div class="grp"><button id="motion" title="Turn animation on or off">Motion: on</button></div>
   <div class="grp"><label>Pace <span id="paceVal">1.0×</span></label><input type="range" id="pace" min="0.1" max="2" step="0.1" value="1"></div>
   <div class="grp">
@@ -138,6 +159,17 @@
     <div class="scroll" id="story"></div>
   </section>
 </main>
+<div id="perf">
+  <div class="chart wide"><h3><span>Right now</span><span><select id="perfWindow"><option value="60">last 1 min</option><option value="300" selected>last 5 min</option><option value="900">last 15 min</option><option value="minutes">1-minute rollups</option></select></span></h3><div class="tiles" id="tiles"></div></div>
+  <div class="chart"><h3><span>Memory</span><span id="memNow"></span></h3><svg id="cMem" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lMem"></div></div>
+  <div class="chart"><h3><span>CPU and schedulers</span><span id="cpuNow"></span></h3><svg id="cCpu" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lCpu"></div></div>
+  <div class="chart"><h3><span>Network (TCP)</span><span id="netNow"></span></h3><svg id="cNet" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lNet"></div></div>
+  <div class="chart"><h3><span>Work (reductions / s)</span><span id="redNow"></span></h3><svg id="cRed" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lRed"></div></div>
+  <div class="chart"><h3><span>Transactions per sample</span><span></span></h3><svg id="cTx" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lTx"></div></div>
+  <div class="chart"><h3><span>End-to-end latency</span><span id="e2eNow"></span></h3><svg id="cE2e" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lE2e"></div></div>
+  <div class="chart"><h3><span>Provider latency p95</span><span></span></h3><svg id="cProv" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lProv"></div></div>
+  <div class="chart"><h3><span>Hottest processes</span><span></span></h3><table class="top" id="topTable"></table></div>
+</div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>
 const STAGES = ['quoting','accepting','authorising','paying','completed'];
@@ -332,6 +364,108 @@ function renderStory() {
   else { const e = host.querySelector(':scope > .empty'); if (e && host.children.length > 1) e.remove(); }
 }
 
+
+/* ---------- performance view ---------- */
+const PALETTE = ['#58a6ff','#3fb950','#d29922','#bc8cff','#39c5cf','#f85149','#ff7b72'];
+const mb = b => (b / 1048576);
+const kb = b => (b / 1024);
+function chartLines(svgId, legendId, series, opts = {}) {
+  const svg = $(svgId), legend = $(legendId);
+  const n = Math.max(...series.map(s => s.values.length), 0);
+  if (n < 2) { svg.innerHTML = ''; legend.innerHTML = '<span>collecting…</span>'; return; }
+  const all = series.flatMap(s => s.values);
+  const max = opts.max ?? (Math.max(...all, opts.minMax ?? 0.0001) * 1.1);
+  const X = i => 300 * i / (n - 1), Y = v => 88 - 84 * Math.min(v, max) / max;
+  let body = `<line class="grid" x1="0" y1="4" x2="300" y2="4"/><line class="grid" x1="0" y1="46" x2="300" y2="46"/><line class="grid" x1="0" y1="88" x2="300" y2="88"/>`;
+  series.forEach((s, k) => {
+    const pts = s.values.map((v, i) => `${X(i + n - s.values.length).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    if (opts.area) body += `<polygon points="0,88 ${pts} 300,88" fill="${s.color}" opacity=".18"/>`;
+    body += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
+  });
+  svg.innerHTML = body;
+  const f = opts.fmt || (v => v.toFixed(1));
+  legend.innerHTML = series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)} <b>${f(s.values[s.values.length - 1] ?? 0)}</b></span>`).join('') +
+    `<span>max <b>${f(max / 1.1)}</b></span>`;
+}
+function chartStack(svgId, legendId, layers) {
+  const svg = $(svgId), legend = $(legendId);
+  const n = layers[0].values.length;
+  if (n < 2) { svg.innerHTML = ''; legend.innerHTML = '<span>collecting…</span>'; return; }
+  const totals = Array.from({ length: n }, (_, i) => layers.reduce((a, l) => a + l.values[i], 0));
+  const max = Math.max(...totals) * 1.1 || 1;
+  const X = i => 300 * i / (n - 1), Y = v => 88 - 84 * v / max;
+  let base = new Array(n).fill(0), body = `<line class="grid" x1="0" y1="4" x2="300" y2="4"/><line class="grid" x1="0" y1="88" x2="300" y2="88"/>`;
+  layers.forEach(l => {
+    const top = l.values.map((v, i) => base[i] + v);
+    const up = top.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    const down = base.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).reverse().join(' ');
+    body += `<polygon points="${up} ${down}" fill="${l.color}" opacity=".65"/>`;
+    base = top;
+  });
+  svg.innerHTML = body;
+  legend.innerHTML = layers.map(l => `<span><i style="background:${l.color}"></i>${esc(l.name)} <b>${l.values[n - 1].toFixed(1)} MB</b></span>`).join('');
+}
+function chartBars(svgId, legendId, layers) {
+  const svg = $(svgId), legend = $(legendId);
+  const n = layers[0].values.length;
+  if (n < 1) { svg.innerHTML = ''; legend.innerHTML = '<span>collecting…</span>'; return; }
+  const totals = Array.from({ length: n }, (_, i) => layers.reduce((a, l) => a + l.values[i], 0));
+  const max = Math.max(...totals, 1) * 1.15, w = 300 / n;
+  let body = `<line class="grid" x1="0" y1="88" x2="300" y2="88"/>`;
+  for (let i = 0; i < n; i++) {
+    let y = 88;
+    layers.forEach(l => { const h = 84 * l.values[i] / max; y -= h; if (h > 0) body += `<rect x="${(i * w + w * .1).toFixed(1)}" y="${y.toFixed(1)}" width="${(w * .8).toFixed(1)}" height="${h.toFixed(1)}" fill="${l.color}"/>`; });
+  }
+  svg.innerHTML = body;
+  legend.innerHTML = layers.map(l => `<span><i style="background:${l.color}"></i>${esc(l.name)} <b>${l.values.reduce((a, b) => a + b, 0)}</b></span>`).join('');
+}
+
+let perfData = null, perfBusy = false;
+function fetchPerf() {
+  if (!document.body.classList.contains('perf') || perfBusy) return;
+  perfBusy = true;
+  fetch('/api/metrics').then(r => r.json()).then(d => { perfData = d; renderPerf(); }).catch(() => {}).finally(() => perfBusy = false);
+}
+function renderPerf() {
+  if (!perfData) return;
+  const w = $('perfWindow').value, last = perfData.latest;
+  const rollup = w === 'minutes';
+  const rows = rollup ? perfData.minutes : perfData.raw.slice(-Number(w));
+  const get = (rawFn, minFn) => rows.map(rollup ? minFn : rawFn);
+  const m = (k) => get(r => mb(r.memory[k]), () => 0);
+  if (rollup) {
+    chartStack('cMem', 'lMem', [{ name: 'total (mean)', color: PALETTE[0], values: rows.map(r => mb(r.memory_total_mean)) }]);
+    chartLines('cCpu', 'lCpu', [{ name: 'cpu (cores)', color: PALETTE[0], values: rows.map(r => r.cpu_mean) }, { name: 'scheduler util', color: PALETTE[1], values: rows.map(r => r.sched_mean) }], { fmt: v => v.toFixed(2) });
+    chartLines('cNet', 'lNet', [{ name: 'in KB/s', color: PALETTE[0], values: rows.map(r => kb(r.net_in_mean)) }, { name: 'out KB/s', color: PALETTE[2], values: rows.map(r => kb(r.net_out_mean)) }]);
+    chartLines('cRed', 'lRed', [{ name: 'reductions/s', color: PALETTE[3], values: rows.map(r => r.reductions_mean) }], { fmt: v => Math.round(v).toLocaleString() });
+    chartBars('cTx', 'lTx', [{ name: 'completed', color: '#3fb950', values: rows.map(r => r.completed) }, { name: 'failed', color: '#f85149', values: rows.map(r => r.failed) }, { name: 'review', color: '#d29922', values: rows.map(r => r.needs_review) }]);
+    chartLines('cE2e', 'lE2e', [{ name: 'p95 (max in minute)', color: PALETTE[2], values: rows.map(r => r.e2e_p95_max) }], { fmt: v => Math.round(v) + ' ms' });
+    chartLines('cProv', 'lProv', [], {}); $('topTable').innerHTML = '';
+  } else {
+    chartStack('cMem', 'lMem', [{ name: 'processes', color: PALETTE[0], values: m('processes') }, { name: 'binary', color: PALETTE[1], values: m('binary') }, { name: 'ets', color: PALETTE[2], values: m('ets') }, { name: 'code', color: PALETTE[3], values: m('code') },
+      { name: 'other', color: PALETTE[4], values: get(r => mb(Math.max(r.memory.total - r.memory.processes - r.memory.binary - r.memory.ets - r.memory.code, 0)), () => 0) }]);
+    chartLines('cCpu', 'lCpu', [{ name: 'cpu (cores)', color: PALETTE[0], values: rows.map(r => r.cpu) }, { name: 'scheduler util', color: PALETTE[1], values: rows.map(r => r.sched) }, { name: 'run queue', color: PALETTE[2], values: rows.map(r => r.run_queue) }], { fmt: v => v.toFixed(2) });
+    chartLines('cNet', 'lNet', [{ name: 'in KB/s', color: PALETTE[0], values: rows.map(r => kb(r.net_in_bps)) }, { name: 'out KB/s', color: PALETTE[2], values: rows.map(r => kb(r.net_out_bps)) }]);
+    chartLines('cRed', 'lRed', [{ name: 'reductions/s', color: PALETTE[3], values: rows.map(r => r.reductions_ps) }], { fmt: v => Math.round(v).toLocaleString() });
+    chartBars('cTx', 'lTx', [{ name: 'completed', color: '#3fb950', values: rows.map(r => r.tx.completed) }, { name: 'failed', color: '#f85149', values: rows.map(r => r.tx.failed) }, { name: 'review', color: '#d29922', values: rows.map(r => r.tx.needs_review) }]);
+    chartLines('cE2e', 'lE2e', [{ name: 'p50', color: PALETTE[1], values: rows.map(r => r.e2e.p50) }, { name: 'p95', color: PALETTE[2], values: rows.map(r => r.e2e.p95) }, { name: 'p99', color: PALETTE[5], values: rows.map(r => r.e2e.p99) }], { fmt: v => Math.round(v) + ' ms' });
+    const ids = [...new Set(rows.flatMap(r => Object.keys(r.providers || {})))].sort();
+    chartLines('cProv', 'lProv', ids.map((id, i) => ({ name: id, color: PALETTE[i % PALETTE.length], values: rows.map(r => (r.providers[id] || {}).p95_ms || 0) })), { fmt: v => Math.round(v) + ' ms' });
+    $('topTable').innerHTML = '<tr><th>process</th><th>memory</th><th>mailbox</th></tr>' + ((last && last.top) || []).map(t => `<tr><td>${esc(t.label)}</td><td>${(t.memory / 1024).toFixed(0)} KB</td><td>${t.mailbox}</td></tr>`).join('');
+  }
+  if (last) {
+    $('memNow').textContent = mb(last.memory.total).toFixed(1) + ' MB';
+    $('cpuNow').textContent = (last.sched * 100).toFixed(0) + '% sched';
+    $('netNow').textContent = kb(last.net_in_bps + last.net_out_bps).toFixed(1) + ' KB/s';
+    $('redNow').textContent = Math.round(last.reductions_ps).toLocaleString();
+    $('e2eNow').textContent = 'p95 ' + Math.round(last.e2e.p95) + ' ms';
+    const t = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
+    $('tiles').innerHTML = t(mb(last.memory.total).toFixed(1) + ' MB', 'memory') + t(last.processes, 'processes') + t(last.ports + ' / ' + last.sockets, 'ports / tcp') +
+      t(last.gc_ps + '/s', 'GC') + t(last.tx.in_flight, 'tx in flight') + t(Math.round(last.e2e.p95) + ' ms', 'e2e p95') +
+      t(last.overhead_us + ' µs', 'monitor cost / sample') + t('n/a', 'storage (no durable store yet)');
+  }
+}
+
 function frame() { if (S.dirty) { S.dirty = false; renderProviders(); renderTxs(); renderStory(); } requestAnimationFrame(frame); }
 
 document.addEventListener('click', e => {
@@ -360,6 +494,17 @@ let storedMotion = 'on';
 try { storedMotion = localStorage.getItem('actor-tx-motion') || 'on'; } catch (_) {}
 setMotion(storedMotion !== 'off');
 $('motion').onclick = () => setMotion(document.documentElement.dataset.motion === 'off');
+
+
+function setView(perf) {
+  document.body.classList.toggle('perf', perf);
+  $('viewLive').classList.toggle('on', !perf); $('viewPerf').classList.toggle('on', perf);
+  if (perf) { fetchPerf(); }
+}
+$('viewLive').onclick = () => setView(false);
+$('viewPerf').onclick = () => setView(true);
+$('perfWindow').onchange = renderPerf;
+setInterval(fetchPerf, 1500);
 
 const conn = $('conn');
 function connect() {

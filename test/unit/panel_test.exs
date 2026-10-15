@@ -5,6 +5,7 @@ defmodule ActorTxSpike.PanelTest do
 
   defmodule Handler do
     def snapshot, do: %{providers: [%{id: :alpha, pid: self(), tup: {:a, 1}}]}
+    def metrics, do: %{raw: [], latest: nil}
 
     def control(%{"action" => "ok"}), do: {:ok, %{done: true}}
     def control(%{"action" => "bad"}), do: {:error, "nope"}
@@ -48,6 +49,12 @@ defmodule ActorTxSpike.PanelTest do
     assert resp =~ "application/json"
     assert resp =~ ~s("id":"alpha")
     assert resp =~ ~s("tup":["a",1])
+  end
+
+  test "serves metrics JSON", %{port: port} do
+    resp = request(port, "GET /api/metrics HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert resp =~ "200 OK"
+    assert resp =~ ~s("raw":[])
   end
 
   test "unknown routes are 404", %{port: port} do

@@ -6,6 +6,7 @@ defmodule ActorTxSpike.Application do
   def start(_type, _args) do
     children = [
       ActorTxSpike.Events,
+      ActorTxSpike.Metrics,
       {Registry, keys: :unique, name: ActorTxSpike.Registry},
       ActorTxSpike.TransactionSupervisor
     ]

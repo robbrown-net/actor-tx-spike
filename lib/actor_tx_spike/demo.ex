@@ -275,4 +275,5 @@ defmodule ActorTxSpike.Demo.Handler do
   @moduledoc "Adapts `ActorTxSpike.Demo` to the `ActorTxSpike.Panel` handler contract."
   def snapshot, do: ActorTxSpike.Demo.snapshot()
   def control(command), do: ActorTxSpike.Demo.control(command)
+  def metrics, do: ActorTxSpike.Metrics.snapshot()
 end

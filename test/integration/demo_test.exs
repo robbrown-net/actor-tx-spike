@@ -181,6 +181,12 @@ defmodule ActorTxSpike.DashboardIntegrationTest do
     assert stream =~ ~s("tx":"#{prefix}-1")
 
     assert http(port, "GET /api/snapshot HTTP/1.1\r\nhost: x\r\n\r\n") =~ ~s("submitted":1)
+
+    # resource and application metrics are served too, and see the transaction
+    ActorTxSpike.Metrics.sample()
+    metrics = http(port, "GET /api/metrics HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert metrics =~ ~s("memory":{)
+    assert metrics =~ ~s("sched":)
   end
 
   defp read_until(s, acc, pattern) do
