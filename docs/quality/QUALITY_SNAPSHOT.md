@@ -19,7 +19,7 @@ unless marked.
 | Dependency vulnerabilities | **none** (mix_audit, hex.audit) | none | ✅ |
 | Security scan (Sobelow) | 2 findings, both non-applicable / false positive | n/a | ✅ with notes |
 | Runtime dependencies | **0** | minimise | ✅ |
-| CI | workflow committed, **not yet run** (needs the repository's Actions) | green | ⚠️ |
+| CI | first run on GitHub Actions (2026-10-15, commit `734727d`): **success** | green | ✅ |
 
 ## 2. Size (SLOC)
 
@@ -177,7 +177,7 @@ Manual review of the dashboard server (the only network-facing code):
 
 | Aspect | State |
 |---|---|
-| CI | workflow committed; not yet executed on GitHub |
+| CI | GitHub Actions workflow ran green on `main` (format, Credo, audits, unit and integration gates, regression, system) |
 | Format | `mix format --check-formatted` clean |
 | Type checking | none (no Dialyzer yet); typespecs partial |
 | Branch coverage | not available in the toolchain; mutation testing used instead |
@@ -185,7 +185,7 @@ Manual review of the dashboard server (the only network-facing code):
 
 ## 8. Recommended next quality actions
 
-1. Run the CI workflow and make it a required check.
+1. Make the CI workflow a required check (branch protection).
 2. Add Dialyzer (dialyxir) and complete typespecs.
 3. Build a load / soak mode and use the Performance view to set SLOs.
 4. Widen mutation testing to `Payment` (needs an equivalent-mutant review).

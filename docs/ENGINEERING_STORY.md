@@ -188,7 +188,7 @@ These came from the owner and are standing rules.
 | R15 | Settlement failure leaves a made payment needing human action (no undo) | medium | high | UC-4 review tooling, alerting, ageing SLO |
 | R16 | Guarantee exposure is only recorded, not limited | medium | medium | Exposure limits and guarantee-aware routing |
 | R17 | Metrics and narrative are in memory: no history across restarts | certain | medium | Durable tier (Phase 3) |
-| R18 | CI has never run on GitHub | medium | low | Run and fix; make required |
+| R18 | CI is not yet a required check; first run was green (2026-10-15) | low | low | Branch protection |
 
 ## 10. Roadmap
 
