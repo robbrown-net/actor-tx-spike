@@ -1,5 +1,7 @@
 # Roadmap (single node first)
 
+The narrative version of this plan, with risks and open questions, is in [ENGINEERING_STORY.md](ENGINEERING_STORY.md).
+
 Gates: unit coverage 100%, integration coverage >85% (line coverage via `mix test --cover`).
 Baseline on 2026-10-15: 76.5% total (Transaction 65.7%, ActorTxSpike 78.6%,
 TransactionSupervisor 80%, Store 87.5%, Subsystem 94.4%, Application 100%).
