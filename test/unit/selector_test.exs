@@ -2,14 +2,14 @@ defmodule ActorTxSpike.SelectorTest do
   use ExUnit.Case, async: true
 
   alias ActorTxSpike.{Policy, Selection, Selector}
-  alias ActorTxSpike.Provider.{Fake, Server}
+  alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   defmodule StubServer do
     @moduledoc "Answers :health but misbehaves on :checkout."
     use GenServer
     def start_link(mode), do: GenServer.start_link(__MODULE__, mode)
     def init(mode), do: {:ok, mode}
-    def handle_call(:health, _from, mode), do: {:reply, ActorTxSpike.Provider.Health.new(), mode}
+    def handle_call(:health, _from, mode), do: {:reply, Health.new(), mode}
     def handle_call(:checkout, _from, :hang), do: {:noreply, :hang}
     def handle_call(:checkout, _from, :crash), do: {:stop, :crashed, :crashed}
   end

@@ -12,8 +12,8 @@ defmodule ActorTxSpike.PaymentInvariantsIntegrationTest do
   """
   use ExUnit.Case, async: true
 
-  alias ActorTxSpike.Provider.{Fake, Server}
   alias ActorTxSpike.Policy
+  alias ActorTxSpike.Provider.{Fake, Server}
 
   @providers [:alpha, :bravo, :charlie, :delta]
   @tx_count 40
@@ -23,21 +23,21 @@ defmodule ActorTxSpike.PaymentInvariantsIntegrationTest do
   @undo_pool List.duplicate(:ok, 5) ++ [:timeout, {:error, :glitch}]
   @status_pool List.duplicate(:ok, 5) ++ [:unknown, :timeout]
 
+  defp script(pool, n), do: for(_ <- 1..n, do: Enum.random(pool))
+
   defp build_market do
     for {id, i} <- Enum.with_index(@providers), into: %{} do
-      script = fn pool, n -> for _ <- 1..n, do: Enum.random(pool) end
-
       {:ok, fake} =
         Fake.start_link(
           id: id,
           rate: 1.0 + i / 100,
           latency_ms: Enum.random(0..4),
-          accept_quote_mode: script.(@fault_pool, 6),
-          authorise_mode: script.(@fault_pool, 6),
-          pay_mode: script.(@fault_pool, 6),
-          cancel_accept_mode: script.(@undo_pool, 6),
-          void_authorisation_mode: script.(@undo_pool, 6),
-          status_mode: script.(@status_pool, 6)
+          accept_quote_mode: script(@fault_pool, 6),
+          authorise_mode: script(@fault_pool, 6),
+          pay_mode: script(@fault_pool, 6),
+          cancel_accept_mode: script(@undo_pool, 6),
+          void_authorisation_mode: script(@undo_pool, 6),
+          status_mode: script(@status_pool, 6)
         )
 
       {:ok, server} =

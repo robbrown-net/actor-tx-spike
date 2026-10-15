@@ -1,7 +1,7 @@
 defmodule ActorTxSpike.Provider.ServerTest do
   use ExUnit.Case, async: true
 
-  alias ActorTxSpike.Provider.{Fake, Server}
+  alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   defmodule Misbehaving do
     @behaviour ActorTxSpike.Provider
@@ -60,7 +60,7 @@ defmodule ActorTxSpike.Provider.ServerTest do
     assert {:ok, quote} = Server.request_quote(server, %{id: "r"})
     assert {:ok, _} = Server.invoke(server, :pay, [quote, "k"])
     assert {:ok, _} = Server.status(server, :pay, "k")
-    assert %{samples: 3} = Server.health(server) |> ActorTxSpike.Provider.Health.stats()
+    assert %{samples: 3} = Server.health(server) |> Health.stats()
     assert Server.state(server) == :healthy
   end
 

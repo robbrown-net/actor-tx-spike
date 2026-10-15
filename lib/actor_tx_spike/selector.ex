@@ -38,7 +38,7 @@ defmodule ActorTxSpike.Selector do
       request,
       :select_started,
       "asking #{length(providers)} provider(s) for quotes " <>
-        "(deadline #{deadline_ms}ms): #{providers |> Enum.map(& &1.id) |> Enum.join(", ")}",
+        "(deadline #{deadline_ms}ms): #{Enum.map_join(providers, ", ", & &1.id)}",
       %{providers: Enum.map(providers, & &1.id), deadline_ms: deadline_ms}
     )
 
