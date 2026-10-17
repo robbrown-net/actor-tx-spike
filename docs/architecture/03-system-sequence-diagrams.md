@@ -131,3 +131,45 @@ sequenceDiagram
     U->>S: diff(other system's log)
     S-->>U: identical count, divergences by transaction and field
 ```
+
+## SSD-7 · Restart and resume (UC-10)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Operator
+    participant S as ":System"
+
+    O->>S: start (logs from the previous run)
+    S->>S: verify and load every log
+    alt a log fails verification
+        S-->>O: refuses to start, naming the line
+    else all intact
+        S-->>O: open transactions found, and where each stood
+        loop each open transaction
+            S->>S: resume (quote again | next step | ask the provider | finish undos | record completion)
+        end
+        S-->>O: resumed, or escalated to a person
+    end
+```
+
+## SSD-8 · Submit within a jurisdiction (UC-11)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M as Merchant system
+    participant S as ":System"
+
+    M->>S: submit(amount, origin, destination, instrument, customer type)
+    S->>S: decide eligibility (strictest region wins)
+    alt instrument or customer type not permitted
+        S-->>M: failed: not permitted, with reasons (no provider asked)
+    else no provider eligible
+        S-->>M: failed: no eligible provider
+    else
+        S->>S: quote only eligible providers, then proceed
+        S->>S: record every event in the logs the decision names
+        S-->>M: completed or escalated
+    end
+```

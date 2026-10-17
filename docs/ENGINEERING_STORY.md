@@ -190,15 +190,17 @@ These came from the owner and are standing rules.
 | R16 | Guarantee exposure is only recorded, not limited | medium | medium | Exposure limits and guarantee-aware routing |
 | R17 | Metrics and narrative are in memory: no history across restarts | certain | medium | Durable tier (Phase 3) |
 | R18 | CI is not yet a required check; first run was green (2026-10-15) | low | low | Branch protection |
-| R19 | The audit writer is not supervised or fail-closed: if it dies the system runs unlogged | medium | high | Supervise it and stop or alert on failure |
+| R19 | The audit writer is not supervised in the application tree, and the system does not refuse to start without one. Fail-closed is built: once a sink is registered and dies, no money moves | medium | high | Supervise it; refuse to start without a registered sink; alert |
 | R20 | Audit chain cannot detect tail truncation by itself | medium | medium | Anchor the head externally on a schedule |
 | R21 | Cost rate card holds placeholder prices; byte counts are a proxy; "saved" depends on the median baseline | certain | medium | Use invoice figures; real wire counts in adapters; show the baseline always |
 | R23 | Replay is quote-level: what-if assumes the alternative provider would have completed | certain | medium | Re-execution engine with recorded answers and a virtual clock |
 | R24 | A new decision rule added without its journal inputs makes the day unreplayable | medium | medium | Rule: every decision must be re-derivable from journal data; replay tests break a day one way at a time |
 | R25 | A day's log is large (about 23 KB per transaction) | certain | medium | Compression, tiering and retention policy |
 | R22 | Regulatory scope is now known in outline (spot and forward; 11 jurisdictions) but unverified by counsel, and licence-holder and book-versus-arranged questions are open | high | high | Counsel review per priority jurisdiction; answer the open questions in docs/compliance/COMPLIANCE_EVIDENCE.md |
-| R26 | Forwards need a long-lived durable deal record; the system persists nothing | certain | high | Durable store (Phase 3) before any forward product |
-| R27 | Data residency: one global audit log cannot satisfy in-country storage rules (India, China, Turkey, Saudi Arabia and others) | high | high | Per-region audit logs and retention; region on every record |
+| R26 | Forwards need a long-lived durable deal record. Open spot transactions now survive a restart (log-based recovery); deals that live for days are not modelled | certain | high | Durable store (Phase 3) before any forward product |
+| R27 | Data residency: regional logs and a residency proof exist, but retention is not enforced, rules are unconfirmed by counsel, and a corridor touching a local-only region leaves the other side without a record | high | high | Retention and archival; counsel review; decide the corridor policy |
+| R28 | Recovery reconciles a pay it cannot prove was never sent as in doubt, so a crash in that window costs a human review; resumed work loses cost attribution and the policy label | certain | low | Accept; improve with provider-side status guarantees |
+| R29 | Two writers on one log would break the chain; guarded by a lock file that relies on the OS process table | low | high | Keep the lock; use a real distributed lock if the log moves off a local disk |
 
 ## 10. Roadmap
 

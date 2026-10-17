@@ -67,6 +67,14 @@ Metrics sampler, rollups and Performance view DONE (see docs/architecture/07).
 - Property/chaos tests (stalls, drift, crashes mid-commit, restart) asserting no double payment.
 - Load test for latency tails and resource budgets.
 
+## Phase 3a: Durable recovery, jurisdiction and regional logs - DONE (2026-10-17)
+- Write-ahead barrier and fail closed; group-commit fsync; one writer per log (ADR 0010).
+- `Recovery`: open transactions resume from the log after a restart; demo resumes at start.
+- `Eligibility`: jurisdiction rules before scoring; `Audit.Router` regional logs; `Residency` proof
+  and `mix replay residency` (ADR 0011).
+Next: supervise the audit writer and refuse to start without one; retention and rotation;
+forward deal lifecycle on the log; sanctions and KYC gates; load mode to measure barrier cost.
+
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).
 - Sanctions and KYC gates before accept, recorded in the journal.

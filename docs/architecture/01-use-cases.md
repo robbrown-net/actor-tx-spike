@@ -149,3 +149,25 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Extensions** | 1a. Chain broken: replay refuses to start and says where. 3a. A rule was broken: the report names the rule, transaction and audit record. 4a. The change is not a valid policy: refused with every error. 5a. A transaction exists in only one log: listed separately. |
 | **Special requirements** | Decisions are re-judged with the same code that made them live. Timing is not compared between systems. |
 | **Status** | Implemented as a library and `mix replay`. **Not built:** re-executing the orchestrator against recorded answers (virtual clock, replay provider), capturing the cascade layers and the rate card, retention and tiering of a day's log. What-if is quote-level (see ADR 0009). |
+
+## UC-10 Resume after a restart ✅ (first version)
+
+| | |
+|---|---|
+| **Primary actor** | Operator (the restart is the trigger) |
+| **Preconditions** | The previous run kept the audit log(s). Providers are registered again. |
+| **Success guarantee** | Every transaction that was open is resumed from where its log says it stood; none is paid twice; anything the log cannot settle goes to a person. |
+| **Main scenario** | 1. System starts; the logs are verified and loaded. 2. System lists the open transactions and, for each, where it stood. 3. Each is resumed: quoting again, sending the step that was never sent, asking the provider about a step that may have been sent, finishing undos, or recording a completion. 4. Resumed work is recorded in the same log, chained after the crash. |
+| **Extensions** | 1a. A log fails verification: the system refuses to start on it. 2a. The same transaction is in several regional logs: resumed once. 3a. The provider it was using no longer exists, or its quote was never recorded: escalated to a person. 3b. A pay or settle cannot be confirmed: never failed over; a person decides. 3c. The cut-off has passed: it undoes what it did and stops. |
+| **Special requirements** | A call in the log is reconciled, never repeated blindly; a call not in the log is safe to make (write-ahead). |
+| **Status** | Implemented, proven by cut-point, random-kill and restart tests. Not built: refusing to start without a registered audit sink, supervision of the audit writer in the application tree. See ADR 0010. |
+
+## UC-11 Keep a transaction inside its jurisdiction ✅ (mechanism)
+
+| | |
+|---|---|
+| **Primary actor** | Compliance owner (sets rules), merchant system (submits) |
+| **Success guarantee** | A transaction uses only providers eligible for its corridor, is refused if its instrument or customer type is not permitted there, and its records live only where the rules allow; all of it provable from the logs. |
+| **Main scenario** | 1. A request names origin and destination regions, instrument and customer type. 2. System decides eligibility from the rules, strictest region winning. 3. Ineligible providers are not asked. 4. The decision is recorded. 5. Every event of the transaction is written to the logs the decision names. 6. Auditor runs the residency check across the regional logs. |
+| **Extensions** | 2a. Instrument or customer type not permitted: the transaction fails before any provider is called, with the reasons. 3a. No provider is eligible: fails with `no_eligible_provider`. 5a. The decision names a log the system does not have: the router stops (fail closed). 6a. A transaction is found in a log it must not be in, or missing from one it must be in: reported. |
+| **Status** | Implemented as mechanism. The rules themselves need counsel per country; retention is recorded but not enforced; sanctions and KYC gates are not built. See ADR 0011. |

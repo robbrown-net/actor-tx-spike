@@ -167,7 +167,14 @@ Consequences, before any jurisdiction detail:
 
 ## 8. Gaps, in priority order
 
-1. **Supervise the audit writer and fail closed** (stop or alert if it dies).
+**Built since this list was written (2026-10-17):** fail closed when the log is unavailable
+(write-ahead barrier), one writer per log, recovery of open transactions from the log
+(ADR 0010); jurisdiction eligibility, regional logs and provable residency (ADR 0011).
+Still open from the items below: supervising the audit writer in the application tree and
+refusing to start without it; retention, rotation and off-host copy; sanctions and KYC gates;
+the forward deal lifecycle and trade reporting; counsel's confirmation of every rule.
+
+1. **Supervise the audit writer and fail closed** (stop or alert if it dies). *Fail closed built; supervision and refuse-to-start still open.*
 2. **Authentication and identity** on the control API, so records carry a user.
 3. **Retention, rotation, off-host copy** and an anchoring job.
 4. **Reject card-like data in requests**, not only scrub it from logs.

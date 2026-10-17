@@ -222,6 +222,54 @@ sequenceDiagram
 The pure `evaluate` function is the seam: live, it is fed what providers just said; in replay,
 what the log says they said. See ADR 0009 for what this can and cannot replay.
 
+## 4.4e Write-ahead, fail closed and regional routing
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PAY as Payment
+    participant EV as Events
+    participant RT as Audit.Router (durable sink)
+    participant LOG as Regional logs (IN, CN, GLOBAL)
+    participant PRV as Provider
+
+    PAY->>EV: step_started (op, key)
+    EV-->>RT: event
+    RT->>LOG: write to the logs this transaction's decision names
+    PAY->>EV: barrier
+    EV-->>PAY: sinks to flush
+    PAY->>RT: flush
+    RT->>LOG: make durable (one fsync covers everything written)
+    RT-->>PAY: ok
+    alt barrier ok
+        PAY->>PRV: the call (idempotency key)
+    else sink down or unresponsive
+        PAY->>PAY: do not call; failed (nothing done) or needs_review (money moved)
+    end
+```
+
+### Recovery decision
+
+```mermaid
+flowchart TD
+    A["Open transaction in the log"] --> B{"Provider chosen?"}
+    B -- no --> F["fresh: quote again"]
+    B -- yes --> C{"Quote for it recorded?"}
+    C -- no --> R["review: a person decides"]
+    C -- yes --> D{"Compensation under way?"}
+    D -- yes --> U["undo: finish the remaining undos, then fail over or abort"]
+    D -- no --> E{"Last thing recorded"}
+    E -- "step succeeded" --> G{"Was it settle?"}
+    G -- yes --> K["complete: record the completion"]
+    G -- no --> N["next: send the step that was never sent"]
+    E -- "retry scheduled" --> N
+    E -- "step sent, no answer / status check" --> Q["doubt: ask the provider what it holds"]
+    Q --> Q2{"Provider's answer"}
+    Q2 -- "confirms" --> N
+    Q2 -- "reversible step unconfirmed" --> U
+    Q2 -- "pay or settle unresolved" --> R
+```
+
 ## 4.5 Activity: one transaction step (swimlane view)
 
 ```mermaid

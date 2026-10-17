@@ -1,6 +1,6 @@
 # Quality snapshot
 
-Measured **2026-10-17** after exact money, the audit chain, the economics ledger and replay.
+Measured **2026-10-17** after exact money, the audit chain, the economics ledger, replay, write-ahead recovery and jurisdiction.
 Everything here was produced by tools run against the repository; nothing is estimated
 unless marked.
 
@@ -9,12 +9,12 @@ unless marked.
 | Area | Result | Target | Verdict |
 |---|---|---|---|
 | Unit coverage (line) | **100.0%** (all measured modules) | 100% | ✅ |
-| Integration coverage (line) | **87.5%** | > 85% | ✅ (headroom ~2 pts) |
+| Integration coverage (line) | **~85.8%** | > 85% | ✅ but thin headroom (~0.8 pt), watch it |
 | System tests | **10 scenarios**, real process over HTTP/SSE, all pass | n/a | ✅ (no line coverage by nature) |
 | Regression pack | **23 tests** tagged to defects found | n/a | ✅ |
 | Mutation score (sampled) | **100%** of 93 valid mutants killed over the pure core, after strengthening | n/a | ✅ with caveat |
-| Tests | 267 (235 unit, 21 integration, 11 system), 0 failures | n/a | ✅ |
-| Static analysis (Credo strict) | **0 issues**, 729 functions | 0 | ✅ |
+| Tests | 356 non-system (320 unit, 25 integration) plus 11 system, 0 failures | n/a | ✅ |
+| Static analysis (Credo strict) | **0 issues**, 919 functions | 0 | ✅ |
 | Compilation | `--warnings-as-errors` clean | clean | ✅ |
 | Dependency vulnerabilities | **none** (mix_audit, hex.audit) | none | ✅ |
 | Security scan (Sobelow) | 2 findings, both non-applicable / false positive | n/a | ✅ with notes |

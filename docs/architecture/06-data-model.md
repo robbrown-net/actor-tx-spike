@@ -259,3 +259,34 @@ Also journalled: `control` (operator and world actions, with their arguments) an
 provider `health` events. Decisions are recorded by the existing `selection_made`
 (ranking and scores), `provider_chosen`, `step_*`, `failover`, `undone`, `deadline_set`,
 guarantee and `tx_economics` events.
+
+## Jurisdiction, recovery and the lock (added 2026-10-17)
+
+`tx_received` now also carries the eligibility decision; `tx_resumed` records a recovery.
+
+```mermaid
+erDiagram
+    TX_RECEIVED ||--|| ELIGIBILITY_DECISION : "records"
+    TX_RECEIVED ||--o| TX_RESUMED : "may be followed by"
+    ELIGIBILITY_DECISION {
+        bool permitted
+        list reasons "why not"
+        list regions "origin and destination"
+        string instrument "spot, forward"
+        string customer_type "business, retail"
+        list allowed_providers
+        list denied_providers "provider and reason"
+        list logs "where records must live"
+        int retention_days "longest that applies"
+    }
+    TX_RESUMED {
+        string mode "fresh, next, doubt, undo, complete, review"
+        string provider
+        string op
+        list done
+        json eligibility "so the router re-learns the logs"
+    }
+```
+
+Files per log directory: `<region>.log` (the hash chain) and `<region>.log.lock`
+(`"<os pid> <erlang pid>"`, present while a writer holds the log).

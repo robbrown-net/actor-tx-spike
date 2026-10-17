@@ -178,3 +178,12 @@ depends on the stated baseline.
 | Cost per merchant, per day, per region | 🔲 |
 | Real wire byte counts, real invoice prices | 🔲 |
 
+## 7.8 Cost of durability (added 2026-10-17)
+
+Writing the log ahead of every money-moving call puts a disk flush on the transaction's critical
+path. Records are written immediately but made durable by **group commit**: one fsync on each
+barrier and at most 50 ms apart, so one fsync covers every record written meanwhile. Under load
+many transactions share a flush; without it the system would be capped by the disk's fsync rate
+(this was seen: a per-record fsync starved the barrier under a test-suite load). The barrier adds
+roughly one flush per money-moving step per transaction (four, plus undos). Measure it with the
+load mode on the roadmap before setting latency targets.

@@ -37,7 +37,11 @@ flowchart LR
         AUD["Audit (hash-chained log)"]
         FILE[("audit log file")]
         JRN["Journal (replay inputs, hidden from humans)"]
-        REP["Replay (state_at, Rules, WhatIf, Compare)"]
+        REP["Replay (state_at, Rules, WhatIf, Compare, Residency)"]
+        RTR["Audit.Router (one log per region)"]
+        LCK["Audit.Lock (one writer)"]
+        REC["Recovery (plan, recover)"]
+        ELIG["Eligibility (jurisdiction rules)"]
     end
     DEMO["Demo world (providers, traffic, sentinel, operator controls)"]
 
@@ -56,6 +60,11 @@ flowchart LR
     PAY -. inputs .-> JRN
     SEL -. inputs .-> JRN
     JRN --> EV
+    EV --> RTR --> FILE
+    AUD --> LCK
+    PAY -. before scoring .-> ELIG
+    PAY -. barrier before money moves .-> EV
+    FILE --> REC --> PAY
     FILE --> REP
     REP -. same decision code .-> SEL
     ECO --> PANEL
@@ -103,10 +112,11 @@ flowchart TD
     MT -. "links (only with --audit)" .-> AUDIT["Audit"]
 ```
 
-> **Known gaps:** Provider servers, the panel and the **audit writer** are *not* under the
+> **Known gaps:** Provider servers, the panel and the audit writer(s) are *not* under the
 > application's supervision tree today; they are linked to the demo. A dead audit writer
-> leaves the system running unlogged; it should fail closed. A production deployment needs
-> them supervised (and Payment processes restarted from a durable log).
+> now makes the system **fail closed** (no money moves) rather than run unlogged, and open
+> transactions are resumed from the log by `Recovery`, but the system does not yet refuse to
+> start without a registered audit sink, and nothing restarts a dead writer automatically.
 
 ## 5.3 Module responsibilities
 
@@ -129,7 +139,11 @@ flowchart TD
 | `Economics` | Prices each finished transaction, keeps totals overall and per provider, announces `tx_costed` | no (process) |
 | `Audit` | Hash-chained append-only log, verification, card-number scrubbing | no (process) |
 | `Journal` | Records replay inputs (actor `:journal`, hidden from humans) | no |
-| `Replay` (+ `Tx`, `Rules`, `WhatIf`, `Compare`, `Report`) | Load a verified day; state at a moment; rule verification; strategy what-if; comparison with another system; text reports | **yes** |
+| `Eligibility` (+ `Rule`) | Jurisdiction rules: eligible providers, permitted instruments and customer types, logs, retention; strictest region wins | **yes** |
+| `Audit.Router` | One hash-chained log per region; routes each transaction's events to the logs its decision names; fails closed | no (process) |
+| `Audit.Lock` | One writer per log (lock file naming the owner; stale locks taken over) | no |
+| `Recovery` | Pure plan of where an open transaction stood; recovery of every open transaction from the logs | plan: **yes** |
+| `Replay` (+ `Tx`, `Rules`, `WhatIf`, `Compare`, `Residency`, `Report`) | Load a verified day; state at a moment; rule verification; strategy what-if; comparison with another system; text reports | **yes** |
 | `Metrics` (+ `Stats`, `Rollup`, `VM`) | Resource and application metrics with bounded rollups | mostly |
 | `Events`, `Narrative` | Narrative stream and rendering | no |
 | `Panel`, `Demo` | Dashboard server and demo world | no |
@@ -150,10 +164,10 @@ flowchart LR
     L -. "anchor head, off-host copy (not built)" .-> X["Independent system"]
 ```
 
-Single node. Nothing is persisted for recovery; the audit log is evidence, not a recovery store. No external network calls (providers are fakes).
+Single node. The audit log is now also the recovery store: open transactions resume from it after a restart. Deals that live for days (forwards) are not yet modelled. No external network calls (providers are fakes).
 
 ## 5.5 Dependencies
 
 * **Runtime:** none beyond OTP/Elixir standard library (JSON module from Elixir 1.18).
 * **Dev/test only:** credo, sobelow, mix_audit (and their transitive deps).
-* **Tooling entry points:** `mix demo`, `mix audit.verify`, `mix replay`.
+* **Tooling entry points:** `mix demo` (`--audit`, `--audit-dir`; resumes open transactions at start), `mix audit.verify`, `mix replay` (including `residency`).

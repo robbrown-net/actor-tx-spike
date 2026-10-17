@@ -94,6 +94,23 @@ classDiagram
     class RateCard {
         +picosPerResource
     }
+    class EligibilityRule {
+        +instruments
+        +customerTypes
+        +providers
+        +logs
+        +localOnly
+        +retentionDays
+    }
+    class RegionalLog {
+        +name
+        +head
+    }
+    class RecoveryPlan {
+        +mode
+        +provider
+        +op
+    }
     class JournalEntry {
         +kind
         +inputs
@@ -123,6 +140,10 @@ classDiagram
     Transaction "1" --> "1" EconomicsRecord : measured as
     EconomicsRecord "1" --> "0..1" PriceDiscovery : compares the quotes
     RateCard "1" --> "0..*" EconomicsRecord : prices
+    EligibilityRule "0..*" --> "1" Transaction : constrains, strictest wins
+    Transaction "1" --> "1..*" RegionalLog : is recorded in
+    RegionalLog "1" --> "0..*" AuditRecord : holds
+    RecoveryPlan "0..1" --> "1" Transaction : resumes
     JournalEntry "1" --> "1" AuditRecord : is sealed as
     Day "1" --> "1..*" AuditRecord : is loaded from
     Day "1" --> "0..*" Transaction : replays
@@ -148,6 +169,14 @@ classDiagram
 | **Replay** | Loading a day from its log to query its state, verify its rules, compare it or re-judge it under a different policy. |
 | **Day** | A loaded log: its records in order, grouped by transaction. |
 | **What-if** | Re-judging the recorded provider answers under a changed policy to see what the change alone would have done on that day. |
+| **Corridor** | The origin and destination regions of a transaction; the rules of both apply, the strictest wins. |
+| **Eligibility** | Hard constraints from jurisdiction (providers, instruments, customer types, logs, retention), applied before scoring. |
+| **Local-only region** | A region whose transactions are recorded only in its own log, not in the global one. |
+| **Regional log** | One independently verifiable audit log per named region. |
+| **Write-ahead** | The record of a call is on disk before the call is made; after a crash the log never misses a call that was sent. |
+| **Barrier** | The wait that makes every durable sink write everything emitted so far; called before each money-moving call. |
+| **Fail closed** | If the durable log is unavailable, no money moves. |
+| **Recovery plan** | Where an open transaction stood, rebuilt from its log: fresh, next, doubt, undo, complete or review. |
 | **Rate card** | The explicit prices that turn measured usage (CPU, memory, network, storage, provider calls) into cost. |
 | **Pico-unit** | 10^-12 of a major currency unit; the unit of cost, since one transaction costs a fraction of a cent. |
 | **Effect** | Something that actually happened at a provider: accept, authorise, pay (or an undo). |
@@ -212,3 +241,19 @@ classDiagram
 
 * *Pre:* overrides form a valid policy change.
 * *Post:* every transaction with recorded quotes is re-judged under the recorded policy and under the changed one; the totals say how many would route differently and what that is worth in net and latency, on quote values.
+
+**`barrier()`** (write-ahead)
+
+* *Post:* returns `:ok` only if every registered durable sink has written every event emitted before the call; otherwise an error naming the failed or unresponsive sink. `Payment` does not make a money-moving call unless it returned `:ok`.
+
+**`decide(eligibility, request)`**
+
+* *Post:* `permitted?` is true only if every region involved allows the instrument and the customer type; the allowed-provider test is the conjunction of every region's provider rule; `logs` is the union of the involved regions' logs, or only the local-only regions' logs if any is involved; `retention_days` is the longest that applies.
+
+**`plan(records)`** (recovery, pure)
+
+* *Post:* `nil` if the transaction never started; `done` if it has a terminal record; otherwise a mode saying what to do next. A step with a recorded start and no recorded answer is `doubt`, never `next`.
+
+**`recover(days, opts)`**
+
+* *Post:* for each open transaction found (once, however many logs hold it) a resumed `Payment` is started, or an error is returned for it; the money rules of `Payment` apply unchanged.
