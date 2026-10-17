@@ -87,8 +87,22 @@ defmodule ActorTxSpike.Audit do
       {:ok, %{records: n, head: head}} ->
         File.mkdir_p!(Path.dirname(path))
         {:ok, fd} = File.open(path, [:append, :binary, :raw])
-        if Keyword.get(opts, :subscribe, true), do: Events.subscribe()
-        {:ok, %{path: path, fd: fd, n: n, head: head, sync: Keyword.get(opts, :sync, true)}}
+        name = Keyword.get(opts, :name, __MODULE__)
+
+        if Keyword.get(opts, :subscribe, true) do
+          Events.subscribe()
+          Events.register_sink({:audit, name}, self())
+        end
+
+        {:ok,
+         %{
+           path: path,
+           fd: fd,
+           n: n,
+           head: head,
+           sync: Keyword.get(opts, :sync, true),
+           sink: if(Keyword.get(opts, :subscribe, true), do: {:audit, name})
+         }}
 
       {:error, reason} ->
         {:stop, {:audit_chain_broken, reason}}
@@ -97,10 +111,18 @@ defmodule ActorTxSpike.Audit do
 
   @impl true
   def handle_call({:record, event}, _from, state), do: {:reply, :ok, append(state, event)}
+  def handle_call(:flush, _from, state), do: {:reply, :ok, state}
   def handle_call(:head, _from, state), do: {:reply, %{records: state.n, head: state.head}, state}
 
   @impl true
   def handle_info({:tx_event, event}, state), do: {:noreply, append(state, event)}
+
+  @impl true
+  def terminate(_reason, %{sink: nil}), do: :ok
+
+  def terminate(:normal, %{sink: sink}), do: Events.unregister_sink(sink)
+  def terminate(:shutdown, %{sink: sink}), do: Events.unregister_sink(sink)
+  def terminate(_crash, _state), do: :ok
 
   # ---- internals ---------------------------------------------------------
 

@@ -282,6 +282,61 @@ defmodule ActorTxSpike.PaymentTest do
     assert {:error, :not_found} = Payment.await(id)
   end
 
+  describe "write-ahead and fail closed" do
+    test "if the durable log cannot be written, no money moves and nothing is left half done" do
+      m = market()
+      id = submit(m, barrier: fn -> {:error, :disk_full} end)
+
+      assert {:error, {:audit_unavailable, :disk_full}} = Payment.await(id)
+
+      for provider <- [:best, :second, :third],
+          op <- [:accept_quote, :authorise, :pay, :settle] do
+        assert count(m, provider, op) == 0
+      end
+    end
+
+    test "if the log fails after money has moved, the transaction stops for a human" do
+      {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+      # healthy for the first two steps (accept, authorise), then the disk goes
+      barrier = fn ->
+        if Agent.get_and_update(calls, &{&1, &1 + 1}) < 2, do: :ok, else: {:error, :disk_full}
+      end
+
+      m = market()
+      id = submit(m, barrier: barrier)
+
+      assert {:error, {:needs_review, {:audit_unavailable, :disk_full}}} = Payment.await(id)
+      assert count(m, :best, :accept_quote) == 1
+      assert count(m, :best, :authorise) == 1
+      assert count(m, :best, :pay) == 0
+    end
+
+    test "if the log fails while compensating, the transaction stops for a human" do
+      {:ok, calls} = Agent.start_link(fn -> 0 end)
+
+      barrier = fn ->
+        if Agent.get_and_update(calls, &{&1, &1 + 1}) < 2, do: :ok, else: {:error, :disk_full}
+      end
+
+      m = market(%{best: [rate: 1.10, authorise_mode: :reject]})
+      id = submit(m, barrier: barrier)
+
+      assert {:error, {:needs_review, {:audit_unavailable, :disk_full}}} = Payment.await(id)
+      assert count(m, :best, :cancel_accept) == 0
+    end
+
+    test "every money-moving call is preceded by a barrier" do
+      {:ok, calls} = Agent.start_link(fn -> [] end)
+      barrier = fn -> Agent.update(calls, &[:barrier | &1]) end
+      m = market()
+      id = submit(m, barrier: fn -> barrier.() && :ok end)
+      assert {:ok, _} = Payment.await(id)
+      # accept, authorise, pay, settle
+      assert length(Agent.get(calls, & &1)) == 4
+    end
+  end
+
   describe "economics" do
     test "a completed transaction reports what it consumed and how its price compares" do
       Events.subscribe()

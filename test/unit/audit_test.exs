@@ -142,4 +142,27 @@ defmodule ActorTxSpike.AuditTest do
       true -> Process.sleep(20) && eventually(fun, tries - 1)
     end
   end
+
+  test "a subscribed audit is a durable sink: the barrier waits for it, and stopping removes it",
+       %{path: path} do
+    name = :"sink_audit_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Audit.start_link(path: path, name: name)
+    Process.unlink(pid)
+
+    tx = "sink-#{System.unique_integer([:positive])}"
+    Events.emit(tx, :payment, :tx_received, "before the barrier", %{})
+    assert :ok = Events.barrier()
+
+    # everything emitted before the barrier is already on disk
+    assert path |> File.read!() |> String.contains?(tx)
+
+    for reason <- [:normal, :shutdown] do
+      GenServer.stop(name, reason)
+      assert :ok = Events.barrier()
+      {:ok, again} = Audit.start_link(path: path, name: name)
+      Process.unlink(again)
+    end
+
+    GenServer.stop(name)
+  end
 end

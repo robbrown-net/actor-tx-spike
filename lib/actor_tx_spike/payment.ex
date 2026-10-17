@@ -54,7 +54,8 @@ defmodule ActorTxSpike.Payment do
     reconcile_attempts: 3,
     reconcile_interval_ms: 50,
     linger_ms: 30_000,
-    baseline: nil
+    baseline: nil,
+    barrier: &Events.barrier/0
   ]
 
   @terminal [:completed, :failed, :needs_review]
@@ -129,7 +130,7 @@ defmodule ActorTxSpike.Payment do
         request: state.request,
         policy: Map.from_struct(state.policy),
         guarantee: state.guarantee && Map.from_struct(state.guarantee),
-        config: Map.delete(state.opts, :baseline),
+        config: Map.drop(state.opts, [:baseline, :barrier]),
         providers: Enum.map(state.providers, & &1.id)
       })
 
@@ -547,7 +548,29 @@ defmodule ActorTxSpike.Payment do
         %{provider: c.provider_id, op: op, key: key, attempt: state.attempt}
       )
 
-    run(state, {:step, op}, fn -> Server.invoke(c.server, op, args, timeout) end)
+    durably(state, fn state ->
+      run(state, {:step, op}, fn -> Server.invoke(c.server, op, args, timeout) end)
+    end)
+  end
+
+  # Write-ahead: the record of what we are about to ask must be on disk before we
+  # ask. If it cannot be, we do not move money (fail closed).
+  defp durably(state, send_fun) do
+    case state.opts.barrier.() do
+      :ok -> send_fun.(state)
+      {:error, why} -> audit_unavailable(state, why)
+    end
+  end
+
+  defp audit_unavailable(state, why) do
+    message =
+      "the durable log is unavailable (#{inspect(why)}); not moving money without a record"
+
+    if state.done == [] and state.undo_queue == [] do
+      finish(state, :failed, {:error, {:audit_unavailable, why}}, :tx_failed, message)
+    else
+      needs_review(state, {:audit_unavailable, why}, message)
+    end
   end
 
   defp run_undo(state, undo) do
@@ -564,7 +587,9 @@ defmodule ActorTxSpike.Payment do
         %{provider: c.provider_id, op: undo, key: key}
       )
 
-    run(state, {:undo, undo, original}, fn -> Server.invoke(c.server, undo, [key], timeout) end)
+    durably(state, fn state ->
+      run(state, {:undo, undo, original}, fn -> Server.invoke(c.server, undo, [key], timeout) end)
+    end)
   end
 
   defp run_status(state, op) do
