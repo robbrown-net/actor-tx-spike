@@ -151,3 +151,68 @@ erDiagram
 
 Invariants 1, 3 and 4 are executable today: see
 `test/integration/payment_invariants_test.exs`.
+
+## Evidence and economics (added 2026-10-17)
+
+Money is held as integers (ADR 0008): amounts and fees in minor units, rates scaled by 10^8,
+costs in pico-units.
+
+```mermaid
+erDiagram
+    TRANSACTION ||--o{ AUDIT_RECORD : "narrated as"
+    AUDIT_RECORD ||--o| AUDIT_RECORD : "prev hash commits to"
+    TRANSACTION ||--|| ECONOMICS_RECORD : "measured as"
+    ECONOMICS_RECORD ||--|| COST_BREAKDOWN : "priced into"
+    ECONOMICS_RECORD ||--o| PRICE_DISCOVERY : "compares quotes"
+    RATE_CARD ||--o{ COST_BREAKDOWN : "prices"
+
+    AUDIT_RECORD {
+        int n "gapless sequence"
+        int seq "event stream sequence"
+        int at "ms, system clock"
+        string tx
+        string actor
+        string kind
+        string message "scrubbed of card-like numbers"
+        json data "scrubbed"
+        string prev "hash of record n-1"
+        string hash "sha256(prev + body)"
+    }
+    ECONOMICS_RECORD {
+        string tx
+        string outcome "completed, failed, needs_review"
+        int reductions
+        int memory_bytes
+        int duration_ms
+        int provider_calls
+        int bytes_out
+        int bytes_in
+        int state_changes
+        int compensations
+        int margin "minor units, negative is exposure"
+        int provider_fee "minor units"
+    }
+    PRICE_DISCOVERY {
+        int quotes
+        int chosen_net "minor units"
+        int median_net
+        int worst_net
+        int best_net
+    }
+    COST_BREAKDOWN {
+        int cpu "pico-units"
+        int memory
+        int network
+        int storage
+        int provider_calls
+        int total
+    }
+    RATE_CARD {
+        int cpu_picos_per_million_reductions
+        int memory_picos_per_gib_second
+        int network_picos_per_gib_out
+        int state_change_picos
+        int provider_call_picos
+        int platform_picos_per_hour
+    }
+```

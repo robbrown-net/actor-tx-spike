@@ -161,7 +161,7 @@ These came from the owner and are standing rules.
 | Q3 | How should guarantee margin and exposure be accounted for durably (periods, rollovers, reconciliation with finance)? | The in-memory ledger records margin and exposure per merchant and period; real accounting rules are unknown |
 | Q4 | Where does merchant/customer policy come from and who may edit it? | Cascade needs an owner and an audit trail |
 | Q5 | Which settlement *phases* exist per region, and what are their individual deadlines? | One `settle` step and one cut-off exist; real settlement is multi-phase |
-| Q6 | What is the money type and rounding policy? | The spike uses floats; this must be decided before real money |
+| Q6 | ~~What is the money type and rounding policy?~~ | **Answered (ADR 0008):** integer minor units, rates scaled 10^8, half-even rounding |
 | Q7 | What regulatory duties apply (KYC/AML, record retention, audit)? | Shapes the durable store and `needs_review` workflow |
 | Q8 | How should provider quote and call costs be accounted (rate limits, fees to us)? | Hedging is not free |
 | Q9 | What are the real latency/throughput targets? | Decides the performance work and when Rust might matter |
@@ -171,7 +171,7 @@ These came from the owner and are standing rules.
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | Floats used for money and rates | certain | high | Integer minor units or Decimal before any real flow |
+| R1 | ~~Floats used for money and rates~~ | resolved 2026-10-17 | | Integer money (ADR 0008) |
 | R2 | No persistence: node restart loses in-flight transactions | certain | high | Event-sourced durable log (Phase 3) |
 | R3 | Provider contract assumptions (keys, undo, status) are wrong | medium | high | Validate against real APIs early; adapters isolate it |
 | R4 | Dashboard control API is unauthenticated | low (loopback) | high if exposed | Keep loopback; add auth/TLS before exposure |
@@ -189,6 +189,10 @@ These came from the owner and are standing rules.
 | R16 | Guarantee exposure is only recorded, not limited | medium | medium | Exposure limits and guarantee-aware routing |
 | R17 | Metrics and narrative are in memory: no history across restarts | certain | medium | Durable tier (Phase 3) |
 | R18 | CI is not yet a required check; first run was green (2026-10-15) | low | low | Branch protection |
+| R19 | The audit writer is not supervised or fail-closed: if it dies the system runs unlogged | medium | high | Supervise it and stop or alert on failure |
+| R20 | Audit chain cannot detect tail truncation by itself | medium | medium | Anchor the head externally on a schedule |
+| R21 | Cost rate card holds placeholder prices; byte counts are a proxy; "saved" depends on the median baseline | certain | medium | Use invoice figures; real wire counts in adapters; show the baseline always |
+| R22 | Regulatory scope (PCI role, instrument, jurisdiction) is undecided | high | high | Answer the questions in docs/compliance/COMPLIANCE_EVIDENCE.md |
 
 ## 10. Roadmap
 

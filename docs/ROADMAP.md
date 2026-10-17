@@ -41,6 +41,14 @@ Slice 3 DONE (2026-10-15): `PolicySet` cascade, `Guarantee` + `Ledger`, `Cutoff`
 enforcement and the `settle` step (ADR 0007). Remaining in this phase: multi-phase settlement,
 timezone database behind the offset function.
 
+## Phase 2b: Money, evidence and economics - DONE (2026-10-17)
+- `Money`: integer minor units, scaled-integer rates, half-even rounding (ADR 0008).
+- `Audit`: hash-chained, append-only, PAN-scrubbed log; `mix audit.verify`; `mix demo --audit PATH`.
+- `Costs` + `Economics`: per-transaction cost model, price-discovery savings, guarantee margin,
+  platform cost, per-provider totals; dashboard panel. See docs/compliance/COMPLIANCE_EVIDENCE.md.
+Next on this thread: supervise the audit writer and fail closed; authentication and identity;
+retention and off-host anchoring; reject card-like input; load/soak mode for realistic costs.
+
 ## Phase 3: Sentinel and observability
 Metrics sampler, rollups and Performance view DONE (see docs/architecture/07).
 - Scheduled probes (configurable interval) + passive observation; drift detection.
@@ -52,7 +60,7 @@ Metrics sampler, rollups and Performance view DONE (see docs/architecture/07).
 - Load test for latency tails and resource budgets.
 
 ## Known gaps
-- Transactions are not persisted: a node restart loses in-flight work. The old file store
+- Transactions are not persisted (the audit log is evidence, not a recovery store): a node restart loses in-flight work. The old file store
   was removed with the legacy code; durable, event-sourced recovery is Phase 3.
 - `Demo`, `Demo.Handler` are excluded from the unit gate (exercised by integration tests);
   `Mix.Tasks.Demo` is excluded everywhere (thin entry point).

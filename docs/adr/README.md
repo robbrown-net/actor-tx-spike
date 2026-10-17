@@ -9,3 +9,4 @@
 | [0005](0005-test-strategy-and-quality-gates.md) | Unit 100% / integration >85% gates; invariant testing | accepted |
 | [0006](0006-toolchain-and-dependencies.md) | Local toolchain, no Homebrew, zero runtime dependencies | accepted |
 | [0007](0007-cascading-policy-guarantees-and-deadlines.md) | Cascading policy, standing guarantees, cut-offs, settlement | accepted |
+| [0008](0008-exact-money-audit-chain-and-economics.md) | Integer money, hash-chained audit log, cost and savings ledger | accepted |
