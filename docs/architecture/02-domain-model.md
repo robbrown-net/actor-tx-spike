@@ -75,6 +75,25 @@ classDiagram
         +kind
         +message
     }
+    class AuditRecord {
+        +n
+        +prevHash
+        +hash
+    }
+    class EconomicsRecord {
+        +usage
+        +margin
+        +providerFee
+    }
+    class PriceDiscovery {
+        +chosenNet
+        +medianNet
+        +worstNet
+        +bestNet
+    }
+    class RateCard {
+        +picosPerResource
+    }
 
     Merchant "1" --> "0..*" Transaction : submits
     Customer "1" --> "0..*" Transaction : is paid by
@@ -91,6 +110,11 @@ classDiagram
     Transaction "1" --> "0..1" LedgerEntry : settles against guarantee
     Transaction "0..*" --> "0..1" Cutoff : must finish before
     Transaction "0..*" --> "0..1" SettlementBatch : settled in 🔲
+    NarrativeEvent "1" --> "1" AuditRecord : sealed into a hash chain as
+    AuditRecord "1" --> "0..1" AuditRecord : commits to the previous
+    Transaction "1" --> "1" EconomicsRecord : measured as
+    EconomicsRecord "1" --> "0..1" PriceDiscovery : compares the quotes
+    RateCard "1" --> "0..*" EconomicsRecord : prices
 ```
 
 ## Glossary
@@ -101,7 +125,16 @@ classDiagram
 | **Provider** | A third-party service (FX quote + payment) we do not control. Facaded by an adapter. |
 | **Quote** | A firm offer with an expiry: rate and fee. |
 | **Candidate** | A quote that passed constraints, with net value, latency and score. |
-| **Net value** | `amount × rate − fee`: what the customer ends up with. |
+| **Net value** | `amount × rate − fee`: what the customer ends up with, in integer minor units. |
+| **Minor unit** | The smallest currency unit (a cent). All amounts and fees are whole minor units; no floats hold money. |
+| **Scaled rate** | A rate as an integer times 10^8 (`1.0820` is `108_200_000`). Decimal input is converted exactly; rounding is half-even. |
+| **Audit record / chain** | One event sealed with the hash of the record before it; editing, removing or reordering any record breaks the chain at that point. |
+| **Head** | The count and hash of the last audit record. Stored independently, it also exposes truncation of the tail. |
+| **Price discovery** | How the quote we took compares with all quotes received: chosen, median, worst and best net. |
+| **Saved vs median / worst** | Net obtained minus the median / worst quote: what routing earned over an unoptimised pick. |
+| **Regret vs best** | Best quote minus net obtained: the price of non-price goals such as speed and reliability. |
+| **Rate card** | The explicit prices that turn measured usage (CPU, memory, network, storage, provider calls) into cost. |
+| **Pico-unit** | 10^-12 of a major currency unit; the unit of cost, since one transaction costs a fraction of a cent. |
 | **Effect** | Something that actually happened at a provider: accept, authorise, pay (or an undo). |
 | **Idempotency key** | `"<tx>:<provider>:<step>"`. Reused on retry so a repeat cannot repeat the effect. |
 | **Undo** | `cancel_accept`, `void_authorisation`, `refund`: compensating operations keyed by the effect's key. |
@@ -137,3 +170,17 @@ classDiagram
 **`compensate(done_steps)`**
 
 * *Post:* each completed step has its undo issued in reverse order, or the transaction is in `needs_review`.
+
+**`record(event)`** (audit)
+
+* *Pre:* the audit log verifies (or is empty).
+* *Post:* exactly one new line exists whose `n` is the previous `n + 1`, whose `prev` is the previous hash and whose hash covers its body; free-text fields contain no Luhn-valid card number; on a synced log the line is durable before the call returns.
+
+**`verify(path)`**
+
+* *Post:* returns the record count and head hash if every sequence number, link and hash holds; otherwise the first failing line and the reason (`malformed`, `out_of_sequence`, `chain_broken`, `hash_mismatch`). Never modifies the log.
+
+**`price(usage)`** (economics)
+
+* *Post:* each resource cost is an integer number of pico-units computed from the rate card with half-even rounding; the total is the sum of the parts; value (saved, margin) is kept separately in minor units and never mixed with cost until the net is formed.
+

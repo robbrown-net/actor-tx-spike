@@ -17,6 +17,7 @@ flowchart LR
         PSET["PolicySet (global, merchant, customer cascade)"]
         CUT["Cutoff (regional deadlines)"]
         GUA["Guarantee and Ledger"]
+        MON["Money (exact integer arithmetic)"]
     end
     subgraph ProviderLayer["Provider layer"]
         PSRV["Provider.Server xN (breaker, health, bulkhead, timeouts)"]
@@ -30,6 +31,12 @@ flowchart LR
         NARR["Narrative (terminal)"]
         DASH["priv/panel.html (dashboard)"]
     end
+    subgraph Evidence["Evidence and economics"]
+        ECO["Economics (prices usage, keeps totals)"]
+        COST["Costs (rate card, pico-units)"]
+        AUD["Audit (hash-chained log)"]
+        FILE[("audit log file")]
+    end
     DEMO["Demo world (providers, traffic, sentinel, operator controls)"]
 
     API --> TS --> PAY
@@ -39,6 +46,15 @@ flowchart LR
     PAY --> CUT
     PAY --> GUA
     EV --> MET
+    PAY -. measures .-> EV
+    EV --> ECO
+    ECO --> COST
+    ECO -. tx_costed .-> EV
+    EV --> AUD --> FILE
+    ECO --> PANEL
+    PAY --> MON
+    SEL --> MON
+    GUA --> MON
     MET --> PANEL
     SEL --> PSRV
     PAY --> PSRV
@@ -64,6 +80,7 @@ flowchart TD
     APP["ActorTxSpike.Supervisor (one_for_one)"]
     APP --> EVS["Events"]
     APP --> MET["Metrics"]
+    APP --> ECON["Economics"]
     APP --> LED["Ledger"]
     APP --> REG["Registry (payment ids)"]
     APP --> TSUP["TransactionSupervisor"]
@@ -76,10 +93,12 @@ flowchart TD
     DEMO -. links .-> PS2["Provider.Server bluebird"]
     DEMO -. links .-> F1["Provider.Fake agents"]
     MT["mix demo process"] -. links .-> PANEL["Panel + acceptor + connection processes"]
+    MT -. "links (only with --audit)" .-> AUDIT["Audit"]
 ```
 
-> **Known gap:** Provider servers and the panel are *not* under the application's
-> supervision tree today; they are linked to the demo. A production deployment needs
+> **Known gaps:** Provider servers, the panel and the **audit writer** are *not* under the
+> application's supervision tree today; they are linked to the demo. A dead audit writer
+> leaves the system running unlogged; it should fail closed. A production deployment needs
 > them supervised (and Payment processes restarted from a durable log).
 
 ## 5.3 Module responsibilities
@@ -98,6 +117,10 @@ flowchart TD
 | `Cutoff` | Regional cut-offs: fixed offset or date-aware offset function | **yes** |
 | `Guarantee` | Margin / exposure against a standing guarantee | **yes** |
 | `Ledger` | Accumulates guarantee outcomes per merchant and period | no |
+| `Money` | Exact integer money: decimal parsing, half-even rounding, display formatting | **yes** |
+| `Costs` | Rate card and pricing of measured usage into pico-units | **yes** |
+| `Economics` | Prices each finished transaction, keeps totals overall and per provider, announces `tx_costed` | no (process) |
+| `Audit` | Hash-chained append-only log, verification, card-number scrubbing | no (process) |
 | `Metrics` (+ `Stats`, `Rollup`, `VM`) | Resource and application metrics with bounded rollups | mostly |
 | `Events`, `Narrative` | Narrative stream and rendering | no |
 | `Panel`, `Demo` | Dashboard server and demo world | no |
@@ -113,12 +136,15 @@ flowchart LR
         A["application + demo world + panel"]
     end
     N -. "future: HTTPS / provider APIs" .-> P["Third-party providers"]
-    N -. "future: durable log / store" .-> D[("Database")]
+    N -- "append, datasync" --> L[("audit log file (hash chain)")]
+    N -. "future: durable store" .-> D[("Database")]
+    L -. "anchor head, off-host copy (not built)" .-> X["Independent system"]
 ```
 
-Single node, no persistence, no external network calls (providers are fakes).
+Single node. Nothing is persisted for recovery; the audit log is evidence, not a recovery store. No external network calls (providers are fakes).
 
 ## 5.5 Dependencies
 
 * **Runtime:** none beyond OTP/Elixir standard library (JSON module from Elixir 1.18).
 * **Dev/test only:** credo, sobelow, mix_audit (and their transitive deps).
+* **Tooling entry points:** `mix demo`, `mix audit.verify`.

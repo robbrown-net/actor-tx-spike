@@ -12,10 +12,11 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | Merchant system | primary (ingress) | Get a customer's payment converted and paid, fast and at a good rate, exactly once |
 | Operator | primary | See what is happening, change conditions, intervene |
 | Finance / compliance reviewer | primary (planned) | Resolve anything the system could not safely decide |
+| Auditor / QSA | primary | Evidence that the system did the right things, and that the evidence has not been altered |
 | Provider (FX / payment third party) | supporting | Receives requests; we do not control it |
 | Sentinel (timer) | supporting | Keeps our knowledge of providers fresh |
 | Customer | stakeholder | Is paid once, correctly, on time |
-| Business owner | stakeholder | Margin, risk, auditability |
+| Business owner | stakeholder | Margin, risk, auditability, what the system costs to run and what better rates earn |
 
 ## UC-1 Complete an FX swap and payment ✅
 
@@ -113,3 +114,27 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Success guarantee** | Operator can see memory, CPU, scheduler load, network, throughput and latency over time without the monitoring itself becoming a cost. |
 | **Main scenario** | 1. Operator opens the Performance view. 2. Charts update every 1.5 s from `GET /api/metrics`. 3. Operator picks a window (1 / 5 / 15 min or one-minute rollups). |
 | **Not yet** | Long-term storage metrics (no durable store), alerting, retention beyond the in-memory rollups. |
+
+## UC-7 Audit a transaction and prove the record is intact ✅ (partly)
+
+| | |
+|---|---|
+| **Primary actor** | Auditor / compliance reviewer (operator runs the tool) |
+| **Preconditions** | The system ran with the audit log enabled (`mix demo --audit PATH`, or `Audit` started by a supervisor). |
+| **Success guarantee** | For any transaction: every event from `tx_received` to its outcome, with quoted rate and fee, alternatives, provider calls, failures, compensations and the measured cost, in order and time-stamped; and a yes/no answer on whether the log was altered. |
+| **Main scenario** | 1. Auditor asks for a transaction's records (filter the log by `tx`). 2. Auditor runs `mix audit.verify PATH`. 3. System checks sequence, every chain link and every hash and reports the record count and head hash. 4. Auditor compares the head with the independently anchored value. |
+| **Extensions** | 3a. A record was edited, removed, inserted or reordered: verification stops at the first affected line and says which and why. 3b. The log is malformed: reported as such. 4a. Head is shorter than the anchor: the tail was truncated. |
+| **Special requirements** | Card-like numbers (Luhn-valid, 13-19 digits) are redacted before they reach disk. The log refuses to start on top of a log that fails verification. |
+| **Status** | Implemented: capture, chain, verify, scrub. **Not built:** supervision and fail-closed behaviour, retention and rotation, off-host copy, user identity on records, a per-transaction retrieval command. See [compliance evidence](../compliance/COMPLIANCE_EVIDENCE.md). |
+
+## UC-8 Understand what the system costs and what it saves ✅
+
+| | |
+|---|---|
+| **Primary actor** | Operator, finance |
+| **Success guarantee** | For every finished transaction and in total: what it cost to run (CPU, memory, network, storage, provider calls), what the chosen rate saved against the median, worst and best quote, any margin or exposure against a guarantee, and the net after cost. |
+| **Main scenario** | 1. A transaction finishes. 2. System measures what it consumed and records how the chosen price compares with the quotes. 3. System prices the measurements with the rate card and announces the result in the narrative. 4. Operator opens the Performance view and reads the Economics panel (totals and per provider). |
+| **Extensions** | 2a. The transaction failed or needs review: no value is credited, its cost still counts. 2b. Only one provider quoted: savings are zero by construction. 3a. Prices change: re-price from the raw measurements in the audit log. |
+| **Special requirements** | The baseline for "saved" (the median quote) is always stated; the price paid for speed or reliability ("regret vs best") is shown, not hidden. |
+| **Status** | Implemented with placeholder prices. Per-transaction attribution covers the orchestrator process only. |
+

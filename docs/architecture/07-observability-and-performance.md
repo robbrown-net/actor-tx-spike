@@ -2,7 +2,8 @@
 
 **Status: built (first version).** The narrative (what is happening) and the resource /
 performance metrics (how much it costs) both exist. This document records the design and
-marks what is implemented. Not yet built: long-term storage metrics (there is no durable
+marks what is implemented. The cost side is now also accounted per transaction in money terms
+(section 7.7). Not yet built: long-term storage metrics (there is no durable
 store), alerting, retention beyond the in-memory rollups, and the 1-hour tier.
 
 ## 7.1 Two kinds of observability
@@ -130,3 +131,50 @@ partitioning and a retention policy (e.g. full detail 30 days, summaries after).
 Known limits: per-process CPU attribution uses reductions in the top-process table only;
 host CPU/memory (`os_mon`) is not collected; network figures cover this VM's TCP sockets,
 including the dashboard's own polling.
+
+## 7.7 Cost and value accounting (added 2026-10-17)
+
+Resource metrics (above) say how much the machine is working. The economics layer says what
+that work *costs and earns*, per transaction.
+
+```mermaid
+flowchart LR
+    PAY["Payment: measures usage"] -- tx_economics --> ECO["Economics"]
+    CARD["Rate card (Costs)"] --> ECO
+    ECO --> TOT["Totals: overall, per provider"]
+    ECO -- tx_costed --> EV["Narrative and audit log"]
+    TOT --> PANEL["Economics panel (Performance view)"]
+```
+
+| Measured per transaction | How |
+|---|---|
+| CPU | reductions of the `Payment` process (delta over its life) |
+| Memory | process memory at completion, times its duration |
+| Network | external term size of each provider call, out and in (a proxy until real adapters count wire bytes) |
+| Storage | number of state changes (narrated events) |
+| Provider calls | one per provider asked while quoting, plus each step, retry, undo and status check |
+| Compensations | count of undo operations |
+
+| Value per completed transaction | Meaning |
+|---|---|
+| Saved vs median / worst | net obtained minus the median / worst quote |
+| Regret vs best | best quote minus net obtained (price of speed and reliability) |
+| Margin | against a merchant's standing guarantee; negative is exposure |
+| Provider fee | already inside the quoted net, reported not subtracted twice |
+
+Net = (saved vs median + margin) minus variable cost minus platform cost (accrued with time).
+Cost is in pico-units, value in minor units; one minor unit is 10^10 pico-units. The two are assumed
+to share a reporting currency.
+
+Limits: the rate card holds placeholder prices; attribution covers the orchestrator process,
+not provider-side work or idle VM overhead (the platform line stands in for that); "saved"
+depends on the stated baseline.
+
+| Item | Status |
+|---|---|
+| Per-transaction measurement, pricing, totals per provider | ✅ |
+| Economics panel, narrative and audit trail of every result | ✅ |
+| Re-pricing under a different rate card from the audit log | 🟡 raw facts are logged; no tool yet |
+| Cost per merchant, per day, per region | 🔲 |
+| Real wire byte counts, real invoice prices | 🔲 |
+

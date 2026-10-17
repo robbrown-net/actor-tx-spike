@@ -75,3 +75,36 @@ sequenceDiagram
         S-->>T: health updated (healthy / degraded / stalled / quarantined)
     end
 ```
+
+## SSD-4 · Audit a transaction and prove the record is intact (UC-7)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Auditor
+    participant S as ":System"
+
+    A->>S: verify(audit log path)
+    alt chain intact
+        S-->>A: OK: N records, head hash
+        A->>A: compare head with the independently anchored value
+    else a record was altered, removed or reordered
+        S-->>A: NOT intact: line L, reason
+    end
+    A->>S: read records for transaction X
+    S-->>A: ordered, time-stamped events from tx_received to outcome, incl. measured cost
+```
+
+## SSD-5 · Read what the system costs and saves (UC-8)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Operator
+    participant S as ":System"
+
+    O->>S: GET /api/snapshot
+    S-->>O: economics: totals and per provider (value in minor units, cost in pico-units)
+    Note over O,S: each finished transaction also appears in the narrative as a "tx_costed" event
+```
+

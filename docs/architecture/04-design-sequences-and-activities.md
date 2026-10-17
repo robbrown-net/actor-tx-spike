@@ -147,6 +147,46 @@ sequenceDiagram
     Note over P: after pay but before settle:<br/>needs_review {settlement_overdue}, never undone
 ```
 
+## 4.4c Measurement, pricing and evidence at the end of a transaction
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PAY as Payment
+    participant EV as Events
+    participant ECO as Economics
+    participant AUD as Audit
+    participant DASH as Dashboard
+
+    PAY->>EV: tx_completed (terminal note)
+    PAY->>EV: tx_economics {outcome, usage, price discovery, margin, provider fee}
+    EV-->>ECO: tx_economics
+    ECO->>ECO: price usage with the rate card (integer pico-units)
+    ECO->>ECO: add to totals, overall and per provider
+    ECO->>EV: tx_costed {cost, value}
+    EV-->>AUD: every event, in order
+    AUD->>AUD: scrub, hash with previous, append, datasync
+    EV-->>DASH: stream (narrative) and snapshot (economics panel)
+```
+
+`Payment` only measures. It never prices, so the rate card can change without touching the
+orchestrator, and the raw facts stay in the audit log so any cost figure can be recomputed.
+Observation is fire-and-forget: if `Economics` or `Audit` is slow, payments are unaffected.
+(The consequence for compliance is that a dead audit writer goes unnoticed: see the
+compliance map, gap 1.)
+
+### Audit log record lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Verifying : start
+    Verifying --> Refused : any record fails verification
+    Verifying --> Appending : chain intact (or no file)
+    Appending --> Appending : event arrives, scrub, hash, write, sync
+    Appending --> [*] : stopped
+    Refused --> [*]
+```
+
 ## 4.5 Activity: one transaction step (swimlane view)
 
 ```mermaid

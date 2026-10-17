@@ -101,7 +101,7 @@ a { color:var(--accent); }
 <p>Fully-dressed use cases in Alistair Cockburn's format, written at <em>user-goal</em> level unless stated. The system under discussion (SuD) is <strong>ActorTxSpike</strong>, treated as a black box.</p>
 <p>Status legend: ✅ implemented · 🟡 partly · 🔲 planned</p>
 <h3>Actors and stakeholders</h3>
-<table><thead><tr><th>Actor</th><th>Kind</th><th>Interest</th></tr></thead><tbody><tr><td>Merchant system</td><td>primary (ingress)</td><td>Get a customer's payment converted and paid, fast and at a good rate, exactly once</td></tr><tr><td>Operator</td><td>primary</td><td>See what is happening, change conditions, intervene</td></tr><tr><td>Finance / compliance reviewer</td><td>primary (planned)</td><td>Resolve anything the system could not safely decide</td></tr><tr><td>Provider (FX / payment third party)</td><td>supporting</td><td>Receives requests; we do not control it</td></tr><tr><td>Sentinel (timer)</td><td>supporting</td><td>Keeps our knowledge of providers fresh</td></tr><tr><td>Customer</td><td>stakeholder</td><td>Is paid once, correctly, on time</td></tr><tr><td>Business owner</td><td>stakeholder</td><td>Margin, risk, auditability</td></tr></tbody></table>
+<table><thead><tr><th>Actor</th><th>Kind</th><th>Interest</th></tr></thead><tbody><tr><td>Merchant system</td><td>primary (ingress)</td><td>Get a customer's payment converted and paid, fast and at a good rate, exactly once</td></tr><tr><td>Operator</td><td>primary</td><td>See what is happening, change conditions, intervene</td></tr><tr><td>Finance / compliance reviewer</td><td>primary (planned)</td><td>Resolve anything the system could not safely decide</td></tr><tr><td>Auditor / QSA</td><td>primary</td><td>Evidence that the system did the right things, and that the evidence has not been altered</td></tr><tr><td>Provider (FX / payment third party)</td><td>supporting</td><td>Receives requests; we do not control it</td></tr><tr><td>Sentinel (timer)</td><td>supporting</td><td>Keeps our knowledge of providers fresh</td></tr><tr><td>Customer</td><td>stakeholder</td><td>Is paid once, correctly, on time</td></tr><tr><td>Business owner</td><td>stakeholder</td><td>Margin, risk, auditability, what the system costs to run and what better rates earn</td></tr></tbody></table>
 <h3>UC-1 Complete an FX swap and payment ✅</h3>
 <table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Goal level</strong></td><td>User goal (sea level)</td></tr><tr><td><strong>Primary actor</strong></td><td>Merchant system</td></tr><tr><td><strong>Scope</strong></td><td>ActorTxSpike</td></tr><tr><td><strong>Stakeholders and interests</strong></td><td>Merchant: correct, timely, cheap. Customer: paid exactly once. Business: no unrecoverable partial states, full audit trail. Providers: idempotent, bounded call rates.</td></tr><tr><td><strong>Preconditions</strong></td><td>At least one provider is registered; a routing policy is in force.</td></tr><tr><td><strong>Minimal guarantee</strong></td><td>The customer is <strong>never paid twice</strong>. Every effect that was accepted or authorised at a provider is either undone or escalated to review. Every step is recorded in the narrative.</td></tr><tr><td><strong>Success guarantee</strong></td><td>Exactly one payment executed by the best viable provider under the policy; receipt and rationale available.</td></tr><tr><td><strong>Trigger</strong></td><td>Merchant submits a transaction request (amount, id).</td></tr></tbody></table>
 <p><strong>Main success scenario</strong></p>
@@ -117,7 +117,11 @@ a { color:var(--accent); }
 <h3>UC-5 Tune routing policy ✅</h3>
 <table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Primary actor</strong></td><td>Operator (global), Merchant (paid override), special customer</td></tr><tr><td><strong>Main scenario</strong></td><td>1. Actor edits weights (cost / speed / reliability) and constraints (min validity, max latency, max bps from best, excluded states). 2. System validates; invalid policy is rejected with every error. 3. New transactions use the new policy.</td></tr><tr><td><strong>Status</strong></td><td>Implemented: global → merchant (only if entitled) → customer cascade with partial overrides; every layer validated when the set is built; the layers used are narrated per transaction. Standing guarantees are accounted in a ledger. Who may edit which layer (authorisation) and an audit trail are not built.</td></tr></tbody></table>
 <h3>UC-6 Monitor performance and resource use ✅</h3>
-<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Primary actor</strong></td><td>Operator</td></tr><tr><td><strong>Success guarantee</strong></td><td>Operator can see memory, CPU, scheduler load, network, throughput and latency over time without the monitoring itself becoming a cost.</td></tr><tr><td><strong>Main scenario</strong></td><td>1. Operator opens the Performance view. 2. Charts update every 1.5 s from <code>GET /api/metrics</code>. 3. Operator picks a window (1 / 5 / 15 min or one-minute rollups).</td></tr><tr><td><strong>Not yet</strong></td><td>Long-term storage metrics (no durable store), alerting, retention beyond the in-memory rollups.</td></tr></tbody></table></section><div class="part" id="p-domain-model"><span>Domain model</span></div><section class="doc" id="doc-docs-architecture-02-domain-model-md"><h2>02 · Domain model (Larman style)</h2>
+<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Primary actor</strong></td><td>Operator</td></tr><tr><td><strong>Success guarantee</strong></td><td>Operator can see memory, CPU, scheduler load, network, throughput and latency over time without the monitoring itself becoming a cost.</td></tr><tr><td><strong>Main scenario</strong></td><td>1. Operator opens the Performance view. 2. Charts update every 1.5 s from <code>GET /api/metrics</code>. 3. Operator picks a window (1 / 5 / 15 min or one-minute rollups).</td></tr><tr><td><strong>Not yet</strong></td><td>Long-term storage metrics (no durable store), alerting, retention beyond the in-memory rollups.</td></tr></tbody></table>
+<h3>UC-7 Audit a transaction and prove the record is intact ✅ (partly)</h3>
+<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Primary actor</strong></td><td>Auditor / compliance reviewer (operator runs the tool)</td></tr><tr><td><strong>Preconditions</strong></td><td>The system ran with the audit log enabled (<code>mix demo --audit PATH</code>, or <code>Audit</code> started by a supervisor).</td></tr><tr><td><strong>Success guarantee</strong></td><td>For any transaction: every event from <code>tx_received</code> to its outcome, with quoted rate and fee, alternatives, provider calls, failures, compensations and the measured cost, in order and time-stamped; and a yes/no answer on whether the log was altered.</td></tr><tr><td><strong>Main scenario</strong></td><td>1. Auditor asks for a transaction's records (filter the log by <code>tx</code>). 2. Auditor runs <code>mix audit.verify PATH</code>. 3. System checks sequence, every chain link and every hash and reports the record count and head hash. 4. Auditor compares the head with the independently anchored value.</td></tr><tr><td><strong>Extensions</strong></td><td>3a. A record was edited, removed, inserted or reordered: verification stops at the first affected line and says which and why. 3b. The log is malformed: reported as such. 4a. Head is shorter than the anchor: the tail was truncated.</td></tr><tr><td><strong>Special requirements</strong></td><td>Card-like numbers (Luhn-valid, 13-19 digits) are redacted before they reach disk. The log refuses to start on top of a log that fails verification.</td></tr><tr><td><strong>Status</strong></td><td>Implemented: capture, chain, verify, scrub. <strong>Not built:</strong> supervision and fail-closed behaviour, retention and rotation, off-host copy, user identity on records, a per-transaction retrieval command. See <a href="#doc-compliance-compliance-evidence-md">compliance evidence</a>.</td></tr></tbody></table>
+<h3>UC-8 Understand what the system costs and what it saves ✅</h3>
+<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Primary actor</strong></td><td>Operator, finance</td></tr><tr><td><strong>Success guarantee</strong></td><td>For every finished transaction and in total: what it cost to run (CPU, memory, network, storage, provider calls), what the chosen rate saved against the median, worst and best quote, any margin or exposure against a guarantee, and the net after cost.</td></tr><tr><td><strong>Main scenario</strong></td><td>1. A transaction finishes. 2. System measures what it consumed and records how the chosen price compares with the quotes. 3. System prices the measurements with the rate card and announces the result in the narrative. 4. Operator opens the Performance view and reads the Economics panel (totals and per provider).</td></tr><tr><td><strong>Extensions</strong></td><td>2a. The transaction failed or needs review: no value is credited, its cost still counts. 2b. Only one provider quoted: savings are zero by construction. 3a. Prices change: re-price from the raw measurements in the audit log.</td></tr><tr><td><strong>Special requirements</strong></td><td>The baseline for "saved" (the median quote) is always stated; the price paid for speed or reliability ("regret vs best") is shown, not hidden.</td></tr><tr><td><strong>Status</strong></td><td>Implemented with placeholder prices. Per-transaction attribution covers the orchestrator process only.</td></tr></tbody></table></section><div class="part" id="p-domain-model"><span>Domain model</span></div><section class="doc" id="doc-docs-architecture-02-domain-model-md"><h2>02 · Domain model (Larman style)</h2>
 <p>A conceptual model of the problem domain: the things the business talks about, not software classes. Entities marked 🔲 are planned (only <code>SettlementBatch</code> remains).</p>
 <div class="diagram"><pre class="mermaid">classDiagram
     direction LR
@@ -190,6 +194,25 @@ a { color:var(--accent); }
         +kind
         +message
     }
+    class AuditRecord {
+        +n
+        +prevHash
+        +hash
+    }
+    class EconomicsRecord {
+        +usage
+        +margin
+        +providerFee
+    }
+    class PriceDiscovery {
+        +chosenNet
+        +medianNet
+        +worstNet
+        +bestNet
+    }
+    class RateCard {
+        +picosPerResource
+    }
 
     Merchant &quot;1&quot; --&gt; &quot;0..*&quot; Transaction : submits
     Customer &quot;1&quot; --&gt; &quot;0..*&quot; Transaction : is paid by
@@ -205,9 +228,14 @@ a { color:var(--accent); }
     StandingGuarantee &quot;1&quot; --&gt; &quot;0..*&quot; LedgerEntry : accounted by
     Transaction &quot;1&quot; --&gt; &quot;0..1&quot; LedgerEntry : settles against guarantee
     Transaction &quot;0..*&quot; --&gt; &quot;0..1&quot; Cutoff : must finish before
-    Transaction &quot;0..*&quot; --&gt; &quot;0..1&quot; SettlementBatch : settled in 🔲</pre></div>
+    Transaction &quot;0..*&quot; --&gt; &quot;0..1&quot; SettlementBatch : settled in 🔲
+    NarrativeEvent &quot;1&quot; --&gt; &quot;1&quot; AuditRecord : sealed into a hash chain as
+    AuditRecord &quot;1&quot; --&gt; &quot;0..1&quot; AuditRecord : commits to the previous
+    Transaction &quot;1&quot; --&gt; &quot;1&quot; EconomicsRecord : measured as
+    EconomicsRecord &quot;1&quot; --&gt; &quot;0..1&quot; PriceDiscovery : compares the quotes
+    RateCard &quot;1&quot; --&gt; &quot;0..*&quot; EconomicsRecord : prices</pre></div>
 <h3>Glossary</h3>
-<table><thead><tr><th>Term</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>Transaction</strong></td><td>One FX swap and payment for a customer, owned by exactly one process for its whole life.</td></tr><tr><td><strong>Provider</strong></td><td>A third-party service (FX quote + payment) we do not control. Facaded by an adapter.</td></tr><tr><td><strong>Quote</strong></td><td>A firm offer with an expiry: rate and fee.</td></tr><tr><td><strong>Candidate</strong></td><td>A quote that passed constraints, with net value, latency and score.</td></tr><tr><td><strong>Net value</strong></td><td><code>amount × rate − fee</code>: what the customer ends up with.</td></tr><tr><td><strong>Effect</strong></td><td>Something that actually happened at a provider: accept, authorise, pay (or an undo).</td></tr><tr><td><strong>Idempotency key</strong></td><td><code>"&lt;tx&gt;:&lt;provider&gt;:&lt;step&gt;"</code>. Reused on retry so a repeat cannot repeat the effect.</td></tr><tr><td><strong>Undo</strong></td><td><code>cancel_accept</code>, <code>void_authorisation</code>, <code>refund</code>: compensating operations keyed by the effect's key.</td></tr><tr><td><strong>In doubt</strong></td><td>We asked, got no definite answer; the effect may or may not have happened.</td></tr><tr><td><strong>Reconcile</strong></td><td>Ask the provider (<code>status</code>) what it holds for a key.</td></tr><tr><td><strong>Needs review</strong></td><td>A state we refuse to resolve by guessing; a human decides.</td></tr><tr><td><strong>Cut-off</strong></td><td>The latest moment (regional local time) by which a payment must be made and settled.</td></tr><tr><td><strong>Standing guarantee</strong></td><td>A rate a merchant is guaranteed for a period; the gap to what we achieve is margin or exposure.</td></tr><tr><td><strong>Settlement</strong></td><td>The final step after payment; has no undo, so failure escalates.</td></tr><tr><td><strong>Baseline</strong></td><td>A valid default route returned when no quote is usable.</td></tr><tr><td><strong>Health state</strong></td><td><code>unknown / healthy / degraded / stalled / quarantined</code>: our view of a provider.</td></tr><tr><td><strong>Breaker</strong></td><td>Per-provider circuit: <code>closed / open / half_open</code>.</td></tr><tr><td><strong>Quarantine</strong></td><td>A provider whose version changed is not trusted until released.</td></tr><tr><td><strong>Narrative</strong></td><td>The ordered stream of events describing everything the system does.</td></tr></tbody></table>
+<table><thead><tr><th>Term</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>Transaction</strong></td><td>One FX swap and payment for a customer, owned by exactly one process for its whole life.</td></tr><tr><td><strong>Provider</strong></td><td>A third-party service (FX quote + payment) we do not control. Facaded by an adapter.</td></tr><tr><td><strong>Quote</strong></td><td>A firm offer with an expiry: rate and fee.</td></tr><tr><td><strong>Candidate</strong></td><td>A quote that passed constraints, with net value, latency and score.</td></tr><tr><td><strong>Net value</strong></td><td><code>amount × rate − fee</code>: what the customer ends up with, in integer minor units.</td></tr><tr><td><strong>Minor unit</strong></td><td>The smallest currency unit (a cent). All amounts and fees are whole minor units; no floats hold money.</td></tr><tr><td><strong>Scaled rate</strong></td><td>A rate as an integer times 10^8 (<code>1.0820</code> is <code>108_200_000</code>). Decimal input is converted exactly; rounding is half-even.</td></tr><tr><td><strong>Audit record / chain</strong></td><td>One event sealed with the hash of the record before it; editing, removing or reordering any record breaks the chain at that point.</td></tr><tr><td><strong>Head</strong></td><td>The count and hash of the last audit record. Stored independently, it also exposes truncation of the tail.</td></tr><tr><td><strong>Price discovery</strong></td><td>How the quote we took compares with all quotes received: chosen, median, worst and best net.</td></tr><tr><td><strong>Saved vs median / worst</strong></td><td>Net obtained minus the median / worst quote: what routing earned over an unoptimised pick.</td></tr><tr><td><strong>Regret vs best</strong></td><td>Best quote minus net obtained: the price of non-price goals such as speed and reliability.</td></tr><tr><td><strong>Rate card</strong></td><td>The explicit prices that turn measured usage (CPU, memory, network, storage, provider calls) into cost.</td></tr><tr><td><strong>Pico-unit</strong></td><td>10^-12 of a major currency unit; the unit of cost, since one transaction costs a fraction of a cent.</td></tr><tr><td><strong>Effect</strong></td><td>Something that actually happened at a provider: accept, authorise, pay (or an undo).</td></tr><tr><td><strong>Idempotency key</strong></td><td><code>"&lt;tx&gt;:&lt;provider&gt;:&lt;step&gt;"</code>. Reused on retry so a repeat cannot repeat the effect.</td></tr><tr><td><strong>Undo</strong></td><td><code>cancel_accept</code>, <code>void_authorisation</code>, <code>refund</code>: compensating operations keyed by the effect's key.</td></tr><tr><td><strong>In doubt</strong></td><td>We asked, got no definite answer; the effect may or may not have happened.</td></tr><tr><td><strong>Reconcile</strong></td><td>Ask the provider (<code>status</code>) what it holds for a key.</td></tr><tr><td><strong>Needs review</strong></td><td>A state we refuse to resolve by guessing; a human decides.</td></tr><tr><td><strong>Cut-off</strong></td><td>The latest moment (regional local time) by which a payment must be made and settled.</td></tr><tr><td><strong>Standing guarantee</strong></td><td>A rate a merchant is guaranteed for a period; the gap to what we achieve is margin or exposure.</td></tr><tr><td><strong>Settlement</strong></td><td>The final step after payment; has no undo, so failure escalates.</td></tr><tr><td><strong>Baseline</strong></td><td>A valid default route returned when no quote is usable.</td></tr><tr><td><strong>Health state</strong></td><td><code>unknown / healthy / degraded / stalled / quarantined</code>: our view of a provider.</td></tr><tr><td><strong>Breaker</strong></td><td>Per-provider circuit: <code>closed / open / half_open</code>.</td></tr><tr><td><strong>Quarantine</strong></td><td>A provider whose version changed is not trusted until released.</td></tr><tr><td><strong>Narrative</strong></td><td>The ordered stream of events describing everything the system does.</td></tr></tbody></table>
 <h3>Operation contracts (key system operations)</h3>
 <p><strong><code>submit(request, providers, policy, opts)</code></strong></p>
 <ul><li><em>Pre:</em> <code>request.amount</code> present; <code>request.id</code> contains no <code>:</code>; providers and policy supplied.</li><li><em>Post:</em> a transaction process exists for <code>id</code> (or already existed); a <code>tx_received</code> event was emitted; returns <code>{:ok, id}</code>.</li></ul>
@@ -216,7 +244,13 @@ a { color:var(--accent); }
 <p><strong><code>step(op, key)</code></strong> (accept, authorise, pay)</p>
 <ul><li><em>Pre:</em> previous step succeeded at the same provider; quote not expired.</li><li><em>Post:</em> the effect has happened at most once for <code>key</code>; outcome is <code>ok</code>, definite failure, or doubt; doubt is never treated as failure for <code>pay</code>.</li></ul>
 <p><strong><code>compensate(done_steps)</code></strong></p>
-<ul><li><em>Post:</em> each completed step has its undo issued in reverse order, or the transaction is in <code>needs_review</code>.</li></ul></section><div class="part" id="p-system-sequence-diagrams"><span>System sequence diagrams</span></div><section class="doc" id="doc-docs-architecture-03-system-sequence-diagrams-md"><h2>03 · System sequence diagrams (Larman style)</h2>
+<ul><li><em>Post:</em> each completed step has its undo issued in reverse order, or the transaction is in <code>needs_review</code>.</li></ul>
+<p><strong><code>record(event)</code></strong> (audit)</p>
+<ul><li><em>Pre:</em> the audit log verifies (or is empty).</li><li><em>Post:</em> exactly one new line exists whose <code>n</code> is the previous <code>n + 1</code>, whose <code>prev</code> is the previous hash and whose hash covers its body; free-text fields contain no Luhn-valid card number; on a synced log the line is durable before the call returns.</li></ul>
+<p><strong><code>verify(path)</code></strong></p>
+<ul><li><em>Post:</em> returns the record count and head hash if every sequence number, link and hash holds; otherwise the first failing line and the reason (<code>malformed</code>, <code>out_of_sequence</code>, <code>chain_broken</code>, <code>hash_mismatch</code>). Never modifies the log.</li></ul>
+<p><strong><code>price(usage)</code></strong> (economics)</p>
+<ul><li><em>Post:</em> each resource cost is an integer number of pico-units computed from the rate card with half-even rounding; the total is the sum of the parts; value (saved, margin) is kept separately in minor units and never mixed with cost until the net is formed.</li></ul></section><div class="part" id="p-system-sequence-diagrams"><span>System sequence diagrams</span></div><section class="doc" id="doc-docs-architecture-03-system-sequence-diagrams-md"><h2>03 · System sequence diagrams (Larman style)</h2>
 <p>The system is a single black box (<code>:System</code>). Only the actors' requests and the system's responses are shown; internals are in <a href="#doc-architecture-04-design-sequences-and-activities-md">04</a>.</p>
 <h3>SSD-1 · Complete an FX swap and payment (UC-1)</h3>
 <div class="diagram"><pre class="mermaid">sequenceDiagram
@@ -278,7 +312,31 @@ a { color:var(--accent); }
         S-&gt;&gt;P: probe()
         P--&gt;&gt;S: version, latency | error | timeout
         S--&gt;&gt;T: health updated (healthy / degraded / stalled / quarantined)
-    end</pre></div></section><div class="part" id="p-design-sequences-activities-states"><span>Design sequences, activities, states</span></div><section class="doc" id="doc-docs-architecture-04-design-sequences-and-activities-md"><h2>04 · Design sequences, activities and state machines</h2>
+    end</pre></div>
+<h3>SSD-4 · Audit a transaction and prove the record is intact (UC-7)</h3>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    autonumber
+    actor A as Auditor
+    participant S as &quot;:System&quot;
+
+    A-&gt;&gt;S: verify(audit log path)
+    alt chain intact
+        S--&gt;&gt;A: OK: N records, head hash
+        A-&gt;&gt;A: compare head with the independently anchored value
+    else a record was altered, removed or reordered
+        S--&gt;&gt;A: NOT intact: line L, reason
+    end
+    A-&gt;&gt;S: read records for transaction X
+    S--&gt;&gt;A: ordered, time-stamped events from tx_received to outcome, incl. measured cost</pre></div>
+<h3>SSD-5 · Read what the system costs and saves (UC-8)</h3>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    autonumber
+    actor O as Operator
+    participant S as &quot;:System&quot;
+
+    O-&gt;&gt;S: GET /api/snapshot
+    S--&gt;&gt;O: economics: totals and per provider (value in minor units, cost in pico-units)
+    Note over O,S: each finished transaction also appears in the narrative as a &quot;tx_costed&quot; event</pre></div></section><div class="part" id="p-design-sequences-activities-states"><span>Design sequences, activities, states</span></div><section class="doc" id="doc-docs-architecture-04-design-sequences-and-activities-md"><h2>04 · Design sequences, activities and state machines</h2>
 <p>Design-level views of how the system realises the use cases. Diagrams are Mermaid (UML 2.0 notation as closely as Mermaid allows: sequence combined fragments <code>alt/opt/loop/par</code>, state machines, and activity flows with swimlanes).</p>
 <h3>4.1 Happy path (UC-1 main scenario)</h3>
 <div class="diagram"><pre class="mermaid">sequenceDiagram
@@ -403,6 +461,33 @@ a { color:var(--accent); }
     A--&gt;&gt;P: ok
     P-&gt;&gt;EV: tx_failed {deadline_missed, UK}
     Note over P: after pay but before settle:&lt;br/&gt;needs_review {settlement_overdue}, never undone</pre></div>
+<h3>4.4c Measurement, pricing and evidence at the end of a transaction</h3>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    autonumber
+    participant PAY as Payment
+    participant EV as Events
+    participant ECO as Economics
+    participant AUD as Audit
+    participant DASH as Dashboard
+
+    PAY-&gt;&gt;EV: tx_completed (terminal note)
+    PAY-&gt;&gt;EV: tx_economics {outcome, usage, price discovery, margin, provider fee}
+    EV--&gt;&gt;ECO: tx_economics
+    ECO-&gt;&gt;ECO: price usage with the rate card (integer pico-units)
+    ECO-&gt;&gt;ECO: add to totals, overall and per provider
+    ECO-&gt;&gt;EV: tx_costed {cost, value}
+    EV--&gt;&gt;AUD: every event, in order
+    AUD-&gt;&gt;AUD: scrub, hash with previous, append, datasync
+    EV--&gt;&gt;DASH: stream (narrative) and snapshot (economics panel)</pre></div>
+<p><code>Payment</code> only measures. It never prices, so the rate card can change without touching the orchestrator, and the raw facts stay in the audit log so any cost figure can be recomputed. Observation is fire-and-forget: if <code>Economics</code> or <code>Audit</code> is slow, payments are unaffected. (The consequence for compliance is that a dead audit writer goes unnoticed: see the compliance map, gap 1.)</p>
+<h4>Audit log record lifecycle</h4>
+<div class="diagram"><pre class="mermaid">stateDiagram-v2
+    [*] --&gt; Verifying : start
+    Verifying --&gt; Refused : any record fails verification
+    Verifying --&gt; Appending : chain intact (or no file)
+    Appending --&gt; Appending : event arrives, scrub, hash, write, sync
+    Appending --&gt; [*] : stopped
+    Refused --&gt; [*]</pre></div>
 <h3>4.5 Activity: one transaction step (swimlane view)</h3>
 <div class="diagram"><pre class="mermaid">flowchart TD
     subgraph Payment[&quot;Payment (orchestrator)&quot;]
@@ -509,6 +594,7 @@ a { color:var(--accent); }
         PSET[&quot;PolicySet (global, merchant, customer cascade)&quot;]
         CUT[&quot;Cutoff (regional deadlines)&quot;]
         GUA[&quot;Guarantee and Ledger&quot;]
+        MON[&quot;Money (exact integer arithmetic)&quot;]
     end
     subgraph ProviderLayer[&quot;Provider layer&quot;]
         PSRV[&quot;Provider.Server xN (breaker, health, bulkhead, timeouts)&quot;]
@@ -522,6 +608,12 @@ a { color:var(--accent); }
         NARR[&quot;Narrative (terminal)&quot;]
         DASH[&quot;priv/panel.html (dashboard)&quot;]
     end
+    subgraph Evidence[&quot;Evidence and economics&quot;]
+        ECO[&quot;Economics (prices usage, keeps totals)&quot;]
+        COST[&quot;Costs (rate card, pico-units)&quot;]
+        AUD[&quot;Audit (hash-chained log)&quot;]
+        FILE[(&quot;audit log file&quot;)]
+    end
     DEMO[&quot;Demo world (providers, traffic, sentinel, operator controls)&quot;]
 
     API --&gt; TS --&gt; PAY
@@ -531,6 +623,15 @@ a { color:var(--accent); }
     PAY --&gt; CUT
     PAY --&gt; GUA
     EV --&gt; MET
+    PAY -. measures .-&gt; EV
+    EV --&gt; ECO
+    ECO --&gt; COST
+    ECO -. tx_costed .-&gt; EV
+    EV --&gt; AUD --&gt; FILE
+    ECO --&gt; PANEL
+    PAY --&gt; MON
+    SEL --&gt; MON
+    GUA --&gt; MON
     MET --&gt; PANEL
     SEL --&gt; PSRV
     PAY --&gt; PSRV
@@ -552,6 +653,7 @@ a { color:var(--accent); }
     APP[&quot;ActorTxSpike.Supervisor (one_for_one)&quot;]
     APP --&gt; EVS[&quot;Events&quot;]
     APP --&gt; MET[&quot;Metrics&quot;]
+    APP --&gt; ECON[&quot;Economics&quot;]
     APP --&gt; LED[&quot;Ledger&quot;]
     APP --&gt; REG[&quot;Registry (payment ids)&quot;]
     APP --&gt; TSUP[&quot;TransactionSupervisor&quot;]
@@ -563,10 +665,11 @@ a { color:var(--accent); }
     DEMO -. links .-&gt; PS1[&quot;Provider.Server northwind&quot;]
     DEMO -. links .-&gt; PS2[&quot;Provider.Server bluebird&quot;]
     DEMO -. links .-&gt; F1[&quot;Provider.Fake agents&quot;]
-    MT[&quot;mix demo process&quot;] -. links .-&gt; PANEL[&quot;Panel + acceptor + connection processes&quot;]</pre></div>
-<blockquote><strong>Known gap:</strong> Provider servers and the panel are <em>not</em> under the application's supervision tree today; they are linked to the demo. A production deployment needs them supervised (and Payment processes restarted from a durable log).</blockquote>
+    MT[&quot;mix demo process&quot;] -. links .-&gt; PANEL[&quot;Panel + acceptor + connection processes&quot;]
+    MT -. &quot;links (only with --audit)&quot; .-&gt; AUDIT[&quot;Audit&quot;]</pre></div>
+<blockquote><strong>Known gaps:</strong> Provider servers, the panel and the <strong>audit writer</strong> are <em>not</em> under the application's supervision tree today; they are linked to the demo. A dead audit writer leaves the system running unlogged; it should fail closed. A production deployment needs them supervised (and Payment processes restarted from a durable log).</blockquote>
 <h3>5.3 Module responsibilities</h3>
-<table><thead><tr><th>Module</th><th>Responsibility</th><th>Pure?</th></tr></thead><tbody><tr><td><code>ActorTxSpike</code></td><td>Public API: submit / await / snapshot</td><td>no</td></tr><tr><td><code>Payment</code></td><td>Lifecycle, retries, compensation, reconcile, escalation</td><td>no (process)</td></tr><tr><td><code>Selector</code></td><td>Concurrent quoting within deadline, ranking, narration</td><td>no</td></tr><tr><td><code>Policy</code></td><td>Validated routing policy, constraints, scoring</td><td><strong>yes</strong></td></tr><tr><td><code>Provider</code></td><td>Adapter behaviour and result vocabulary</td><td>n/a</td></tr><tr><td><code>Provider.Health</code></td><td>Breaker, rolling stats, drift quarantine, recovery</td><td><strong>yes</strong></td></tr><tr><td><code>Provider.Server</code></td><td>Admission, bulkhead, enforced timeouts, health events</td><td>no</td></tr><tr><td><code>Provider.Fake</code></td><td>Scriptable provider and its narration</td><td>no</td></tr><tr><td><code>PolicySet</code></td><td>Cascading objectives with entitlement and validation</td><td><strong>yes</strong></td></tr><tr><td><code>Cutoff</code></td><td>Regional cut-offs: fixed offset or date-aware offset function</td><td><strong>yes</strong></td></tr><tr><td><code>Guarantee</code></td><td>Margin / exposure against a standing guarantee</td><td><strong>yes</strong></td></tr><tr><td><code>Ledger</code></td><td>Accumulates guarantee outcomes per merchant and period</td><td>no</td></tr><tr><td><code>Metrics</code> (+ <code>Stats</code>, <code>Rollup</code>, <code>VM</code>)</td><td>Resource and application metrics with bounded rollups</td><td>mostly</td></tr><tr><td><code>Events</code>, <code>Narrative</code></td><td>Narrative stream and rendering</td><td>no</td></tr><tr><td><code>Panel</code>, <code>Demo</code></td><td>Dashboard server and demo world</td><td>no</td></tr></tbody></table>
+<table><thead><tr><th>Module</th><th>Responsibility</th><th>Pure?</th></tr></thead><tbody><tr><td><code>ActorTxSpike</code></td><td>Public API: submit / await / snapshot</td><td>no</td></tr><tr><td><code>Payment</code></td><td>Lifecycle, retries, compensation, reconcile, escalation</td><td>no (process)</td></tr><tr><td><code>Selector</code></td><td>Concurrent quoting within deadline, ranking, narration</td><td>no</td></tr><tr><td><code>Policy</code></td><td>Validated routing policy, constraints, scoring</td><td><strong>yes</strong></td></tr><tr><td><code>Provider</code></td><td>Adapter behaviour and result vocabulary</td><td>n/a</td></tr><tr><td><code>Provider.Health</code></td><td>Breaker, rolling stats, drift quarantine, recovery</td><td><strong>yes</strong></td></tr><tr><td><code>Provider.Server</code></td><td>Admission, bulkhead, enforced timeouts, health events</td><td>no</td></tr><tr><td><code>Provider.Fake</code></td><td>Scriptable provider and its narration</td><td>no</td></tr><tr><td><code>PolicySet</code></td><td>Cascading objectives with entitlement and validation</td><td><strong>yes</strong></td></tr><tr><td><code>Cutoff</code></td><td>Regional cut-offs: fixed offset or date-aware offset function</td><td><strong>yes</strong></td></tr><tr><td><code>Guarantee</code></td><td>Margin / exposure against a standing guarantee</td><td><strong>yes</strong></td></tr><tr><td><code>Ledger</code></td><td>Accumulates guarantee outcomes per merchant and period</td><td>no</td></tr><tr><td><code>Money</code></td><td>Exact integer money: decimal parsing, half-even rounding, display formatting</td><td><strong>yes</strong></td></tr><tr><td><code>Costs</code></td><td>Rate card and pricing of measured usage into pico-units</td><td><strong>yes</strong></td></tr><tr><td><code>Economics</code></td><td>Prices each finished transaction, keeps totals overall and per provider, announces <code>tx_costed</code></td><td>no (process)</td></tr><tr><td><code>Audit</code></td><td>Hash-chained append-only log, verification, card-number scrubbing</td><td>no (process)</td></tr><tr><td><code>Metrics</code> (+ <code>Stats</code>, <code>Rollup</code>, <code>VM</code>)</td><td>Resource and application metrics with bounded rollups</td><td>mostly</td></tr><tr><td><code>Events</code>, <code>Narrative</code></td><td>Narrative stream and rendering</td><td>no</td></tr><tr><td><code>Panel</code>, <code>Demo</code></td><td>Dashboard server and demo world</td><td>no</td></tr></tbody></table>
 <p>The decision-heavy logic (<code>Policy</code>, <code>Health</code>) is deliberately pure so it can be tested exhaustively.</p>
 <h3>5.4 Deployment view (today)</h3>
 <div class="diagram"><pre class="mermaid">flowchart LR
@@ -575,10 +678,12 @@ a { color:var(--accent); }
         A[&quot;application + demo world + panel&quot;]
     end
     N -. &quot;future: HTTPS / provider APIs&quot; .-&gt; P[&quot;Third-party providers&quot;]
-    N -. &quot;future: durable log / store&quot; .-&gt; D[(&quot;Database&quot;)]</pre></div>
-<p>Single node, no persistence, no external network calls (providers are fakes).</p>
+    N -- &quot;append, datasync&quot; --&gt; L[(&quot;audit log file (hash chain)&quot;)]
+    N -. &quot;future: durable store&quot; .-&gt; D[(&quot;Database&quot;)]
+    L -. &quot;anchor head, off-host copy (not built)&quot; .-&gt; X[&quot;Independent system&quot;]</pre></div>
+<p>Single node. Nothing is persisted for recovery; the audit log is evidence, not a recovery store. No external network calls (providers are fakes).</p>
 <h3>5.5 Dependencies</h3>
-<ul><li><strong>Runtime:</strong> none beyond OTP/Elixir standard library (JSON module from Elixir 1.18).</li><li><strong>Dev/test only:</strong> credo, sobelow, mix_audit (and their transitive deps).</li></ul></section><div class="part" id="p-data-model"><span>Data model</span></div><section class="doc" id="doc-docs-architecture-06-data-model-md"><h2>06 · Data model</h2>
+<ul><li><strong>Runtime:</strong> none beyond OTP/Elixir standard library (JSON module from Elixir 1.18).</li><li><strong>Dev/test only:</strong> credo, sobelow, mix_audit (and their transitive deps).</li><li><strong>Tooling entry points:</strong> <code>mix demo</code>, <code>mix audit.verify</code>.</li></ul></section><div class="part" id="p-data-model"><span>Data model</span></div><section class="doc" id="doc-docs-architecture-06-data-model-md"><h2>06 · Data model</h2>
 <p><strong>Honest status:</strong> nothing is persisted today. These are the entities as they exist in process memory and in the event stream, followed by the logical model the durable store (roadmap Phase 3) should implement. <code>PLANNED</code> marks things that do not exist yet.</p>
 <h3>6.1 Logical entity-relationship model</h3>
 <div class="diagram"><pre class="mermaid">erDiagram
@@ -762,7 +867,7 @@ a { color:var(--accent); }
         int provider_call_picos
         int platform_picos_per_hour
     }</pre></div></section><div class="part" id="p-observability-performance"><span>Observability & performance</span></div><section class="doc" id="doc-docs-architecture-07-observability-and-performance-md"><h2>07 · Observability and performance monitoring (design)</h2>
-<p><strong>Status: built (first version).</strong> The narrative (what is happening) and the resource / performance metrics (how much it costs) both exist. This document records the design and marks what is implemented. Not yet built: long-term storage metrics (there is no durable store), alerting, retention beyond the in-memory rollups, and the 1-hour tier.</p>
+<p><strong>Status: built (first version).</strong> The narrative (what is happening) and the resource / performance metrics (how much it costs) both exist. This document records the design and marks what is implemented. The cost side is now also accounted per transaction in money terms (section 7.7). Not yet built: long-term storage metrics (there is no durable store), alerting, retention beyond the in-memory rollups, and the 1-hour tier.</p>
 <h3>7.1 Two kinds of observability</h3>
 <table><thead><tr><th>Question</th><th>Mechanism</th><th>Status</th></tr></thead><tbody><tr><td><em>What is the system doing, and why?</em></td><td><code>Events</code> narrative → dashboard / terminal</td><td>✅ built</td></tr><tr><td><em>How healthy and how expensive is it?</em></td><td><code>ActorTxSpike.Metrics</code> sampler → <code>/api/metrics</code> → Performance view</td><td>✅ built (1 s sampling, 1 min rollups)</td></tr></tbody></table>
 <p>Keep the two separate: the narrative is high-cardinality and per-transaction; metrics are low-cardinality numbers sampled over time.</p>
@@ -796,7 +901,20 @@ a { color:var(--accent); }
 <table><thead><tr><th>SLO</th><th>Target</th></tr></thead><tbody><tr><td>End-to-end p95 for a healthy market</td><td>&lt; 2 × slowest chosen provider latency + 100 ms</td></tr><tr><td>Never-paid-twice violations</td><td>0 (alert page on any)</td></tr><tr><td><code>needs_review</code> age</td><td>99% resolved &lt; 1 business hour</td></tr><tr><td>Event stream lag to dashboard</td><td>&lt; 1 s</td></tr><tr><td>Monitoring overhead</td><td>&lt; 1% CPU, bounded memory</td></tr></tbody></table>
 <h3>7.6 Implementation status</h3>
 <table><thead><tr><th>Item</th><th>Status</th></tr></thead><tbody><tr><td>VM sampler: memory by category, CPU, scheduler utilisation, run queue, reductions, GC, processes, ports</td><td>✅ <code>Metrics</code> + <code>Metrics.VM</code></td></tr><tr><td>Network: TCP bytes in/out, socket count</td><td>✅</td></tr><tr><td>Top processes by memory and mailbox</td><td>✅ (every 5th sample)</td></tr><tr><td>Application metrics from the narrative: throughput by outcome, failovers, end-to-end p50/p95/p99, provider health</td><td>✅</td></tr><tr><td>Own overhead measured per sample</td><td>✅ (about 1.5–2.5 ms per sample in the demo)</td></tr><tr><td>Raw ring (15 min, 1 s) and 1-minute rollups (24 h)</td><td>✅ bounded</td></tr><tr><td>Performance view with charts and window selector</td><td>✅</td></tr><tr><td>1-hour rollups, durable tier, storage growth chart</td><td>🔲 needs the Phase 3 store</td></tr><tr><td>Alerts into the narrative; SLO tracking</td><td>🔲</td></tr><tr><td>Load generator / benchmark mode</td><td>🔲</td></tr><tr><td><code>:telemetry</code> conventions for external tools</td><td>🔲</td></tr></tbody></table>
-<p>Known limits: per-process CPU attribution uses reductions in the top-process table only; host CPU/memory (<code>os_mon</code>) is not collected; network figures cover this VM's TCP sockets, including the dashboard's own polling.</p></section><div class="part" id="p-compliance-evidence"><span>Compliance evidence</span></div><section class="doc" id="doc-docs-compliance-compliance-evidence-md"><h2>Compliance evidence map</h2>
+<p>Known limits: per-process CPU attribution uses reductions in the top-process table only; host CPU/memory (<code>os_mon</code>) is not collected; network figures cover this VM's TCP sockets, including the dashboard's own polling.</p>
+<h3>7.7 Cost and value accounting (added 2026-10-17)</h3>
+<p>Resource metrics (above) say how much the machine is working. The economics layer says what that work <em>costs and earns</em>, per transaction.</p>
+<div class="diagram"><pre class="mermaid">flowchart LR
+    PAY[&quot;Payment: measures usage&quot;] -- tx_economics --&gt; ECO[&quot;Economics&quot;]
+    CARD[&quot;Rate card (Costs)&quot;] --&gt; ECO
+    ECO --&gt; TOT[&quot;Totals: overall, per provider&quot;]
+    ECO -- tx_costed --&gt; EV[&quot;Narrative and audit log&quot;]
+    TOT --&gt; PANEL[&quot;Economics panel (Performance view)&quot;]</pre></div>
+<table><thead><tr><th>Measured per transaction</th><th>How</th></tr></thead><tbody><tr><td>CPU</td><td>reductions of the <code>Payment</code> process (delta over its life)</td></tr><tr><td>Memory</td><td>process memory at completion, times its duration</td></tr><tr><td>Network</td><td>external term size of each provider call, out and in (a proxy until real adapters count wire bytes)</td></tr><tr><td>Storage</td><td>number of state changes (narrated events)</td></tr><tr><td>Provider calls</td><td>one per provider asked while quoting, plus each step, retry, undo and status check</td></tr><tr><td>Compensations</td><td>count of undo operations</td></tr></tbody></table>
+<table><thead><tr><th>Value per completed transaction</th><th>Meaning</th></tr></thead><tbody><tr><td>Saved vs median / worst</td><td>net obtained minus the median / worst quote</td></tr><tr><td>Regret vs best</td><td>best quote minus net obtained (price of speed and reliability)</td></tr><tr><td>Margin</td><td>against a merchant's standing guarantee; negative is exposure</td></tr><tr><td>Provider fee</td><td>already inside the quoted net, reported not subtracted twice</td></tr></tbody></table>
+<p>Net = (saved vs median + margin) minus variable cost minus platform cost (accrued with time). Cost is in pico-units, value in minor units; one minor unit is 10^10 pico-units. The two are assumed to share a reporting currency.</p>
+<p>Limits: the rate card holds placeholder prices; attribution covers the orchestrator process, not provider-side work or idle VM overhead (the platform line stands in for that); "saved" depends on the stated baseline.</p>
+<table><thead><tr><th>Item</th><th>Status</th></tr></thead><tbody><tr><td>Per-transaction measurement, pricing, totals per provider</td><td>✅</td></tr><tr><td>Economics panel, narrative and audit trail of every result</td><td>✅</td></tr><tr><td>Re-pricing under a different rate card from the audit log</td><td>🟡 raw facts are logged; no tool yet</td></tr><tr><td>Cost per merchant, per day, per region</td><td>🔲</td></tr><tr><td>Real wire byte counts, real invoice prices</td><td>🔲</td></tr></tbody></table></section><div class="part" id="p-compliance-evidence"><span>Compliance evidence</span></div><section class="doc" id="doc-docs-compliance-compliance-evidence-md"><h2>Compliance evidence map</h2>
 <blockquote><strong>Not legal advice.</strong> This maps what the system does today to what auditors and regulators typically ask for, so you can see the gaps. Take it to a QSA (PCI) and to compliance counsel (Dodd-Frank and UK/EU equivalents) before relying on any of it.</blockquote>
 <p>Status key: ✅ in place · 🟡 partial · ❌ gap · ➖ not applicable to this layer.</p>
 <h3>1. Scope decisions that shrink the problem</h3>
