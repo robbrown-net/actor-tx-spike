@@ -643,7 +643,7 @@ a { color:var(--accent); }
     alt barrier ok
         PAY-&gt;&gt;PRV: the call (idempotency key)
     else sink down or unresponsive
-        PAY-&gt;&gt;PAY: do not call; failed (nothing done) or needs_review (money moved)
+        PAY-&gt;&gt;PAY: do not call, so failed (nothing done) or needs_review (money moved)
     end</pre></div>
 <h4>Recovery decision</h4>
 <div class="diagram"><pre class="mermaid">flowchart TD

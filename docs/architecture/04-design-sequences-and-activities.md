@@ -244,7 +244,7 @@ sequenceDiagram
     alt barrier ok
         PAY->>PRV: the call (idempotency key)
     else sink down or unresponsive
-        PAY->>PAY: do not call; failed (nothing done) or needs_review (money moved)
+        PAY->>PAY: do not call, so failed (nothing done) or needs_review (money moved)
     end
 ```
 
