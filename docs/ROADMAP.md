@@ -67,6 +67,13 @@ Metrics sampler, rollups and Performance view DONE (see docs/architecture/07).
 - Property/chaos tests (stalls, drift, crashes mid-commit, restart) asserting no double payment.
 - Load test for latency tails and resource budgets.
 
+## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
+- Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).
+- Sanctions and KYC gates before accept, recorded in the journal.
+- Per-region audit logs and retention (data residency).
+- Forward deal lifecycle (value date, confirmation, maturity settlement) on the durable store; trade reporting.
+- Retail variant: disclosure, receipt, cancellation window, error resolution.
+
 ## Known gaps
 - Transactions are not persisted (the audit log is evidence, not a recovery store): a node restart loses in-flight work. The old file store
   was removed with the legacy code; durable, event-sourced recovery is Phase 3.

@@ -162,7 +162,7 @@ These came from the owner and are standing rules.
 | Q4 | Where does merchant/customer policy come from and who may edit it? | Cascade needs an owner and an audit trail |
 | Q5 | Which settlement *phases* exist per region, and what are their individual deadlines? | One `settle` step and one cut-off exist; real settlement is multi-phase |
 | Q6 | ~~What is the money type and rounding policy?~~ | **Answered (ADR 0008):** integer minor units, rates scaled 10^8, half-even rounding |
-| Q7 | What regulatory duties apply (KYC/AML, record retention, audit)? | Shapes the durable store and `needs_review` workflow |
+| Q7 | What regulatory duties apply (KYC/AML, record retention, audit)? | **Partly answered 2026-10-17:** spot and forward, business and some retail, eleven jurisdictions (UK, EU, US, India, Mexico, Brazil, Turkey, Saudi Arabia, Japan, South Korea, China). Orientation matrix and design consequences in docs/compliance/COMPLIANCE_EVIDENCE.md; counsel must confirm per country |
 | Q8 | How should provider quote and call costs be accounted (rate limits, fees to us)? | Hedging is not free |
 | Q9 | What are the real latency/throughput targets? | Decides the performance work and when Rust might matter |
 | Q11 | Which strategy changes will be tried against a real day, and what counts as "better" (net, latency, failure rate, exposure)? | Decides which metrics `WhatIf` must report and which inputs must be journalled |
@@ -196,7 +196,9 @@ These came from the owner and are standing rules.
 | R23 | Replay is quote-level: what-if assumes the alternative provider would have completed | certain | medium | Re-execution engine with recorded answers and a virtual clock |
 | R24 | A new decision rule added without its journal inputs makes the day unreplayable | medium | medium | Rule: every decision must be re-derivable from journal data; replay tests break a day one way at a time |
 | R25 | A day's log is large (about 23 KB per transaction) | certain | medium | Compression, tiering and retention policy |
-| R22 | Regulatory scope (PCI role, instrument, jurisdiction) is undecided | high | high | Answer the questions in docs/compliance/COMPLIANCE_EVIDENCE.md |
+| R22 | Regulatory scope is now known in outline (spot and forward; 11 jurisdictions) but unverified by counsel, and licence-holder and book-versus-arranged questions are open | high | high | Counsel review per priority jurisdiction; answer the open questions in docs/compliance/COMPLIANCE_EVIDENCE.md |
+| R26 | Forwards need a long-lived durable deal record; the system persists nothing | certain | high | Durable store (Phase 3) before any forward product |
+| R27 | Data residency: one global audit log cannot satisfy in-country storage rules (India, China, Turkey, Saudi Arabia and others) | high | high | Per-region audit logs and retention; region on every record |
 
 ## 10. Roadmap
 
