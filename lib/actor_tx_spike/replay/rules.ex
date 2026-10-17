@@ -11,7 +11,10 @@ defmodule ActorTxSpike.Replay.Rules do
       from it or gave up was left un-undone
     * `:no_failover_after_doubt`: once pay or settle was in doubt, we never
       moved to another provider
-    * `:idempotency_keys`: every call used the key `"<tx>:<provider>:<step>"`
+    * `:eligibility_respected`: no provider outside the recorded jurisdiction
+    decision was asked or used, and nothing was called when the instrument or
+    customer type was not permitted
+  * `:idempotency_keys`: every call used the key `"<tx>:<provider>:<step>"`
       and retries reused it
 
   Decisions (recomputed with the same code the live system used):
@@ -77,6 +80,7 @@ defmodule ActorTxSpike.Replay.Rules do
       failed_clean(id, rs, s),
       no_failover_after_doubt(id, rs),
       idempotency_keys(id, rs),
+      eligibility_respected(id, rs),
       selection_reproducible(id, rs),
       quote_valid_at_accept(id, rs),
       deadline_respected(id, rs, tolerance),
@@ -187,6 +191,37 @@ defmodule ActorTxSpike.Replay.Rules do
 
     wrong ++ varying
   end
+
+  defp eligibility_respected(id, rs) do
+    case Tx.first(rs, "tx_received") do
+      %{"data" => %{"eligibility" => %{} = e}} -> eligibility_breaches(id, rs, e)
+      _ -> []
+    end
+  end
+
+  defp eligibility_breaches(id, rs, e) do
+    used =
+      for %{"kind" => kind, "data" => %{"provider" => p}} = r <- rs,
+          kind in ~w(quote_observed step_started provider_chosen),
+          do: {p, r}
+
+    offenders =
+      if e["permitted?"],
+        do: Enum.filter(used, fn {p, _r} -> p not in e["allowed_providers"] end),
+        else: Enum.take(used, 1)
+
+    offenders
+    |> Enum.uniq_by(&elem(&1, 0))
+    |> Enum.map(fn {p, r} -> v(:eligibility_respected, id, r, breach_detail(p, e)) end)
+  end
+
+  defp breach_detail(provider, %{"permitted?" => true} = e),
+    do:
+      "#{provider} was used but is not eligible for the #{Enum.join(e["regions"], "/")} corridor"
+
+  defp breach_detail(provider, e),
+    do:
+      "#{provider} was called although the transaction was not permitted (#{Enum.join(e["reasons"], "; ")})"
 
   defp selection_reproducible(id, rs) do
     selection = Tx.first(rs, "selection_made")

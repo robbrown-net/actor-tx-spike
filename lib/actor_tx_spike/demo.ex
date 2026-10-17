@@ -66,6 +66,7 @@ defmodule ActorTxSpike.Demo do
       policy_data: Map.delete(global, "min_validity_ms"),
       global: global,
       cutoffs: %{},
+      eligibility: eligibility(),
       guarantees: %{"acme" => acme_guarantee},
       auto: false,
       auto_interval_ms: Keyword.get(opts, :auto_interval_ms, 4_000),
@@ -136,6 +137,44 @@ defmodule ActorTxSpike.Demo do
     {:noreply, state}
   end
 
+  @doc """
+  The demo's jurisdiction rules: India and China keep their records in-country and
+  allow only some providers and only spot; the UK and EU use the global log.
+  """
+  @spec eligibility() :: ActorTxSpike.Eligibility.t()
+  def eligibility do
+    {:ok, e} =
+      ActorTxSpike.Eligibility.new(%{
+        "regions" => %{
+          "UK" => %{"retention_days" => 2_555},
+          "EU" => %{"retention_days" => 2_555},
+          "IN" => %{
+            "instruments" => ["spot"],
+            "providers" => %{"allow" => ["northwind", "cobalt"]},
+            "logs" => ["IN"],
+            "local_only" => true,
+            "retention_days" => 3_650
+          },
+          "CN" => %{
+            "instruments" => ["spot"],
+            "customer_types" => ["business"],
+            "providers" => %{"allow" => ["meridian"]},
+            "logs" => ["CN"],
+            "local_only" => true
+          }
+        }
+      })
+
+    e
+  end
+
+  @doc "Names of every log the demo's rules can send records to."
+  @spec log_names() :: [String.t()]
+  def log_names do
+    e = eligibility()
+    ["GLOBAL" | Enum.flat_map(Map.values(e.regions), & &1.logs)] |> Enum.uniq() |> Enum.sort()
+  end
+
   # ---- controls ----------------------------------------------------------
 
   defp do_control(%{"action" => "submit"} = cmd, state) do
@@ -145,7 +184,10 @@ defmodule ActorTxSpike.Demo do
       for {key, field} <- [
             {"merchant", :merchant_id},
             {"customer", :customer_id},
-            {"region", :destination_region}
+            {"region", :destination_region},
+            {"origin", :origin_region},
+            {"instrument", :instrument},
+            {"customer_type", :customer_type}
           ],
           value = cmd[key],
           is_binary(value) and value != "",
@@ -241,6 +283,7 @@ defmodule ActorTxSpike.Demo do
         policy_set: state.policy_set,
         cutoffs: state.cutoffs,
         guarantees: state.guarantees,
+        eligibility: state.eligibility,
         opts: state.payment_opts
       )
 

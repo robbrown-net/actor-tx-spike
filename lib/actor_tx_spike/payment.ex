@@ -30,7 +30,18 @@ defmodule ActorTxSpike.Payment do
   """
   use GenServer
 
-  alias ActorTxSpike.{Cutoff, Events, Guarantee, Journal, Ledger, Money, PolicySet, Selector}
+  alias ActorTxSpike.{
+    Cutoff,
+    Eligibility,
+    Events,
+    Guarantee,
+    Journal,
+    Ledger,
+    Money,
+    PolicySet,
+    Selector
+  }
+
   alias ActorTxSpike.Provider.{Quote, Server}
 
   @undo %{accept_quote: :cancel_accept, authorise: :void_authorisation, pay: :refund}
@@ -82,10 +93,19 @@ defmodule ActorTxSpike.Payment do
 
   @impl true
   def init(args) do
+    request = Keyword.fetch!(args, :request)
+    decision = Eligibility.decide(Keyword.get(args, :eligibility, Eligibility.open()), request)
+
+    {eligible, denied} =
+      args
+      |> Keyword.fetch!(:providers)
+      |> Enum.split_with(&Eligibility.provider_allowed?(decision, &1.id))
+
     state = %{
       id: Keyword.fetch!(args, :id),
-      request: Keyword.fetch!(args, :request),
-      providers: Keyword.fetch!(args, :providers),
+      request: request,
+      providers: eligible,
+      eligibility: Map.put(decision, :denied, denied),
       policy: Keyword.fetch!(args, :policy),
       opts: Map.new(Keyword.merge(@defaults, Keyword.get(args, :opts, []))),
       cutoff: Keyword.get(args, :cutoff),
@@ -131,13 +151,63 @@ defmodule ActorTxSpike.Payment do
         policy: Map.from_struct(state.policy),
         guarantee: state.guarantee && Map.from_struct(state.guarantee),
         config: Map.drop(state.opts, [:baseline, :barrier]),
-        providers: Enum.map(state.providers, & &1.id)
+        providers: Enum.map(state.providers, & &1.id),
+        eligibility: journal_eligibility(state)
       })
 
-    state = announce_policy(state)
-    state = announce_deadline(state)
-    state = %{state | phase: :quoting}
-    {:noreply, run(state, :selection, fn -> do_select(state) end)}
+    cond do
+      not state.eligibility.permitted? ->
+        reasons = state.eligibility.reasons
+
+        {:noreply,
+         finish(
+           state,
+           :failed,
+           {:error, {:not_permitted, reasons}},
+           :tx_failed,
+           "not permitted: #{Enum.join(reasons, "; ")}"
+         )}
+
+      state.providers == [] and state.eligibility.denied != [] ->
+        {:noreply,
+         finish(
+           state,
+           :failed,
+           {:error, :no_eligible_provider},
+           :tx_failed,
+           "no provider is eligible for the #{Enum.join(state.eligibility.regions, "/")} corridor"
+         )}
+
+      true ->
+        state = announce_eligibility(state)
+        state = announce_policy(state)
+        state = announce_deadline(state)
+        state = %{state | phase: :quoting}
+        {:noreply, run(state, :selection, fn -> do_select(state) end)}
+    end
+  end
+
+  defp announce_eligibility(%{eligibility: %{regions: []}} = state), do: state
+
+  defp announce_eligibility(%{eligibility: e} = state) do
+    note(
+      state,
+      :eligibility_decided,
+      "jurisdiction #{Enum.join(e.regions, "/")}: #{length(state.providers)} of #{length(state.providers) + length(e.denied)} providers eligible; " <>
+        "records kept in #{Enum.join(e.logs, ", ")}",
+      %{regions: e.regions, logs: e.logs, denied: Enum.map(e.denied, & &1.id)}
+    )
+  end
+
+  # The decision as recorded: what applied, and who was ruled out and why.
+  defp journal_eligibility(%{eligibility: e} = state) do
+    e
+    |> Map.drop([:denied])
+    |> Map.put(:allowed_providers, Enum.map(state.providers, & &1.id))
+    |> Map.put(
+      :denied_providers,
+      for(p <- e.denied, do: %{provider: p.id, reason: Eligibility.denial_reason(e, p.id)})
+    )
   end
 
   @impl true

@@ -11,6 +11,7 @@ defmodule Mix.Tasks.Demo do
       mix demo --pace 0.05     # scale provider latencies (1.0 = human-watchable)
       mix demo --sentinel-ms 500   # probe interval
       mix demo --audit audit/demo.log   # also keep the tamper-evident audit log
+      mix demo --audit-dir audit/       # one log per region (data residency): GLOBAL, IN, CN
   """
   use Mix.Task
 
@@ -24,13 +25,15 @@ defmodule Mix.Tasks.Demo do
           quiet: :boolean,
           pace: :float,
           sentinel_ms: :integer,
-          audit: :string
+          audit: :string,
+          audit_dir: :string
         ]
       )
 
     Mix.Task.run("app.start")
 
     if opts[:audit], do: start_audit(opts[:audit])
+    if opts[:audit_dir], do: start_regional_audit(opts[:audit_dir])
 
     demo_opts = if opts[:sentinel_ms], do: [sentinel_interval_ms: opts[:sentinel_ms]], else: []
     {:ok, _} = ActorTxSpike.Demo.start_link(demo_opts)
@@ -56,6 +59,17 @@ defmodule Mix.Tasks.Demo do
     case ActorTxSpike.Audit.start_link(path: path) do
       {:ok, _} -> Mix.shell().info("audit log: #{path} (verify with: mix audit.verify #{path})")
       {:error, reason} -> Mix.raise("audit log refused to start: #{inspect(reason)}")
+    end
+  end
+
+  defp start_regional_audit(dir) do
+    case ActorTxSpike.Audit.Router.start_link(dir: dir, logs: ActorTxSpike.Demo.log_names()) do
+      {:ok, router} ->
+        logs = router |> ActorTxSpike.Audit.Router.paths() |> Map.keys() |> Enum.sort()
+        Mix.shell().info("regional audit logs in #{dir}: #{Enum.join(logs, ", ")}")
+
+      {:error, reason} ->
+        Mix.raise("regional audit logs refused to start: #{inspect(reason)}")
     end
   end
 

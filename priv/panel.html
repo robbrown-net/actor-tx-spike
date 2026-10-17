@@ -132,7 +132,9 @@
   <div class="grp"><label>Amount</label><input type="number" id="amount" value="1000" min="1" step="100">
     <label>Merchant</label><select id="merchant"><option value="">–</option><option value="acme">acme (overrides, guarantee)</option><option value="globex">globex (no overrides)</option></select>
     <label>Customer</label><select id="customer"><option value="">–</option><option value="vip-1">vip-1 (speed-led)</option></select>
-    <label>Region</label><select id="region"><option value="">–</option><option value="UK">UK</option><option value="EU">EU</option></select>
+    <label>Region</label><select id="region"><option value="">–</option><option value="UK">UK</option><option value="EU">EU</option><option value="IN">IN (local, 2 providers, spot)</option><option value="CN">CN (local, 1 provider, spot, business)</option></select>
+    <label>Instrument</label><select id="instrument"><option value="spot">spot</option><option value="forward">forward</option></select>
+    <label>Type</label><select id="ctype"><option value="business">business</option><option value="retail">retail</option></select>
     <button class="primary" id="submit">Submit transaction</button>
     <button id="auto">Auto traffic: off</button></div>
   <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button></div>
@@ -514,7 +516,7 @@ document.addEventListener('click', e => {
   if (tx) { S.sel = S.sel === tx.dataset.tx ? null : tx.dataset.tx; S.dirty = true; }
 });
 $('clearSel').onclick = () => { S.sel = null; S.dirty = true; };
-$('submit').onclick = () => post({ action:'submit', amount:+$('amount').value, merchant:$('merchant').value, customer:$('customer').value, region:$('region').value });
+$('submit').onclick = () => post({ action:'submit', amount:+$('amount').value, merchant:$('merchant').value, customer:$('customer').value, region:$('region').value, instrument:$('instrument').value, customer_type:$('ctype').value });
 $('setCutoff').onclick = () => { const r = $('region').value; if (!r) return toast('choose a region first', true); post({ action:'cutoff', region:r, in_seconds:+$('cutoffSecs').value }); };
 $('clearCutoff').onclick = () => { const r = $('region').value; if (!r) return toast('choose a region first', true); post({ action:'cutoff', region:r, in_seconds:0 }); };
 $('auto').onclick = () => post({ action:'auto', on: !(S.snap && S.snap.auto) });

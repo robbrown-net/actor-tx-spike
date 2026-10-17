@@ -22,6 +22,8 @@ defmodule ActorTxSpike do
     resolved from the request's `:merchant_id` and `:customer_id`)
   * `:cutoffs` (`%{region => ActorTxSpike.Cutoff}`), used with the request's `:destination_region`
   * `:guarantees` (`%{merchant_id => ActorTxSpike.Guarantee}`) and `:ledger`
+  * `:eligibility` (`ActorTxSpike.Eligibility`): jurisdiction rules applied before scoring;
+    the request may carry `:origin_region`, `:destination_region`, `:instrument`, `:customer_type`
   * `:opts` (see `ActorTxSpike.Payment` defaults).
   """
   @spec submit(map(), keyword()) :: {:ok, String.t()} | {:error, term()}
@@ -40,6 +42,7 @@ defmodule ActorTxSpike do
         policy_layers: layers,
         cutoff: opts |> Keyword.get(:cutoffs, %{}) |> Map.get(request[:destination_region]),
         guarantee: opts |> Keyword.get(:guarantees, %{}) |> Map.get(request[:merchant_id]),
+        eligibility: Keyword.get(opts, :eligibility, ActorTxSpike.Eligibility.open()),
         opts: Keyword.get(opts, :opts, [])
       ] ++ if(opts[:ledger], do: [ledger: opts[:ledger]], else: [])
 

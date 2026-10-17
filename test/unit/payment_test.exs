@@ -35,7 +35,7 @@ defmodule ActorTxSpike.PaymentTest do
         do: [policy_set: extra[:policy_set]],
         else: [policy: Keyword.get(extra, :policy, policy())]
 
-    passthrough = Keyword.take(extra, [:cutoffs, :guarantees, :ledger])
+    passthrough = Keyword.take(extra, [:cutoffs, :guarantees, :ledger, :eligibility])
 
     {:ok, ^id} =
       ActorTxSpike.submit(
@@ -280,6 +280,78 @@ defmodule ActorTxSpike.PaymentTest do
     assert {:ok, _} = Payment.await(id)
     Process.sleep(60)
     assert {:error, :not_found} = Payment.await(id)
+  end
+
+  describe "jurisdiction" do
+    defp rules do
+      {:ok, e} =
+        ActorTxSpike.Eligibility.new(%{
+          "regions" => %{
+            "IN" => %{
+              "instruments" => ["spot"],
+              "providers" => %{"allow" => ["second", "third"]},
+              "logs" => ["IN"],
+              "local_only" => true
+            },
+            "CN" => %{"providers" => %{"allow" => ["nobody"]}}
+          }
+        })
+
+      e
+    end
+
+    test "an ineligible provider is never asked, and the decision is recorded" do
+      Events.subscribe()
+      m = market()
+
+      id =
+        submit(m, [], request: %{destination_region: "IN", amount: 100_000}, eligibility: rules())
+
+      # :best would win on price, but it may not carry the IN corridor
+      assert {:ok, %{provider: :second}} = Payment.await(id)
+      assert Fake.calls(m.best.fake) == %{}
+      assert count(m, :best, :accept_quote) == 0
+
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_received, data: d}}, 1_000
+      e = d.eligibility
+      assert e.permitted? and e.logs == ["IN"] and e.regions == ["IN"]
+      assert e.allowed_providers == [:second, :third]
+      assert [%{provider: :best, reason: reason}] = e.denied_providers
+      assert reason =~ "best is not eligible for the IN corridor"
+      assert d.providers == [:second, :third]
+    end
+
+    test "an instrument that is not permitted stops the transaction before anyone is asked" do
+      m = market()
+
+      id =
+        submit(m, [],
+          request: %{destination_region: "IN", instrument: :forward},
+          eligibility: rules()
+        )
+
+      assert {:error, {:not_permitted, ["forward is not permitted in IN"]}} = Payment.await(id)
+      for p <- [:best, :second, :third], do: assert(Fake.calls(m[p].fake) == %{})
+    end
+
+    test "when every provider is ruled out the transaction fails clearly" do
+      m = market()
+      id = submit(m, [], request: %{destination_region: "CN"}, eligibility: rules())
+      assert {:error, :no_eligible_provider} = Payment.await(id)
+      for p <- [:best, :second, :third], do: assert(Fake.calls(m[p].fake) == %{})
+    end
+
+    test "without rules nothing changes, and the decision says so" do
+      Events.subscribe()
+      m = market()
+      id = submit(m)
+      assert {:ok, %{provider: :best}} = Payment.await(id)
+
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_received, data: %{eligibility: e}}},
+                     1_000
+
+      assert %{permitted?: true, logs: ["GLOBAL"], denied_providers: []} = e
+    end
   end
 
   describe "write-ahead and fail closed" do

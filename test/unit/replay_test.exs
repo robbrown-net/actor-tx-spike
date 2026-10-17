@@ -436,6 +436,62 @@ defmodule ActorTxSpike.ReplayTest do
     assert :economics_consistent in rules(day)
   end
 
+  test "eligibility_respected: using a provider the decision ruled out is caught", %{fixture: f} do
+    day =
+      mutate(f, fn rs ->
+        edit(
+          rs,
+          kind("tx_received", "happy"),
+          &put_in(&1, ["data", "eligibility", "allowed_providers"], ["second"])
+        )
+      end)
+
+    violations =
+      day
+      |> Rules.verify()
+      |> Map.fetch!(:violations)
+      |> Enum.filter(&(&1.rule == :eligibility_respected))
+
+    assert [_ | _] = violations
+    assert Enum.all?(violations, &(&1.detail =~ "is not eligible for the" and &1.tx == hd(f.ids)))
+    assert Enum.map(violations, & &1.detail) |> Enum.uniq() |> length() == length(violations)
+  end
+
+  test "eligibility_respected: calling anyone when the transaction was not permitted is caught",
+       %{fixture: f} do
+    day =
+      mutate(f, fn rs ->
+        edit(rs, kind("tx_received", "happy"), fn r ->
+          r
+          |> put_in(["data", "eligibility", "permitted?"], false)
+          |> put_in(["data", "eligibility", "reasons"], ["forward is not permitted in IN"])
+        end)
+      end)
+
+    assert [%{rule: :eligibility_respected, detail: detail}] =
+             day
+             |> Rules.verify()
+             |> Map.fetch!(:violations)
+             |> Enum.filter(&(&1.rule == :eligibility_respected))
+
+    assert detail =~ "although the transaction was not permitted (forward is not permitted in IN)"
+  end
+
+  test "eligibility_respected: a log from before eligibility was recorded is not judged by it", %{
+    fixture: f
+  } do
+    day =
+      mutate(f, fn rs ->
+        edit(
+          rs,
+          kind("tx_received", "happy"),
+          &update_in(&1, ["data"], fn d -> Map.delete(d, "eligibility") end)
+        )
+      end)
+
+    refute :eligibility_respected in rules(day)
+  end
+
   test "economics_consistent: ignores a completed transaction with no price discovery", %{
     fixture: f
   } do
