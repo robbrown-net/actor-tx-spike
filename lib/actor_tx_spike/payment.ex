@@ -30,7 +30,7 @@ defmodule ActorTxSpike.Payment do
   """
   use GenServer
 
-  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, PolicySet, Selector}
+  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, Money, PolicySet, Selector}
   alias ActorTxSpike.Provider.{Quote, Server}
 
   @undo %{accept_quote: :cancel_accept, authorise: :void_authorisation, pay: :refund}
@@ -116,7 +116,9 @@ defmodule ActorTxSpike.Payment do
     amount = state.request[:amount]
 
     state =
-      note(state, :tx_received, "transaction received: amount #{amount}", %{amount: amount})
+      note(state, :tx_received, "transaction received: amount #{Money.format(amount)}", %{
+        amount: amount
+      })
 
     state = announce_policy(state)
     state = announce_deadline(state)
@@ -348,7 +350,7 @@ defmodule ActorTxSpike.Payment do
           note(
             state,
             :provider_chosen,
-            "going with #{c.provider_id} (quote rate #{c.quote.rate}, fee #{c.quote.fee})",
+            "going with #{c.provider_id} (quote rate #{Money.format_rate(c.quote.rate)}, fee #{Money.format(c.quote.fee)})",
             %{provider: c.provider_id, remaining: Enum.map(rest, & &1.provider_id)}
           )
 
@@ -447,7 +449,7 @@ defmodule ActorTxSpike.Payment do
       :completed,
       {:ok, summary},
       :tx_completed,
-      "COMPLETED via #{c.provider_id}: net #{Float.round(c.net * 1.0, 2)} at rate #{c.quote.rate}"
+      "COMPLETED via #{c.provider_id}: net #{Money.format(c.net)} at rate #{Money.format_rate(c.quote.rate)}"
     )
   end
 
@@ -632,8 +634,8 @@ defmodule ActorTxSpike.Payment do
       note(
         state,
         kind,
-        "guarantee #{g.period} for #{g.merchant_id}: #{word} #{Float.round(result.margin, 2)} " <>
-          "(guaranteed #{Float.round(result.guaranteed_net, 2)}, achieved #{Float.round(result.achieved_net, 2)})",
+        "guarantee #{g.period} for #{g.merchant_id}: #{word} #{Money.format(result.margin)} " <>
+          "(guaranteed #{Money.format(result.guaranteed_net)}, achieved #{Money.format(result.achieved_net)})",
         Map.merge(result, %{merchant_id: g.merchant_id, period: g.period})
       )
 

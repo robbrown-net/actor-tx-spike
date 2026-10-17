@@ -14,7 +14,7 @@ defmodule ActorTxSpike.SelectorTest do
     def handle_call(:checkout, _from, :crash), do: {:stop, :crashed, :crashed}
   end
 
-  @request %{id: "r1", amount: 100}
+  @request %{id: "r1", amount: 10_000}
 
   defp provider(id, fake_opts \\ [], health \\ []) do
     {:ok, fake} = Fake.start_link([id: id] ++ fake_opts)
@@ -42,7 +42,7 @@ defmodule ActorTxSpike.SelectorTest do
     sel = Selector.select(@request, ps, policy(%{"weights" => %{"cost" => 1}}))
 
     assert {:selected, %{provider_id: :best, net: net}} = sel.outcome
-    assert_in_delta net, 110.0, 0.0001
+    assert net == 11_000
     assert ids(sel) == [:best, :mid, :cheap]
     assert sel.excluded == []
   end

@@ -15,10 +15,23 @@ defmodule ActorTxSpike.Provider.FakeTest do
   end
 
   test "quotes carry rate, fee and a future expiry", %{fake: fake} do
-    assert {:ok, %Quote{provider: :f, request_id: "r1", rate: 1.1, fee: 2.0} = q} =
+    assert {:ok, %Quote{provider: :f, request_id: "r1", rate: 110_000_000, fee: 200} = q} =
              Fake.request_quote(fake, %{id: "r1"})
 
     refute Quote.expired?(q, System.system_time(:millisecond))
+  end
+
+  test "rate and fee settings are normalised to exact integers", %{fake: fake} do
+    Fake.configure(fake, rate: "1.25", fee: 0.5)
+    assert %{rate: 125_000_000, fee: 50} = Fake.settings(fake)
+    Fake.configure(fake, rate: 2)
+    assert %{rate: 200_000_000} = Fake.settings(fake)
+    Fake.configure(fake, rate: 130_000_000)
+    assert %{rate: 130_000_000} = Fake.settings(fake)
+  end
+
+  test "a quote request that names an amount is narrated with it", %{fake: fake} do
+    {:ok, _} = Fake.request_quote(fake, %{id: "amt-1", amount: 12_345})
   end
 
   test "quote modes", %{fake: fake} do

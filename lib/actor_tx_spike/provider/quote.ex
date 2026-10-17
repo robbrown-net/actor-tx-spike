@@ -7,8 +7,8 @@ defmodule ActorTxSpike.Provider.Quote do
   @type t :: %__MODULE__{
           provider: term(),
           request_id: String.t(),
-          rate: number(),
-          fee: number(),
+          rate: ActorTxSpike.Money.rate(),
+          fee: ActorTxSpike.Money.minor(),
           expires_at_ms: integer()
         }
 

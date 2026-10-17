@@ -47,7 +47,7 @@ defmodule ActorTxSpike.Ledger do
     {:reply, result, entries}
   end
 
-  defp sum(values), do: Enum.sum(values) * 1.0
+  defp sum(values), do: Enum.sum(values)
 
   defp totals(merchant, period, group) do
     margins = Enum.map(group, & &1.margin)
@@ -60,8 +60,8 @@ defmodule ActorTxSpike.Ledger do
       achieved_total: group |> Enum.map(& &1.achieved_net) |> sum(),
       margin_total: sum(margins),
       exposure_total: margins |> Enum.filter(&(&1 < 0)) |> sum(),
-      worst: if(margins == [], do: 0.0, else: Enum.min(margins)),
-      best: if(margins == [], do: 0.0, else: Enum.max(margins))
+      worst: if(margins == [], do: 0, else: Enum.min(margins)),
+      best: if(margins == [], do: 0, else: Enum.max(margins))
     }
   end
 end

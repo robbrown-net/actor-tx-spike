@@ -4,9 +4,11 @@ defmodule ActorTxSpike.Guarantee do
   guaranteed rate). Per transaction we may route better or worse than the
   guarantee; the difference is *our* margin (positive) or exposure (negative).
 
-      net guaranteed = amount * guaranteed_rate
+      net guaranteed = amount * guaranteed_rate   (integer minor units, half-even)
       margin         = achieved_net - net guaranteed
   """
+
+  alias ActorTxSpike.Money
 
   @enforce_keys [:merchant_id, :period, :rate]
   defstruct [:merchant_id, :period, :rate]
@@ -18,13 +20,13 @@ defmodule ActorTxSpike.Guarantee do
     data = Map.new(data, fn {k, v} -> {to_string(k), v} end)
     merchant = Map.get(data, "merchant_id")
     period = Map.get(data, "period")
-    rate = Map.get(data, "rate")
+    rate = data |> Map.get("rate") |> to_rate()
 
     errors =
       [
         {is_binary(merchant) and merchant != "", "merchant_id: required"},
         {is_binary(period) and period != "", "period: required (e.g. \"2026-W42\")"},
-        {is_number(rate) and rate > 0, "rate: must be a positive number"}
+        {is_integer(rate) and rate > 0, "rate: must be a positive number"}
       ]
       |> Enum.reject(&elem(&1, 0))
       |> Enum.map(&elem(&1, 1))
@@ -35,18 +37,21 @@ defmodule ActorTxSpike.Guarantee do
   end
 
   @doc "Compare what we achieved with what we guaranteed."
-  @spec evaluate(t(), number(), number()) :: %{
-          guaranteed_net: float(),
-          achieved_net: float(),
-          margin: float()
+  @spec evaluate(t(), Money.minor(), Money.minor()) :: %{
+          guaranteed_net: Money.minor(),
+          achieved_net: Money.minor(),
+          margin: Money.minor()
         }
   def evaluate(%__MODULE__{rate: rate}, amount, achieved_net) do
-    guaranteed = amount * rate * 1.0
-
-    %{
-      guaranteed_net: guaranteed,
-      achieved_net: achieved_net * 1.0,
-      margin: achieved_net - guaranteed
-    }
+    guaranteed = Money.convert(amount, rate)
+    %{guaranteed_net: guaranteed, achieved_net: achieved_net, margin: achieved_net - guaranteed}
   end
+
+  defp to_rate(v) when is_number(v) or is_binary(v) do
+    Money.rate(v)
+  rescue
+    _ -> nil
+  end
+
+  defp to_rate(_), do: nil
 end

@@ -62,6 +62,9 @@ defmodule ActorTxSpike.DemoIntegrationTest do
     assert {:ok, _} = ctl(%{"action" => "provider", "id" => "cobalt", "do" => "heal"})
     assert provider(Demo.snapshot(), :cobalt).faults == []
 
+    # healing restores the exact price and fee (a unit slip here once made fees 100x)
+    assert %{rate: 1.087, fee: 2.5} = provider(Demo.snapshot(), :cobalt)
+
     {:ok, _} = ctl(%{"action" => "provider", "id" => "cobalt", "do" => "reprice", "rate" => 1.2})
     assert provider(Demo.snapshot(), :cobalt).rate == 1.2
 

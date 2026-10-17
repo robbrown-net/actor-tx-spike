@@ -10,7 +10,7 @@ defmodule ActorTxSpike.Selector do
   `:timeout` and the health model learns from it.
 
   The request must carry `:id` and `:amount`; net value to the customer is
-  `amount * rate - fee`.
+  `amount * rate - fee`, all in integer minor units (see `ActorTxSpike.Money`).
 
   `providers` is a list of `%{id: term, server: pid_or_name}` where `server` is
   an `ActorTxSpike.Provider.Server`.
@@ -19,7 +19,7 @@ defmodule ActorTxSpike.Selector do
   `{:fallback, baseline}` when no usable quote arrives).
   """
 
-  alias ActorTxSpike.{Events, Policy, Selection}
+  alias ActorTxSpike.{Events, Money, Policy, Selection}
   alias ActorTxSpike.Provider.{Quote, Server}
   alias ActorTxSpike.Selection.Candidate
 
@@ -95,7 +95,7 @@ defmodule ActorTxSpike.Selector do
       request,
       :selection_made,
       "selected #{best.provider_id} (score #{Float.round(best.score, 3)}, " <>
-        "net #{Float.round(best.net * 1.0, 2)}, #{best.latency_ms}ms)" <> tail,
+        "net #{Money.format(best.net)}, #{best.latency_ms}ms)" <> tail,
       %{
         provider: best.provider_id,
         ranking:
@@ -172,7 +172,7 @@ defmodule ActorTxSpike.Selector do
       provider_id: p.id,
       server: p.server,
       quote: quote,
-      net: request.amount * quote.rate - quote.fee,
+      net: Money.convert(request.amount, quote.rate) - quote.fee,
       latency_ms: latency,
       validity_ms: quote.expires_at_ms - System.system_time(:millisecond),
       state: state
@@ -183,7 +183,7 @@ defmodule ActorTxSpike.Selector do
         announce(
           request,
           :quote_received,
-          "#{p.id} quoted rate #{quote.rate}, fee #{quote.fee} (net #{Float.round(candidate.net * 1.0, 2)}, #{latency}ms)",
+          "#{p.id} quoted rate #{Money.format_rate(quote.rate)}, fee #{Money.format(quote.fee)} (net #{Money.format(candidate.net)}, #{latency}ms)",
           %{provider: p.id, rate: quote.rate, fee: quote.fee, latency_ms: latency}
         )
 

@@ -4,7 +4,7 @@ defmodule ActorTxSpike.SelectionIntegrationTest do
   alias ActorTxSpike.{Policy, Selector}
   alias ActorTxSpike.Provider.{Fake, Server}
 
-  @request %{id: "fx-1", amount: 1_000}
+  @request %{id: "fx-1", amount: 100_000}
 
   defp provider(id, fake_opts, health) do
     {:ok, fake} = Fake.start_link([id: id] ++ fake_opts)

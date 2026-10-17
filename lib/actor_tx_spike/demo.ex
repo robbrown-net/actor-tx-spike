@@ -10,7 +10,7 @@ defmodule ActorTxSpike.Demo do
   """
   use GenServer
 
-  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, PolicySet}
+  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, Money, PolicySet}
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   @providers [
@@ -101,7 +101,7 @@ defmodule ActorTxSpike.Demo do
 
   @impl true
   def handle_info(:auto_tick, %{auto: true} = state) do
-    {_reply, state} = submit(state, Enum.random([250, 500, 1_000, 2_500, 10_000]))
+    {_reply, state} = submit(state, Money.minor(Enum.random([250, 500, 1_000, 2_500, 10_000])))
     Process.send_after(self(), :auto_tick, state.auto_interval_ms)
     {:noreply, state}
   end
@@ -111,8 +111,9 @@ defmodule ActorTxSpike.Demo do
   def handle_info(:market, state) do
     for {_id, p} <- state.providers do
       s = Fake.settings(p.fake)
-      drift = (:rand.uniform() - 0.5) * 0.0016
-      Fake.configure(p.fake, rate: Float.round(max(s.rate + drift, 1.0), 4))
+      # drift by up to +/-0.0008, kept on a 4-decimal grid and never below parity
+      drift = round((:rand.uniform() - 0.5) * 16) * 10_000
+      Fake.configure(p.fake, rate: max(s.rate + drift, Money.rate_scale()))
     end
 
     Process.send_after(self(), :market, 2_000)
@@ -134,7 +135,7 @@ defmodule ActorTxSpike.Demo do
   # ---- controls ----------------------------------------------------------
 
   defp do_control(%{"action" => "submit"} = cmd, state) do
-    amount = cmd |> Map.get("amount", 1_000) |> to_number()
+    amount = cmd |> Map.get("amount", 1_000) |> Money.minor()
 
     extras =
       for {key, field} <- [
@@ -266,13 +267,19 @@ defmodule ActorTxSpike.Demo do
 
   defp preset("reprice", cmd, _p, _state) do
     case Map.fetch(cmd, "rate") do
-      {:ok, rate} when is_number(rate) -> {:ok, [rate: rate * 1.0]}
+      {:ok, rate} when is_number(rate) -> {:ok, [rate: Money.rate(rate)]}
       _ -> {:error, "reprice needs a numeric rate"}
     end
   end
 
   defp preset("heal", _cmd, p, state) do
-    base = Map.take(p.base, [:rate, :fee, :version | @modes])
+    # the base holds exact internal values; Fake.configure takes decimals
+    base =
+      p.base
+      |> Map.take([:version | @modes])
+      |> Map.put(:rate, Money.rate_to_float(p.base.rate))
+      |> Map.put(:fee, Money.to_major(p.base.fee))
+
     {:ok, [latency_ms: round(p.base.latency_ms * state.pace)] ++ Map.to_list(base)}
   end
 
@@ -295,8 +302,8 @@ defmodule ActorTxSpike.Demo do
           in_flight: Server.in_flight(p.server),
           version: h.version,
           recovering: h.recovering,
-          rate: s.rate,
-          fee: s.fee,
+          rate: Money.rate_to_float(s.rate),
+          fee: Money.to_major(s.fee),
           latency_ms: s.latency_ms,
           faults: for(m <- @modes, s[m] != :ok, do: %{op: m, mode: inspect(s[m])})
         }

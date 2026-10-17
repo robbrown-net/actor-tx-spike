@@ -205,7 +205,7 @@ function renderLedger(s) {
   const t = $('ledgerTable');
   const rows = s.ledger || [];
   t.innerHTML = rows.length ? '<tr><th>merchant</th><th>period</th><th>tx</th><th>margin</th><th>exposure</th></tr>' +
-    rows.map(r => `<tr><td>${esc(r.merchant_id)}</td><td>${esc(r.period)}</td><td>${r.count}</td><td style="color:${r.margin_total >= 0 ? 'var(--ok)' : 'var(--bad)'}">${r.margin_total.toFixed(2)}</td><td>${r.exposure_total.toFixed(2)}</td></tr>`).join('')
+    rows.map(r => `<tr><td>${esc(r.merchant_id)}</td><td>${esc(r.period)}</td><td>${r.count}</td><td style="color:${r.margin_total >= 0 ? 'var(--ok)' : 'var(--bad)'}">${(r.margin_total / 100).toFixed(2)}</td><td>${(r.exposure_total / 100).toFixed(2)}</td></tr>`).join('')
     : '<tr><td>no guaranteed transactions yet</td></tr>';
 }
 function syncControls(s) {
@@ -306,7 +306,7 @@ function createTx(tx) {
 }
 function updateTx(e, tx) {
   const bad = tx.phase === 'failed', rev = tx.phase === 'needs_review';
-  e.f.amount.textContent = tx.amount ?? '?';
+  e.f.amount.textContent = tx.amount == null ? '?' : (tx.amount / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   e.f.badge.textContent = tx.phase.replace('_', ' '); e.f.badge.className = 'badge ' + tx.phase;
   e.f.via.textContent = tx.provider ? 'via ' + tx.provider : 'choosing…';
   e.f.dur.textContent = (((tx.end || Date.now()) - tx.at) / 1000).toFixed(1) + 's';

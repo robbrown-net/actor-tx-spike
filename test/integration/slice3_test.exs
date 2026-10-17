@@ -104,10 +104,10 @@ defmodule ActorTxSpike.Slice3IntegrationTest do
     for id <- ids, do: assert({:ok, %{guarantee: %{margin: _}}} = ActorTxSpike.await(id, 5_000))
 
     # best rate is 1.10 vs guaranteed 1.09: a positive margin on every transaction
-    assert %{count: 6, margin_total: margin, exposure_total: +0.0} =
+    assert %{count: 6, margin_total: margin, exposure_total: 0} =
              Ledger.summary(ledger, "acme", "2026-W42")
 
-    assert_in_delta margin, (1.10 - 1.09) * 21_000, 1.0e-6
+    assert margin == 210
     assert [%{merchant_id: "acme", period: "2026-W42", count: 6}] = Ledger.all(ledger)
   end
 

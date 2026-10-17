@@ -32,7 +32,7 @@ defmodule ActorTxSpike.Provider.Fake do
 
   use Agent
 
-  alias ActorTxSpike.Events
+  alias ActorTxSpike.{Events, Money}
   alias ActorTxSpike.Provider.Quote
 
   @mode_keys %{
@@ -50,8 +50,8 @@ defmodule ActorTxSpike.Provider.Fake do
 
   @defaults %{
     id: :fake,
-    rate: 1.0,
-    fee: 0.0,
+    rate: 100_000_000,
+    fee: 0,
     latency_ms: 0,
     version: "1",
     quote_ttl_ms: 60_000,
@@ -68,14 +68,35 @@ defmodule ActorTxSpike.Provider.Fake do
   }
 
   def start_link(opts) do
-    settings = Map.merge(@defaults, Map.new(opts))
+    settings = Map.merge(@defaults, opts |> Map.new() |> normalise())
     Agent.start_link(fn -> %{settings: settings, effects: %{}, calls: %{}} end)
   end
 
   @doc "Change settings on the fly (simulate decay, price moves, drift)."
   def configure(pid, changes) do
-    Agent.update(pid, fn s -> %{s | settings: Map.merge(s.settings, Map.new(changes))} end)
+    Agent.update(pid, fn s ->
+      %{s | settings: Map.merge(s.settings, changes |> Map.new() |> normalise())}
+    end)
   end
+
+  # Rate is accepted as a decimal (1.0820) and fee in major units (1.50); both
+  # are held exactly, as a scaled integer and in minor units.
+  defp normalise(settings) do
+    settings
+    |> then(
+      &if(Map.has_key?(&1, :rate), do: Map.update!(&1, :rate, fn r -> to_rate(r) end), else: &1)
+    )
+    |> then(
+      &if(Map.has_key?(&1, :fee), do: Map.update!(&1, :fee, fn f -> Money.minor(f) end), else: &1)
+    )
+  end
+
+  defp amount_text(nil), do: "an unspecified amount"
+  defp amount_text(amount), do: Money.format(amount)
+
+  defp to_rate(r) when is_float(r) or is_binary(r), do: Money.rate(r)
+  defp to_rate(r) when is_integer(r) and r >= 1_000_000, do: r
+  defp to_rate(r) when is_integer(r), do: Money.rate(r)
 
   def settings(pid), do: Agent.get(pid, & &1.settings)
 
@@ -91,7 +112,14 @@ defmodule ActorTxSpike.Provider.Fake do
   @impl true
   def request_quote(pid, request) do
     {mode, s} = begin_call(pid, :request_quote)
-    announce(s, request.id, :received, "received a quote request for #{request[:amount]}")
+
+    announce(
+      s,
+      request.id,
+      :received,
+      "received a quote request for #{amount_text(request[:amount])}"
+    )
+
     delay(s, request.id)
 
     result =
@@ -258,7 +286,9 @@ defmodule ActorTxSpike.Provider.Fake do
     Events.emit(tx, {:provider, s.id}, kind, message, data)
   end
 
-  defp describe({:ok, %Quote{} = q}), do: "quote rate #{q.rate} fee #{q.fee}"
+  defp describe({:ok, %Quote{} = q}),
+    do: "quote rate #{Money.format_rate(q.rate)} fee #{Money.format(q.fee)}"
+
   defp describe({:ok, _receipt}), do: "ok"
   defp describe({:rejected, why}), do: "rejected (#{why})"
   defp describe({:error, why}), do: "error (#{inspect(why)})"

@@ -53,7 +53,11 @@ defmodule ActorTxSpike.PaymentTest do
     id = submit(m)
 
     assert {:ok,
-            %{provider: :best, steps: [:accept_quote, :authorise, :pay, :settle], rate: 1.10}} =
+            %{
+              provider: :best,
+              steps: [:accept_quote, :authorise, :pay, :settle],
+              rate: 110_000_000
+            }} =
              Payment.await(id)
 
     for op <- [:accept_quote, :authorise, :pay, :settle], do: assert(count(m, :best, op) == 1)
@@ -447,11 +451,11 @@ defmodule ActorTxSpike.PaymentTest do
         )
 
       assert {:ok, %{guarantee: %{margin: margin}}} = Payment.await(id)
-      assert_in_delta margin, 50.0, 1.0e-6
+      assert margin == 50
       assert_receive {:tx_event, %{tx_id: ^id, kind: :guarantee_margin, message: msg}}, 1_000
-      assert msg =~ "margin 50.0"
+      assert msg =~ "margin 0.50 (guaranteed 10.50, achieved 11.00)"
       assert %{count: 1, margin_total: total} = Ledger.summary(ledger, "acme", "2026-W42")
-      assert_in_delta total, 50.0, 1.0e-6
+      assert total == 50
     end
 
     test "falling short of the guarantee is exposure, loudly" do
