@@ -10,6 +10,7 @@ defmodule Mix.Tasks.Demo do
       mix demo --quiet         # do not print the narrative to the terminal
       mix demo --pace 0.05     # scale provider latencies (1.0 = human-watchable)
       mix demo --sentinel-ms 500   # probe interval
+      mix demo --audit audit/demo.log   # also keep the tamper-evident audit log
   """
   use Mix.Task
 
@@ -22,11 +23,14 @@ defmodule Mix.Tasks.Demo do
           auto: :boolean,
           quiet: :boolean,
           pace: :float,
-          sentinel_ms: :integer
+          sentinel_ms: :integer,
+          audit: :string
         ]
       )
 
     Mix.Task.run("app.start")
+
+    if opts[:audit], do: start_audit(opts[:audit])
 
     demo_opts = if opts[:sentinel_ms], do: [sentinel_interval_ms: opts[:sentinel_ms]], else: []
     {:ok, _} = ActorTxSpike.Demo.start_link(demo_opts)
@@ -46,6 +50,13 @@ defmodule Mix.Tasks.Demo do
 
     unless opts[:quiet], do: spawn_link(&narrate/0)
     Process.sleep(:infinity)
+  end
+
+  defp start_audit(path) do
+    case ActorTxSpike.Audit.start_link(path: path) do
+      {:ok, _} -> Mix.shell().info("audit log: #{path} (verify with: mix audit.verify #{path})")
+      {:error, reason} -> Mix.raise("audit log refused to start: #{inspect(reason)}")
+    end
   end
 
   defp narrate do
