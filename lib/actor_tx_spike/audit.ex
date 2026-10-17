@@ -26,9 +26,11 @@ defmodule ActorTxSpike.Audit do
   """
   use GenServer
 
+  alias ActorTxSpike.Audit.Lock
   alias ActorTxSpike.{Events, Panel}
 
   @genesis String.duplicate("0", 64)
+  @sync_every_ms 50
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
@@ -83,46 +85,67 @@ defmodule ActorTxSpike.Audit do
   def init(opts) do
     path = Keyword.fetch!(opts, :path)
 
+    with :ok <- Lock.acquire(path), {:ok, status} <- verified(path) do
+      start(opts, path, status)
+    end
+  end
+
+  # The lock is held for as long as the writer lives; if it cannot start it must not keep it.
+  defp verified(path) do
     case verify(path) do
-      {:ok, %{records: n, head: head}} ->
-        File.mkdir_p!(Path.dirname(path))
-        {:ok, fd} = File.open(path, [:append, :binary, :raw])
-        name = Keyword.get(opts, :name, __MODULE__)
-
-        if Keyword.get(opts, :subscribe, true) do
-          Events.subscribe()
-          Events.register_sink({:audit, name}, self())
-        end
-
-        {:ok,
-         %{
-           path: path,
-           fd: fd,
-           n: n,
-           head: head,
-           sync: Keyword.get(opts, :sync, true),
-           sink: if(Keyword.get(opts, :subscribe, true), do: {:audit, name})
-         }}
+      {:ok, status} ->
+        {:ok, status}
 
       {:error, reason} ->
+        Lock.release(path)
         {:stop, {:audit_chain_broken, reason}}
     end
   end
 
+  defp start(opts, path, %{records: n, head: head}) do
+    {:ok, fd} = File.open(path, [:append, :binary, :raw])
+    name = Keyword.get(opts, :name, __MODULE__)
+
+    if Keyword.get(opts, :subscribe, true) do
+      Events.subscribe()
+      Events.register_sink({:audit, name}, self())
+    end
+
+    {:ok,
+     %{
+       path: path,
+       fd: fd,
+       n: n,
+       head: head,
+       sync: Keyword.get(opts, :sync, true),
+       dirty: false,
+       timer: nil,
+       sink: if(Keyword.get(opts, :subscribe, true), do: {:audit, name})
+     }}
+  end
+
   @impl true
   def handle_call({:record, event}, _from, state), do: {:reply, :ok, append(state, event)}
-  def handle_call(:flush, _from, state), do: {:reply, :ok, state}
+  def handle_call(:flush, _from, state), do: {:reply, :ok, make_durable(state)}
   def handle_call(:head, _from, state), do: {:reply, %{records: state.n, head: state.head}, state}
 
   @impl true
   def handle_info({:tx_event, event}, state), do: {:noreply, append(state, event)}
+  def handle_info(:sync, state), do: {:noreply, make_durable(%{state | timer: nil})}
 
   @impl true
-  def terminate(_reason, %{sink: nil}), do: :ok
+  def terminate(reason, state) do
+    # whatever the reason, the file is no longer ours; only a deliberate stop unregisters
+    # the sink (a crash must leave it failed so the system fails closed)
+    make_durable(state)
+    :file.close(state.fd)
+    Lock.release(state.path)
 
-  def terminate(:normal, %{sink: sink}), do: Events.unregister_sink(sink)
-  def terminate(:shutdown, %{sink: sink}), do: Events.unregister_sink(sink)
-  def terminate(_crash, _state), do: :ok
+    if state.sink != nil and reason in [:normal, :shutdown],
+      do: Events.unregister_sink(state.sink)
+
+    :ok
+  end
 
   # ---- internals ---------------------------------------------------------
 
@@ -146,9 +169,25 @@ defmodule ActorTxSpike.Audit do
     hash = hash(state.head, body)
     line = JSON.encode!(Map.put(body, "hash", hash)) <> "\n"
     :ok = :file.write(state.fd, line)
-    if state.sync, do: :ok = :file.datasync(state.fd)
-    %{state | n: n, head: hash}
+    schedule_sync(%{state | n: n, head: hash, dirty: true})
   end
+
+  # Group commit: records are written at once, and made durable together, when a
+  # barrier asks (the write-ahead point) or at the latest after `@sync_every_ms`.
+  # One fsync then covers every record written since the last one, instead of one
+  # per record (which would cap throughput at the disk's fsync rate).
+  defp schedule_sync(%{sync: true, timer: nil} = state),
+    do: %{state | timer: Process.send_after(self(), :sync, @sync_every_ms)}
+
+  defp schedule_sync(state), do: state
+
+  defp make_durable(%{sync: true, dirty: true} = state) do
+    :ok = :file.datasync(state.fd)
+    if state.timer, do: Process.cancel_timer(state.timer)
+    %{state | dirty: false, timer: nil}
+  end
+
+  defp make_durable(state), do: state
 
   defp hash(prev, body) do
     :sha256 |> :crypto.hash(prev <> JSON.encode!(body)) |> Base.encode16(case: :lower)

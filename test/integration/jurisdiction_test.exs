@@ -6,8 +6,8 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
   """
   use ExUnit.Case, async: true
 
-  alias ActorTxSpike.{Eligibility, Policy, Replay}
   alias ActorTxSpike.Audit.Router
+  alias ActorTxSpike.{Eligibility, Events, Policy, Recovery, Replay}
   alias ActorTxSpike.Provider.{Fake, Server}
   alias ActorTxSpike.Replay.{Residency, Rules}
 
@@ -46,7 +46,7 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
       for {id, rate} <- [alpha: 1.05, beta: 1.04, gamma: 1.10] do
         {:ok, fake} = Fake.start_link(id: id, rate: rate)
         {:ok, server} = Server.start_link(adapter: Fake, config: fake, id: id)
-        %{id: id, server: server}
+        %{id: id, server: server, fake: fake}
       end
 
     %{dir: dir, router: name, eligibility: eligibility, providers: providers}
@@ -145,5 +145,93 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
     # each regional log is its own verifiable chain
     for {_log, path} <- Router.paths(ctx.router),
         do: assert({:ok, _} = ActorTxSpike.Audit.verify(path))
+  end
+
+  test "a restart resumes an open transaction from its regional log, and it stays in that region",
+       ctx do
+    {:ok, policy} = Policy.new(%{"weights" => %{"cost" => 1}})
+    id = "jr-restart-#{System.unique_integer([:positive])}"
+    Events.subscribe()
+
+    {:ok, ^id} =
+      ActorTxSpike.submit(%{id: id, amount: 100_000, destination_region: "IN"},
+        providers: ctx.providers,
+        policy: policy,
+        eligibility: ctx.eligibility,
+        opts: @fast ++ [linger_ms: 1]
+      )
+
+    # the node dies as soon as authorise has succeeded
+    kill_after(id, :authorise)
+    :ok = Events.barrier()
+
+    # restart: stop the router, start a fresh one on the same directory (chains are verified),
+    # load every regional log, and recover
+    GenServer.stop(ctx.router)
+    name = :"juris_router_again_#{System.unique_integer([:positive])}"
+    {:ok, again} = Router.start_link(dir: ctx.dir, logs: ["IN", "CN"], name: name)
+    Process.unlink(again)
+
+    days =
+      for path <- Path.wildcard(Path.join(ctx.dir, "*.log")) do
+        {:ok, day} = Replay.load(path)
+        # the logs also hold other tests' traffic from the shared event stream
+        Replay.from_records(Enum.filter(day.records, &(&1["tx"] == id)))
+      end
+
+    wait_gone(id)
+
+    results =
+      Recovery.recover(days, providers: ctx.providers, eligibility: ctx.eligibility, opts: @fast)
+
+    assert results == [{id, :ok}]
+
+    # Killed mid-flight, the pay call may or may not have reached the provider. Either
+    # way the answer is safe: completed at the one eligible provider, or held for a human.
+    outcome = ActorTxSpike.await(id, 5_000)
+
+    assert match?({:ok, %{provider: :alpha}}, outcome) or
+             match?({:error, {:needs_review, {:in_doubt, :pay}}}, outcome),
+           inspect(outcome)
+
+    for other <- Enum.reject(ctx.providers, &(&1.id == :alpha)),
+        do: assert(Fake.effects(other.fake) == %{})
+
+    wait_logged(%{ctx | router: name}, "IN", id)
+
+    # the resumed records went to the region too; nothing leaked anywhere else
+    reloaded =
+      for log <- ["IN", "CN", "GLOBAL"], into: %{} do
+        {:ok, day} = Replay.load(Path.join(ctx.dir, log <> ".log"))
+        {log, Replay.from_records(Enum.filter(day.records, &(&1["tx"] == id)))}
+      end
+
+    assert Map.keys(reloaded["IN"].by_tx) == [id]
+    assert reloaded["CN"].by_tx == %{} and reloaded["GLOBAL"].by_tx == %{}
+    assert Enum.any?(reloaded["IN"].by_tx[id], &(&1["kind"] == "tx_resumed"))
+    assert %{ok?: true} = Residency.check(reloaded)
+    assert Rules.verify(reloaded["IN"]).ok?
+    GenServer.stop(name)
+  end
+
+  defp kill_after(id, op) do
+    receive do
+      {:tx_event, %{tx_id: ^id, kind: :step_succeeded, data: %{op: ^op}}} ->
+        [{pid, _}] = Registry.lookup(ActorTxSpike.Registry, {:payment, id})
+        Process.exit(pid, :kill)
+
+      {:tx_event, _} ->
+        kill_after(id, op)
+    after
+      3_000 -> flunk("never reached #{op}")
+    end
+  end
+
+  defp wait_gone(id) do
+    Enum.reduce_while(1..200, nil, fn _, _ ->
+      if ActorTxSpike.snapshot(id) == nil,
+        do: {:halt, :ok},
+        else: Process.sleep(10) && {:cont, nil}
+    end)
   end
 end

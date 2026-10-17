@@ -94,7 +94,9 @@ defmodule ActorTxSpike.AuditTest do
   end
 
   test "it refuses to start on top of a tampered log", %{path: path} do
-    fill(start(path), 3)
+    audit = start(path)
+    fill(audit, 3)
+    GenServer.stop(audit)
     File.write!(path, String.replace(File.read!(path), "something happened", "x"))
     Process.flag(:trap_exit, true)
 
@@ -164,5 +166,117 @@ defmodule ActorTxSpike.AuditTest do
     end
 
     GenServer.stop(name)
+  end
+
+  # ---- one writer per log -------------------------------------------------
+
+  test "a second writer on a live log is refused, and the chain stays intact", %{path: path} do
+    first = start(path)
+    fill(first, 2)
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {:audit_locked, owner}} =
+             Audit.start_link(path: path, name: :intruder, subscribe: false)
+
+    assert owner =~ "#{:os.getpid()} <"
+    fill(first, 1)
+    assert {:ok, %{records: 3}} = Audit.verify(path)
+  end
+
+  test "stopping the writer releases the log for the next one", %{path: path} do
+    first = start(path)
+    fill(first, 1)
+    GenServer.stop(first)
+    refute File.exists?(path <> ".lock")
+    second = start(path)
+    fill(second, 1)
+    assert {:ok, %{records: 2}} = Audit.verify(path)
+  end
+
+  test "a lock left by a writer that died is taken over", %{path: path} do
+    first = start(path)
+    fill(first, 1)
+    # a crash never runs terminate, so the lock stays behind
+    pid = Process.whereis(first)
+    Process.exit(pid, :kill)
+    wait_dead(pid)
+    assert File.exists?(path <> ".lock")
+
+    second = start(path)
+    fill(second, 1)
+    assert {:ok, %{records: 2}} = Audit.verify(path)
+  end
+
+  test "a lock left by an OS process that no longer exists is taken over", %{path: path} do
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path <> ".lock", "999999 <0.1.0>")
+    second = start(path)
+    fill(second, 1)
+    assert {:ok, %{records: 1}} = Audit.verify(path)
+  end
+
+  test "a lock held by another running OS process refuses us", %{path: path} do
+    port = Port.open({:spawn, "sleep 5"}, [])
+    {:os_pid, other} = Port.info(port, :os_pid)
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path <> ".lock", "#{other} <0.1.0>")
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {:audit_locked, owner}} =
+             Audit.start_link(path: path, name: :other, subscribe: false)
+
+    assert owner =~ "#{other}"
+    Port.close(port)
+  end
+
+  test "an unreadable lock file counts as stale", %{path: path} do
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path <> ".lock", "garbage")
+    second = start(path)
+    fill(second, 1)
+    assert {:ok, %{records: 1}} = Audit.verify(path)
+  end
+
+  test "a log that fails verification does not keep the lock", %{path: path} do
+    audit = start(path)
+    fill(audit, 1)
+    GenServer.stop(audit)
+    File.write!(path, "not json\n")
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {:audit_chain_broken, _}} =
+             Audit.start_link(path: path, name: :bad, subscribe: false)
+
+    refute File.exists?(path <> ".lock")
+  end
+
+  defp wait_dead(pid) do
+    if Process.alive?(pid), do: Process.sleep(5) && wait_dead(pid), else: :ok
+  end
+
+  test "records are made durable together: on a flush, or shortly after on a timer", %{path: path} do
+    audit = start(path)
+    :ok = Audit.record(audit, event(1))
+    assert :sys.get_state(audit).dirty
+
+    # a flush (the write-ahead point) makes everything written so far durable
+    assert :ok = GenServer.call(audit, :flush)
+    refute :sys.get_state(audit).dirty
+    assert :ok = GenServer.call(audit, :flush)
+
+    # with no flush, the timer does it
+    :ok = Audit.record(audit, event(2))
+    assert :sys.get_state(audit).dirty
+    Process.sleep(120)
+    refute :sys.get_state(audit).dirty
+    assert {:ok, %{records: 2}} = Audit.verify(path)
+  end
+
+  test "with sync off nothing is ever fsynced, but everything is still written", %{path: path} do
+    audit = start(path, sync: false)
+    :ok = Audit.record(audit, event(1))
+    assert :ok = GenServer.call(audit, :flush)
+    assert :sys.get_state(audit).dirty
+    assert {:ok, %{records: 1}} = Audit.verify(path)
   end
 end

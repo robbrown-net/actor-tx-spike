@@ -95,6 +95,20 @@ defmodule ActorTxSpike.Demo do
   @impl true
   def handle_call(:snapshot, _from, state), do: {:reply, build_snapshot(state), state}
 
+  # Resume whatever was open in the given logs, and make sure new ids cannot collide with old ones.
+  def handle_call({:recover, days}, _from, state) do
+    providers = for {pid, p} <- state.providers, do: %{id: pid, server: p.server}
+
+    results =
+      ActorTxSpike.Recovery.recover(days,
+        providers: providers,
+        eligibility: state.eligibility,
+        opts: state.payment_opts
+      )
+
+    {:reply, results, %{state | counter: max(state.counter, highest_id(days, state.prefix))}}
+  end
+
   def handle_call({:control, command}, _from, state) do
     Journal.record(nil, :control, "journal: operator action #{inspect(command)}", %{
       command: command
@@ -135,6 +149,22 @@ defmodule ActorTxSpike.Demo do
 
     Process.send_after(self(), :sentinel, state.sentinel_interval_ms)
     {:noreply, state}
+  end
+
+  @doc "Resume every open transaction found in the loaded logs (see `ActorTxSpike.Recovery`)."
+  def recover(server \\ __MODULE__, days), do: GenServer.call(server, {:recover, days}, 30_000)
+
+  defp highest_id(days, prefix) do
+    days
+    |> List.wrap()
+    |> Enum.flat_map(& &1.tx_order)
+    |> Enum.flat_map(fn id ->
+      case String.split(id, "#{prefix}-", parts: 2) do
+        ["", n] -> [String.to_integer(n)]
+        _ -> []
+      end
+    end)
+    |> Enum.max(fn -> 0 end)
   end
 
   @doc """

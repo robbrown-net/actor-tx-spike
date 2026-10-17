@@ -224,26 +224,25 @@ defmodule ActorTxSpike.Replay.Rules do
       "#{provider} was called although the transaction was not permitted (#{Enum.join(e["reasons"], "; ")})"
 
   defp selection_reproducible(id, rs) do
-    selection = Tx.first(rs, "selection_made")
+    received = Tx.first(rs, "tx_received")
 
-    if selection do
-      {:ok, %{ranked: ranked}} = Tx.reselect(rs)
-      recorded = selection["data"]["ranking"] || []
-      mine = Enum.map(ranked, &{to_string(&1.provider_id), &1.net})
-      theirs = Enum.map(recorded, &{&1["provider"], &1["net"]})
+    for %{selection: selection} = round when selection != nil <- Tx.rounds(rs),
+        violation = check_round(id, received, round),
+        do: violation
+  end
 
-      if mine == theirs,
-        do: [],
-        else: [
-          v(
-            :selection_reproducible,
-            id,
-            selection,
-            "recorded ranking #{inspect(theirs)} but the recorded inputs give #{inspect(mine)}"
-          )
-        ]
-    else
-      []
+  defp check_round(id, received, %{selection: selection} = round) do
+    %{ranked: ranked} = Tx.reselect_round(received, round)
+    mine = Enum.map(ranked, &{to_string(&1.provider_id), &1.net})
+    theirs = Enum.map(selection["data"]["ranking"] || [], &{&1["provider"], &1["net"]})
+
+    if mine != theirs do
+      v(
+        :selection_reproducible,
+        id,
+        selection,
+        "recorded ranking #{inspect(theirs)} but the recorded inputs give #{inspect(mine)}"
+      )
     end
   end
 

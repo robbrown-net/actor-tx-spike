@@ -15,6 +15,10 @@ defmodule Mix.Tasks.Demo do
   """
   use Mix.Task
 
+  alias ActorTxSpike.Audit.Router
+  alias ActorTxSpike.Demo
+  alias ActorTxSpike.Replay
+
   @impl true
   def run(args) do
     {opts, _, _} =
@@ -32,11 +36,14 @@ defmodule Mix.Tasks.Demo do
 
     Mix.Task.run("app.start")
 
+    # logs left by a previous run: load them before this run starts appending
+    previous = previous_days(opts)
     if opts[:audit], do: start_audit(opts[:audit])
     if opts[:audit_dir], do: start_regional_audit(opts[:audit_dir])
 
     demo_opts = if opts[:sentinel_ms], do: [sentinel_interval_ms: opts[:sentinel_ms]], else: []
     {:ok, _} = ActorTxSpike.Demo.start_link(demo_opts)
+    recover(previous)
     if opts[:pace], do: ActorTxSpike.Demo.control(%{"action" => "pace", "factor" => opts[:pace]})
 
     {:ok, panel} =
@@ -62,10 +69,35 @@ defmodule Mix.Tasks.Demo do
     end
   end
 
+  defp previous_days(opts) do
+    paths =
+      List.wrap(opts[:audit]) ++
+        if(opts[:audit_dir], do: Path.wildcard(Path.join(opts[:audit_dir], "*.log")), else: [])
+
+    Enum.flat_map(paths, fn path ->
+      case File.exists?(path) && Replay.load(path) do
+        {:ok, day} -> [day]
+        _ -> []
+      end
+    end)
+  end
+
+  defp recover([]), do: :ok
+
+  defp recover(days) do
+    results = Demo.recover(days)
+
+    for {tx, result} <- results,
+        do:
+          Mix.shell().info(
+            "recovery: #{tx} #{if result == :ok, do: "resumed", else: inspect(result)}"
+          )
+  end
+
   defp start_regional_audit(dir) do
-    case ActorTxSpike.Audit.Router.start_link(dir: dir, logs: ActorTxSpike.Demo.log_names()) do
+    case Router.start_link(dir: dir, logs: Demo.log_names()) do
       {:ok, router} ->
-        logs = router |> ActorTxSpike.Audit.Router.paths() |> Map.keys() |> Enum.sort()
+        logs = router |> Router.paths() |> Map.keys() |> Enum.sort()
         Mix.shell().info("regional audit logs in #{dir}: #{Enum.join(logs, ", ")}")
 
       {:error, reason} ->

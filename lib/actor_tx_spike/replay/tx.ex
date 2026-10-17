@@ -95,6 +95,33 @@ defmodule ActorTxSpike.Replay.Tx do
     end)
   end
 
+  @doc """
+  Selection rounds, in order. A transaction normally has one; a transaction
+  resumed after a restart before it had chosen a provider has two. Each round is
+  `%{records: [quote_observed...], selection: selection_made | nil}`.
+  """
+  def rounds(records) do
+    records
+    |> Enum.reduce([], fn
+      %{"kind" => "select_started"}, acc ->
+        [%{records: [], selection: nil} | acc]
+
+      _record, [] ->
+        []
+
+      %{"kind" => "quote_observed"} = r, [round | rest] ->
+        [%{round | records: [r | round.records]} | rest]
+
+      %{"kind" => "selection_made"} = r, [round | rest] ->
+        [%{round | selection: r} | rest]
+
+      _other, acc ->
+        acc
+    end)
+    |> Enum.reverse()
+    |> Enum.map(&%{&1 | records: Enum.reverse(&1.records)})
+  end
+
   @doc "Observations for `Selector.evaluate/3`, rebuilt from `quote_observed` records."
   def observations(records) do
     for %{"kind" => "quote_observed", "data" => d} <- records do
@@ -139,14 +166,25 @@ defmodule ActorTxSpike.Replay.Tx do
     |> Policy.new()
   end
 
-  @doc "Re-run the live selection rule over the recorded observations."
+  @doc """
+  Re-run the live selection rule over the recorded observations of the first
+  selection round (the one the transaction's first decision was made on).
+  """
   def reselect(records, overrides \\ %{}) do
     received = first(records, "tx_received")
 
     with {:ok, policy} <- policy(received, overrides) do
       request = %{id: received["tx"], amount: received["data"]["request"]["amount"]}
-      {:ok, Selector.evaluate(request, observations(records), policy)}
+      first_round = records |> rounds() |> List.first(%{records: []})
+      {:ok, Selector.evaluate(request, observations(first_round.records), policy)}
     end
+  end
+
+  @doc "Re-run the selection rule over the observations of one round, under the recorded policy."
+  def reselect_round(received, round) do
+    {:ok, policy} = policy(received, %{})
+    request = %{id: received["tx"], amount: received["data"]["request"]["amount"]}
+    Selector.evaluate(request, observations(round.records), policy)
   end
 
   # Phases the Payment reported, in order (every payment event carries one).

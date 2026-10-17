@@ -5,7 +5,7 @@ defmodule ActorTxSpike.ReplayIntegrationTest do
   """
   use ExUnit.Case, async: false
 
-  alias ActorTxSpike.{Audit, Demo, Replay}
+  alias ActorTxSpike.{Audit, Demo, Events, Replay}
   alias ActorTxSpike.Replay.{Compare, Report, Rules, WhatIf}
 
   @fast [
@@ -154,5 +154,92 @@ defmodule ActorTxSpike.ReplayIntegrationTest do
     assert diff.identical == 2
     assert Enum.all?(diff.divergences, &(&1.tx == a))
     assert Enum.any?(diff.divergences, &(&1.field == :provider and &1.b == "elsewhere"))
+  end
+
+  test "the demo resumes a transaction that was killed mid-flight, from its log alone", %{
+    path: path,
+    prefix: prefix,
+    audit: audit
+  } do
+    # slow the world down so there is time to kill the transaction while it is in flight
+    {:ok, _} = ctl(%{"action" => "pace", "factor" => 0.3})
+    Events.subscribe()
+    id = "#{prefix}-1"
+    {:ok, ^id} = ctl(%{"action" => "submit", "amount" => 1_000, "region" => "IN"})
+
+    kill_when_started(id, "authorise")
+    :ok = Events.barrier()
+    wait_gone(id)
+
+    # a restart: the log is loaded, and the demo (the live world) resumes what was open
+    {:ok, day} = Replay.load(path)
+    mine = Replay.from_records(Enum.filter(day.records, &(&1["tx"] == id)))
+    assert [%{status: :open, tx: ^id}] = ActorTxSpike.Recovery.open(mine)
+
+    assert [{^id, :ok}] = Demo.recover([mine])
+    outcome = ActorTxSpike.await(id, 10_000)
+
+    assert match?({:ok, _}, outcome) or match?({:error, {:needs_review, _}}, outcome),
+           inspect(outcome)
+
+    # new transactions cannot collide with the recovered one
+    assert {:ok, next_id} = ctl(%{"action" => "submit", "amount" => 500})
+    assert next_id != id
+
+    # the resumed record is in the log, chained after the crash, and every rule still holds
+    wait_logged(path, [id])
+    GenServer.stop(audit)
+    {:ok, whole} = Replay.load(path)
+    resumed = Replay.from_records(Enum.filter(whole.records, &(&1["tx"] == id)))
+    assert Enum.any?(resumed.records, &(&1["kind"] == "tx_resumed"))
+    assert Rules.verify(resumed).ok?
+  end
+
+  test "jurisdiction rules apply in the demo: a forward to IN and retail to CN are refused", %{
+    prefix: prefix
+  } do
+    Events.subscribe()
+    forward = "#{prefix}-1"
+    retail = "#{prefix}-2"
+
+    {:ok, ^forward} =
+      ctl(%{"action" => "submit", "amount" => 100, "region" => "IN", "instrument" => "forward"})
+
+    {:ok, ^retail} =
+      ctl(%{"action" => "submit", "amount" => 100, "region" => "CN", "customer_type" => "retail"})
+
+    assert {:error, {:not_permitted, ["forward is not permitted in IN"]}} =
+             ActorTxSpike.await(forward, 5_000)
+
+    assert {:error, {:not_permitted, ["retail customers are not permitted in CN"]}} =
+             ActorTxSpike.await(retail, 5_000)
+
+    # an allowed corridor uses only its eligible providers
+    ok = "#{prefix}-3"
+    {:ok, ^ok} = ctl(%{"action" => "submit", "amount" => 100, "region" => "CN"})
+    assert {:ok, %{provider: :meridian}} = ActorTxSpike.await(ok, 5_000)
+  end
+
+  defp kill_when_started(id, op) do
+    op = String.to_existing_atom(op)
+
+    receive do
+      {:tx_event, %{tx_id: ^id, kind: :step_started, data: %{op: ^op}}} ->
+        [{pid, _}] = Registry.lookup(ActorTxSpike.Registry, {:payment, id})
+        Process.exit(pid, :kill)
+
+      {:tx_event, _} ->
+        kill_when_started(id, Atom.to_string(op))
+    after
+      5_000 -> flunk("never reached #{op}")
+    end
+  end
+
+  defp wait_gone(id) do
+    Enum.reduce_while(1..300, nil, fn _, _ ->
+      if ActorTxSpike.snapshot(id) == nil,
+        do: {:halt, :ok},
+        else: Process.sleep(10) && {:cont, nil}
+    end)
   end
 end

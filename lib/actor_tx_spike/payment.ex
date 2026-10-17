@@ -43,6 +43,7 @@ defmodule ActorTxSpike.Payment do
   }
 
   alias ActorTxSpike.Provider.{Quote, Server}
+  alias ActorTxSpike.Selection.Candidate
 
   @undo %{accept_quote: :cancel_accept, authorise: :void_authorisation, pay: :refund}
   @phase %{accept_quote: :accepting, authorise: :authorising, pay: :paying, settle: :settling}
@@ -109,6 +110,7 @@ defmodule ActorTxSpike.Payment do
       policy: Keyword.fetch!(args, :policy),
       opts: Map.new(Keyword.merge(@defaults, Keyword.get(args, :opts, []))),
       cutoff: Keyword.get(args, :cutoff),
+      region: nil,
       deadline_ms: nil,
       policy_layers: Keyword.get(args, :policy_layers, []),
       guarantee: Keyword.get(args, :guarantee),
@@ -137,7 +139,10 @@ defmodule ActorTxSpike.Payment do
       compensations: 0
     }
 
-    {:ok, state, {:continue, :start}}
+    case Keyword.get(args, :resume) do
+      nil -> {:ok, state, {:continue, :start}}
+      plan -> {:ok, state, {:continue, {:resume, plan}}}
+    end
   end
 
   @impl true
@@ -186,6 +191,123 @@ defmodule ActorTxSpike.Payment do
         {:noreply, run(state, :selection, fn -> do_select(state) end)}
     end
   end
+
+  # ---- recovery ----------------------------------------------------------
+  #
+  # A transaction that was open when the node stopped is resumed from the
+  # durable log (see `ActorTxSpike.Recovery`). The plan says exactly where it
+  # stood; the write-ahead barrier means a call in the log may have been sent
+  # (so it is reconciled, never repeated blindly) and a call not in the log was
+  # never sent (so it is safe to make).
+
+  @ops %{
+    "accept_quote" => :accept_quote,
+    "authorise" => :authorise,
+    "pay" => :pay,
+    "settle" => :settle,
+    "cancel_accept" => :cancel_accept,
+    "void_authorisation" => :void_authorisation,
+    "refund" => :refund
+  }
+
+  @impl true
+  def handle_continue({:resume, plan}, state) do
+    state = rebuild(state, plan)
+
+    state =
+      note(state, :tx_resumed, "RESUMED after a restart: #{describe_plan(plan)}", %{
+        mode: plan.mode,
+        provider: plan.provider,
+        op: plan.op,
+        done: plan.done,
+        eligibility: journal_eligibility(state)
+      })
+
+    {:noreply, resume(state, plan)}
+  end
+
+  defp rebuild(state, plan) do
+    now = System.system_time(:millisecond)
+
+    candidate = fn id ->
+      with %{} = p <- Enum.find(state.providers, &(to_string(&1.id) == id)),
+           %Quote{} = q <- plan.quotes[id] do
+        %Candidate{
+          provider_id: p.id,
+          server: p.server,
+          quote: q,
+          net: Money.convert(state.request[:amount], q.rate) - q.fee,
+          latency_ms: plan.latencies[id],
+          validity_ms: q.expires_at_ms - now,
+          state: :unknown
+        }
+      else
+        _ -> nil
+      end
+    end
+
+    %{
+      state
+      | current: plan.provider && candidate.(plan.provider),
+        candidates: for(id <- plan.remaining, c = candidate.(id), do: c),
+        done: plan.done |> Enum.map(&@ops[&1]) |> Enum.reverse(),
+        quote_nets: plan.nets,
+        region: plan.region,
+        deadline_ms: plan.deadline_ms
+    }
+  end
+
+  defp resume(%{current: nil} = state, %{mode: mode}) when mode != :fresh and mode != :review do
+    needs_review(
+      state,
+      {:recovery, :provider_unavailable},
+      "after the restart the provider this transaction was using is not available; a human must check what it holds"
+    )
+  end
+
+  defp resume(state, %{mode: :fresh}) do
+    state = %{state | phase: :quoting}
+    run(state, :selection, fn -> do_select(state) end)
+  end
+
+  defp resume(state, %{mode: :next, op: op}), do: run_step(state, @ops[op])
+
+  defp resume(state, %{mode: :doubt, op: op}), do: run_status(%{state | reconcile_n: 1}, @ops[op])
+
+  defp resume(state, %{mode: :undo} = plan) do
+    undos = for {undo, original} <- plan.undo_queue, do: {@ops[undo], @ops[original]}
+
+    after_undo =
+      case plan.after_undo do
+        :failover -> {:failover, :restarted}
+        {:abort, region} -> {:abort, {:deadline_missed, region}}
+      end
+
+    start_compensation(state, undos, after_undo)
+  end
+
+  defp resume(state, %{mode: :complete}), do: complete(state)
+
+  defp resume(state, %{mode: :review, reason: reason}),
+    do: needs_review(state, {:recovery, reason}, "after the restart: #{reason}")
+
+  defp describe_plan(%{mode: :fresh}),
+    do: "it had not yet chosen a provider, so it starts quoting again"
+
+  defp describe_plan(%{mode: :next} = p),
+    do: "#{p.provider} had done #{inspect(p.done)}; next is #{p.op}, which was never sent"
+
+  defp describe_plan(%{mode: :doubt} = p),
+    do:
+      "#{p.op} at #{p.provider} may or may not have happened; asking the provider before doing anything"
+
+  defp describe_plan(%{mode: :undo} = p),
+    do: "it was undoing work at #{p.provider}; #{length(p.undo_queue)} undo(s) remain"
+
+  defp describe_plan(%{mode: :complete} = p),
+    do: "every step at #{p.provider} was done; recording the completion"
+
+  defp describe_plan(%{mode: :review, reason: reason}), do: reason
 
   defp announce_eligibility(%{eligibility: %{regions: []}} = state), do: state
 
@@ -347,7 +469,7 @@ defmodule ActorTxSpike.Payment do
           :reconcile_pending,
           "#{c.provider_id} cannot yet confirm #{op} (#{inspect(unresolved)}); " <>
             "asking again (#{state.reconcile_n}/#{state.opts.reconcile_attempts})",
-          %{provider: c.provider_id}
+          %{provider: c.provider_id, op: op}
         )
 
       Process.send_after(self(), {:reconcile_again, op}, state.opts.reconcile_interval_ms)
@@ -839,6 +961,7 @@ defmodule ActorTxSpike.Payment do
   defp deadline_passed?(%{deadline_ms: deadline}),
     do: System.system_time(:millisecond) >= deadline
 
+  defp region(%{region: region}) when region != nil, do: region
   defp region(state), do: state.cutoff.region
 
   defp settle_guarantee(%{guarantee: nil} = state, _candidate), do: {state, nil}

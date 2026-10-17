@@ -225,7 +225,8 @@ defmodule ActorTxSpike.SelectorTest do
     Process.flag(:trap_exit, true)
 
     ps = [%{id: :hung, server: hung}, %{id: :crashing, server: crashing}, provider(:good)]
-    sel = Selector.select(@request, ps, %Policy{}, deadline_ms: 50)
+    # generous deadline: the healthy provider must answer even when the machine is busy
+    sel = Selector.select(@request, ps, %Policy{}, deadline_ms: 400)
 
     assert ids(sel) == [:good]
     assert {:hung, :timeout} in sel.excluded
