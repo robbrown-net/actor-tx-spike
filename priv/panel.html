@@ -239,6 +239,7 @@ function syncControls(s) {
 }
 
 function ingest(ev) {
+  if (ev.actor === 'journal') return;   // machine-replay records: in the audit log, not on the screen
   ev.replayed = Date.now() - connectedAt.t < 700;   // history on connect should not animate in
   S.events.push(ev); if (S.events.length > 3000) S.events.shift();
   if (ev.kind === 'health' && ev.data && ev.data.provider) S.prov.set(ev.data.provider, ev.data);

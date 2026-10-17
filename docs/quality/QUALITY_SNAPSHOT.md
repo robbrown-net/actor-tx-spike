@@ -1,6 +1,6 @@
 # Quality snapshot
 
-Measured **2026-10-17** after exact money, the audit chain and the economics ledger.
+Measured **2026-10-17** after exact money, the audit chain, the economics ledger and replay.
 Everything here was produced by tools run against the repository; nothing is estimated
 unless marked.
 
@@ -9,12 +9,12 @@ unless marked.
 | Area | Result | Target | Verdict |
 |---|---|---|---|
 | Unit coverage (line) | **100.0%** (all measured modules) | 100% | ✅ |
-| Integration coverage (line) | **87.1%** | > 85% | ✅ (headroom ~2 pts) |
+| Integration coverage (line) | **87.5%** | > 85% | ✅ (headroom ~2 pts) |
 | System tests | **10 scenarios**, real process over HTTP/SSE, all pass | n/a | ✅ (no line coverage by nature) |
 | Regression pack | **23 tests** tagged to defects found | n/a | ✅ |
 | Mutation score (sampled) | **100%** of 93 valid mutants killed over the pure core, after strengthening | n/a | ✅ with caveat |
-| Tests | 241 (211 unit, 20 integration, 10 system), 0 failures | n/a | ✅ |
-| Static analysis (Credo strict) | **0 issues**, 618 functions | 0 | ✅ |
+| Tests | 267 (235 unit, 21 integration, 11 system), 0 failures | n/a | ✅ |
+| Static analysis (Credo strict) | **0 issues**, 729 functions | 0 | ✅ |
 | Compilation | `--warnings-as-errors` clean | clean | ✅ |
 | Dependency vulnerabilities | **none** (mix_audit, hex.audit) | none | ✅ |
 | Security scan (Sobelow) | 2 findings, both non-applicable / false positive | n/a | ✅ with notes |
@@ -27,13 +27,13 @@ Non-blank, non-`#`-comment lines (docstrings included). Re-measured 2026-10-17 w
 
 | Area | Files | Code | Docs/comments | Blank |
 |---|---|---|---|---|
-| `lib/` (Elixir) | 30 | **3,355** | | |
-| `test/` (Elixir) | 28 | **3,229** | | |
+| `lib/` (Elixir) | 38 | **4,276** | | |
+| `test/` (Elixir) | 30 | **3,839** | | |
 | `priv/panel.html` | 1 | 514 (HTML/CSS/JS) | | |
 | `scripts/mutate.py` | 1 | ~110 (Python) | | |
 | Documentation (Markdown) | 30+ | | | |
 
-Test-to-code ratio **0.96**. Largest modules: `Payment` 603, `Demo` 307, `Economics` 155, `Audit` 133.
+Test-to-code ratio **0.90**. Largest modules: `Payment` 603, `Demo` 307, `Economics` 155, `Audit` 133.
 
 ## 3. Coverage detail
 
@@ -57,6 +57,7 @@ branches inside a covered line**; that gap is why mutation testing was added (se
 | Audit | 100% | 73% |
 | Costs | 100% | 100% |
 | Economics | 100% | 94% |
+| Journal / Replay (+ Tx, Rules, WhatIf, Compare, Report) | 100% | each exercised by one end-to-end replay test; see `mix test.integration` |
 | Panel | 100% | 73% |
 | Provider.Health | 100% | 86% |
 | Provider.Server | 100% | 94% |
@@ -64,7 +65,7 @@ branches inside a covered line**; that gap is why mutation testing was added (se
 | Metrics / Stats / Rollup / VM | 100% | 91% / 63% / 94% / 96% |
 | Demo / Demo.Handler | excluded (tooling) | 90% / 100% |
 | Mix.Tasks.Demo | excluded everywhere (thin entry point) | n/a |
-| **Total** | **100%** | **87.1%** |
+| **Total** | **100%** | **87.5%** |
 
 Exclusions are explicit in `mix.exs`. `Narrative` is covered by unit tests only, which is
 why its integration figure is low.

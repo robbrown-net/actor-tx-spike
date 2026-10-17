@@ -30,7 +30,7 @@ defmodule ActorTxSpike.Payment do
   """
   use GenServer
 
-  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, Money, PolicySet, Selector}
+  alias ActorTxSpike.{Cutoff, Events, Guarantee, Journal, Ledger, Money, PolicySet, Selector}
   alias ActorTxSpike.Provider.{Quote, Server}
 
   @undo %{accept_quote: :cancel_accept, authorise: :void_authorisation, pay: :refund}
@@ -125,7 +125,12 @@ defmodule ActorTxSpike.Payment do
 
     state =
       note(state, :tx_received, "transaction received: amount #{Money.format(amount)}", %{
-        amount: amount
+        amount: amount,
+        request: state.request,
+        policy: Map.from_struct(state.policy),
+        guarantee: state.guarantee && Map.from_struct(state.guarantee),
+        config: Map.delete(state.opts, :baseline),
+        providers: Enum.map(state.providers, & &1.id)
       })
 
     state = announce_policy(state)
@@ -156,10 +161,11 @@ defmodule ActorTxSpike.Payment do
   end
 
   @impl true
-  def handle_info({ref, {tag, result}}, %{pending: ref} = state) do
+  def handle_info({ref, {tag, result, latency}}, %{pending: ref} = state) do
     Process.demonitor(ref, [:flush])
     state = %{state | pending: nil, bytes_in: state.bytes_in + :erlang.external_size(result)}
     state = if tag == :selection, do: asked_all(state), else: state
+    journal_response(state, tag, result, latency)
     {:noreply, handle_result(tag, result, state)}
   end
 
@@ -582,11 +588,61 @@ defmodule ActorTxSpike.Payment do
   end
 
   defp run(state, tag, fun) do
-    task = Task.async(fn -> {tag, guarded(fun)} end)
+    task =
+      Task.async(fn ->
+        started = System.monotonic_time(:millisecond)
+        result = guarded(fun)
+        {tag, result, System.monotonic_time(:millisecond) - started}
+      end)
+
     # the selection round is counted per provider asked, not as one call
     calls = if tag == :selection, do: state.calls, else: state.calls + 1
     %{state | pending: task.ref, calls: calls}
   end
+
+  # Journal: the raw answer to one provider call, as the orchestrator saw it.
+  defp journal_response(_state, :selection, _result, _latency), do: :ok
+
+  defp journal_response(state, tag, result, latency) do
+    {kind, op, original} =
+      case tag do
+        {:step, op} -> {:step, op, op}
+        {:status, op} -> {:status, op, op}
+        {:undo, undo, original} -> {:undo, undo, original}
+      end
+
+    {class, reason} = classify_response(result)
+
+    attempt =
+      case kind do
+        :step -> state.attempt
+        :status -> state.reconcile_n
+        :undo -> state.undo_attempt
+      end
+
+    Journal.record(
+      state.id,
+      :provider_response,
+      "journal: #{state.current.provider_id} answered #{kind} #{op} (#{class})",
+      %{
+        provider: state.current.provider_id,
+        kind: kind,
+        op: op,
+        key: key(state, original),
+        attempt: attempt,
+        class: class,
+        reason: reason,
+        latency_ms: latency
+      }
+    )
+  end
+
+  defp classify_response({:ok, _receipt}), do: {:ok, nil}
+  defp classify_response({:error, reason}), do: {:error, inspect(reason)}
+  defp classify_response({:rejected, reason}), do: {:rejected, inspect(reason)}
+  # timeout, in_doubt, not_found... or something unexpected (kept, never crashing the transaction)
+  defp classify_response(other),
+    do: if(is_atom(other), do: {other, nil}, else: {:other, inspect(other)})
 
   defp asked_all(state), do: %{state | calls: state.calls + length(state.providers)}
 

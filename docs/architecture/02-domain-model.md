@@ -94,6 +94,14 @@ classDiagram
     class RateCard {
         +picosPerResource
     }
+    class JournalEntry {
+        +kind
+        +inputs
+    }
+    class Day {
+        +records
+        +head
+    }
 
     Merchant "1" --> "0..*" Transaction : submits
     Customer "1" --> "0..*" Transaction : is paid by
@@ -115,6 +123,9 @@ classDiagram
     Transaction "1" --> "1" EconomicsRecord : measured as
     EconomicsRecord "1" --> "0..1" PriceDiscovery : compares the quotes
     RateCard "1" --> "0..*" EconomicsRecord : prices
+    JournalEntry "1" --> "1" AuditRecord : is sealed as
+    Day "1" --> "1..*" AuditRecord : is loaded from
+    Day "1" --> "0..*" Transaction : replays
 ```
 
 ## Glossary
@@ -133,6 +144,10 @@ classDiagram
 | **Price discovery** | How the quote we took compares with all quotes received: chosen, median, worst and best net. |
 | **Saved vs median / worst** | Net obtained minus the median / worst quote: what routing earned over an unoptimised pick. |
 | **Regret vs best** | Best quote minus net obtained: the price of non-price goals such as speed and reliability. |
+| **Journal** | The machine-replayable part of the log: every input from the outside world and the context to re-judge every decision. |
+| **Replay** | Loading a day from its log to query its state, verify its rules, compare it or re-judge it under a different policy. |
+| **Day** | A loaded log: its records in order, grouped by transaction. |
+| **What-if** | Re-judging the recorded provider answers under a changed policy to see what the change alone would have done on that day. |
 | **Rate card** | The explicit prices that turn measured usage (CPU, memory, network, storage, provider calls) into cost. |
 | **Pico-unit** | 10^-12 of a major currency unit; the unit of cost, since one transaction costs a fraction of a cent. |
 | **Effect** | Something that actually happened at a provider: accept, authorise, pay (or an undo). |
@@ -184,3 +199,16 @@ classDiagram
 
 * *Post:* each resource cost is an integer number of pico-units computed from the rate card with half-even rounding; the total is the sum of the parts; value (saved, margin) is kept separately in minor units and never mixed with cost until the net is formed.
 
+**`evaluate(request, observations, policy)`** (selection, pure)
+
+* *Pre:* each observation names a provider, its health state, what it answered, the latency and when it was seen.
+* *Post:* returns the per-provider judgements, the admissible candidates ranked best first (score descending, provider id ascending) and the excluded with reasons. No process, clock or event is touched, so the live system and replay get the same answer from the same inputs.
+
+**`state_at(day, point)`** (replay)
+
+* *Post:* only records up to and including `point` are folded; returns each transaction's summary as of then, who is in flight, provider health and last price, the policy in force and the operator actions so far.
+
+**`what_if(day, overrides)`** (replay)
+
+* *Pre:* overrides form a valid policy change.
+* *Post:* every transaction with recorded quotes is re-judged under the recorded policy and under the changed one; the totals say how many would route differently and what that is worth in net and latency, on quote values.

@@ -63,6 +63,13 @@ You mentioned a UK cut-off. If UK or EU entities or customers are involved, UK E
 the Payment Services Regulations and FCA record-keeping rules are likely relevant too
 (typically 5 years' retention). That is for counsel to confirm.
 
+### Replay as evidence
+
+`mix replay verify` re-checks a whole day against the money-safety and decision rules from
+the log alone and names the rule, transaction and audit record for any breach. It is a
+repeatable, independent answer to "show me this day ran correctly", and `mix replay diff`
+supports reconciling against another system. See ADR 0009 for its limits.
+
 ### Why the audit log is the right foundation
 
 Every regime above asks for the same thing underneath: *a complete, ordered, retrievable,

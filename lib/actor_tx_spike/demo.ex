@@ -10,7 +10,7 @@ defmodule ActorTxSpike.Demo do
   """
   use GenServer
 
-  alias ActorTxSpike.{Cutoff, Economics, Events, Guarantee, Ledger, Money, PolicySet}
+  alias ActorTxSpike.{Cutoff, Economics, Events, Guarantee, Journal, Ledger, Money, PolicySet}
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   @providers [
@@ -95,6 +95,10 @@ defmodule ActorTxSpike.Demo do
   def handle_call(:snapshot, _from, state), do: {:reply, build_snapshot(state), state}
 
   def handle_call({:control, command}, _from, state) do
+    Journal.record(nil, :control, "journal: operator action #{inspect(command)}", %{
+      command: command
+    })
+
     {reply, state} = do_control(command, state)
     {:reply, reply, state}
   end

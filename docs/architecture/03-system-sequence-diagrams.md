@@ -108,3 +108,26 @@ sequenceDiagram
     Note over O,S: each finished transaction also appears in the narrative as a "tx_costed" event
 ```
 
+## SSD-6 · Replay the day (UC-9)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Operator / auditor
+    participant S as ":System (replay)"
+
+    U->>S: load(log)
+    alt chain broken
+        S-->>U: refused: line L, reason
+    else intact
+        S-->>U: day loaded (records, transactions)
+    end
+    U->>S: state_at(record n | seq | time)
+    S-->>U: transactions in flight and finished, provider health and prices, policy, operator actions
+    U->>S: verify()
+    S-->>U: all rules held | violations (rule, transaction, audit record)
+    U->>S: what_if(policy changes)
+    S-->>U: routes that change, net and latency effect
+    U->>S: diff(other system's log)
+    S-->>U: identical count, divergences by transaction and field
+```

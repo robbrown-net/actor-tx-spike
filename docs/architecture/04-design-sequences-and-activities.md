@@ -187,6 +187,41 @@ stateDiagram-v2
     Refused --> [*]
 ```
 
+## 4.4d Recording and replaying the day
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Outside world (merchant, providers, operator)
+    participant SEL as Selector
+    participant PAY as Payment
+    participant J as Journal and Events
+    participant AUD as Audit log (hash chain)
+    participant REP as Replay
+
+    W->>PAY: request
+    PAY->>J: tx_received {request, policy, guarantee, config, providers}
+    PAY->>SEL: select
+    SEL->>W: quote requests
+    W-->>SEL: answers (with latency)
+    SEL->>J: quote_observed per provider {outcome, rate, fee, expiry, state, latency, seen at}
+    SEL->>SEL: evaluate (pure)
+    SEL->>J: selection_made {ranking}
+    loop each provider call
+        PAY->>W: step with idempotency key
+        W-->>PAY: answer
+        PAY->>J: provider_response {key, attempt, class, latency}
+    end
+    J->>AUD: every event, scrubbed, chained
+    Note over AUD,REP: later, from the log alone
+    REP->>AUD: load (verifies the chain)
+    REP->>REP: Selector.evaluate over recorded observations = the same decision code, replayed
+    REP->>REP: rules, state_at, what_if, diff
+```
+
+The pure `evaluate` function is the seam: live, it is fed what providers just said; in replay,
+what the log says they said. See ADR 0009 for what this can and cannot replay.
+
 ## 4.5 Activity: one transaction step (swimlane view)
 
 ```mermaid

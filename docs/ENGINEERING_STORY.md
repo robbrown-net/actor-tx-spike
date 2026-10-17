@@ -165,6 +165,7 @@ These came from the owner and are standing rules.
 | Q7 | What regulatory duties apply (KYC/AML, record retention, audit)? | Shapes the durable store and `needs_review` workflow |
 | Q8 | How should provider quote and call costs be accounted (rate limits, fees to us)? | Hedging is not free |
 | Q9 | What are the real latency/throughput targets? | Decides the performance work and when Rust might matter |
+| Q11 | Which strategy changes will be tried against a real day, and what counts as "better" (net, latency, failure rate, exposure)? | Decides which metrics `WhatIf` must report and which inputs must be journalled |
 | Q10 | Who resolves `needs_review`, how fast, with what tools? | UC-4 is unbuilt |
 
 ## 9. Risks
@@ -192,6 +193,9 @@ These came from the owner and are standing rules.
 | R19 | The audit writer is not supervised or fail-closed: if it dies the system runs unlogged | medium | high | Supervise it and stop or alert on failure |
 | R20 | Audit chain cannot detect tail truncation by itself | medium | medium | Anchor the head externally on a schedule |
 | R21 | Cost rate card holds placeholder prices; byte counts are a proxy; "saved" depends on the median baseline | certain | medium | Use invoice figures; real wire counts in adapters; show the baseline always |
+| R23 | Replay is quote-level: what-if assumes the alternative provider would have completed | certain | medium | Re-execution engine with recorded answers and a virtual clock |
+| R24 | A new decision rule added without its journal inputs makes the day unreplayable | medium | medium | Rule: every decision must be re-derivable from journal data; replay tests break a day one way at a time |
+| R25 | A day's log is large (about 23 KB per transaction) | certain | medium | Compression, tiering and retention policy |
 | R22 | Regulatory scope (PCI role, instrument, jurisdiction) is undecided | high | high | Answer the questions in docs/compliance/COMPLIANCE_EVIDENCE.md |
 
 ## 10. Roadmap

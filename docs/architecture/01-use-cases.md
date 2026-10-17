@@ -138,3 +138,14 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Special requirements** | The baseline for "saved" (the median quote) is always stated; the price paid for speed or reliability ("regret vs best") is shown, not hidden. |
 | **Status** | Implemented with placeholder prices. Per-transaction attribution covers the orchestrator process only. |
 
+## UC-9 Replay the day ✅ (first version)
+
+| | |
+|---|---|
+| **Primary actor** | Operator, auditor, strategy owner |
+| **Preconditions** | The day was run with the audit log on. The log verifies. |
+| **Success guarantee** | From the log alone, without the live system: the exact conditions at any moment; a yes or no on whether every rule held, with the evidence for each breach; a transaction-by-transaction comparison with another system's log; and the effect of a changed strategy on the same day. |
+| **Main scenario** | 1. Actor loads the log; the chain is verified first. 2. Actor asks for the state at a moment (record number, sequence or time). 3. Actor verifies the day; each rule is checked per transaction. 4. Actor re-runs the day with a changed policy and reads what routes change and the net and latency effect. 5. Actor compares the day with another system's log. |
+| **Extensions** | 1a. Chain broken: replay refuses to start and says where. 3a. A rule was broken: the report names the rule, transaction and audit record. 4a. The change is not a valid policy: refused with every error. 5a. A transaction exists in only one log: listed separately. |
+| **Special requirements** | Decisions are re-judged with the same code that made them live. Timing is not compared between systems. |
+| **Status** | Implemented as a library and `mix replay`. **Not built:** re-executing the orchestrator against recorded answers (virtual clock, replay provider), capturing the cascade layers and the rate card, retention and tiering of a day's log. What-if is quote-level (see ADR 0009). |

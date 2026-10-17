@@ -216,3 +216,46 @@ erDiagram
         int platform_picos_per_hour
     }
 ```
+
+## Journal schema v1 (added 2026-10-17)
+
+Journal events live in the same stream and audit log as the narrative (actor `journal`).
+Together with the existing narrative kinds they are the replay script.
+
+```mermaid
+erDiagram
+    TRANSACTION ||--|| TX_RECEIVED : "starts with"
+    TRANSACTION ||--o{ QUOTE_OBSERVED : "one per provider asked"
+    TRANSACTION ||--o{ PROVIDER_RESPONSE : "one per provider call"
+    TX_RECEIVED {
+        json request "id, amount, merchant, customer, region"
+        json policy "weights, min_validity_ms, max_latency_ms, max_bps_from_best, exclude_states"
+        json guarantee "merchant, period, rate (scaled)"
+        json config "attempts, backoff, timeouts, deadline"
+        list providers
+    }
+    QUOTE_OBSERVED {
+        string provider
+        string outcome "quote, rejected, error, timeout"
+        int rate "scaled 1e8"
+        int fee "minor units"
+        int expires_at_ms
+        string state "health state when asked"
+        int latency_ms
+        int observed_at_ms
+    }
+    PROVIDER_RESPONSE {
+        string provider
+        string kind "step, status, undo"
+        string op
+        string key "tx:provider:step"
+        int attempt
+        string class "ok, error, rejected, timeout, in_doubt, not_found"
+        int latency_ms
+    }
+```
+
+Also journalled: `control` (operator and world actions, with their arguments) and the
+provider `health` events. Decisions are recorded by the existing `selection_made`
+(ranking and scores), `provider_chosen`, `step_*`, `failover`, `undone`, `deadline_set`,
+guarantee and `tx_economics` events.

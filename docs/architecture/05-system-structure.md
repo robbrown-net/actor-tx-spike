@@ -36,6 +36,8 @@ flowchart LR
         COST["Costs (rate card, pico-units)"]
         AUD["Audit (hash-chained log)"]
         FILE[("audit log file")]
+        JRN["Journal (replay inputs, hidden from humans)"]
+        REP["Replay (state_at, Rules, WhatIf, Compare)"]
     end
     DEMO["Demo world (providers, traffic, sentinel, operator controls)"]
 
@@ -51,6 +53,11 @@ flowchart LR
     ECO --> COST
     ECO -. tx_costed .-> EV
     EV --> AUD --> FILE
+    PAY -. inputs .-> JRN
+    SEL -. inputs .-> JRN
+    JRN --> EV
+    FILE --> REP
+    REP -. same decision code .-> SEL
     ECO --> PANEL
     PAY --> MON
     SEL --> MON
@@ -121,6 +128,8 @@ flowchart TD
 | `Costs` | Rate card and pricing of measured usage into pico-units | **yes** |
 | `Economics` | Prices each finished transaction, keeps totals overall and per provider, announces `tx_costed` | no (process) |
 | `Audit` | Hash-chained append-only log, verification, card-number scrubbing | no (process) |
+| `Journal` | Records replay inputs (actor `:journal`, hidden from humans) | no |
+| `Replay` (+ `Tx`, `Rules`, `WhatIf`, `Compare`, `Report`) | Load a verified day; state at a moment; rule verification; strategy what-if; comparison with another system; text reports | **yes** |
 | `Metrics` (+ `Stats`, `Rollup`, `VM`) | Resource and application metrics with bounded rollups | mostly |
 | `Events`, `Narrative` | Narrative stream and rendering | no |
 | `Panel`, `Demo` | Dashboard server and demo world | no |
@@ -147,4 +156,4 @@ Single node. Nothing is persisted for recovery; the audit log is evidence, not a
 
 * **Runtime:** none beyond OTP/Elixir standard library (JSON module from Elixir 1.18).
 * **Dev/test only:** credo, sobelow, mix_audit (and their transitive deps).
-* **Tooling entry points:** `mix demo`, `mix audit.verify`.
+* **Tooling entry points:** `mix demo`, `mix audit.verify`, `mix replay`.

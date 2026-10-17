@@ -10,6 +10,9 @@ defmodule ActorTxSpike.LiveSystemTest do
   """
   use ExUnit.Case, async: false
 
+  alias ActorTxSpike.Replay
+  alias ActorTxSpike.Replay.Rules
+
   @moduletag :system
   @moduletag timeout: 120_000
 
@@ -18,6 +21,8 @@ defmodule ActorTxSpike.LiveSystemTest do
   setup_all do
     port = free_port()
     mix = System.find_executable("mix") || flunk("mix not found on PATH")
+    audit = Path.join(System.tmp_dir!(), "system-audit-#{port}.log")
+    File.rm(audit)
 
     os_port =
       Port.open({:spawn_executable, mix}, [
@@ -32,7 +37,9 @@ defmodule ActorTxSpike.LiveSystemTest do
           "--pace",
           "0.05",
           "--sentinel-ms",
-          "300"
+          "300",
+          "--audit",
+          audit
         ],
         cd: File.cwd!()
       ])
@@ -41,11 +48,12 @@ defmodule ActorTxSpike.LiveSystemTest do
     on_exit(fn ->
       System.cmd("pkill", ["-f", "demo --port #{port}"])
       Process.sleep(200)
+      File.rm(audit)
     end)
 
     wait_until_up(port, 60_000, os_port)
 
-    {:ok, port: port}
+    {:ok, port: port, audit: audit}
   end
 
   setup %{port: port} do
@@ -231,6 +239,41 @@ defmodule ActorTxSpike.LiveSystemTest do
   end
 
   # ---- helpers -----------------------------------------------------------
+
+  test "the live day's audit log replays: chain intact, every rule held", %{
+    port: port,
+    audit: audit
+  } do
+    control(port, %{"action" => "provider", "id" => "cobalt", "do" => "authorise_fails"})
+    id = submit(port, 1_500)
+    await_story(port, id, "tx_costed")
+
+    # the log is synced record by record, so it can be read while the system runs;
+    # retry in case we catch a half-written last line
+    day =
+      Enum.find_value(1..50, fn _ ->
+        case Replay.load(audit) do
+          {:ok, day} -> if id in day.tx_order, do: day
+          _ -> nil
+        end || (Process.sleep(100) && nil)
+      end)
+
+    assert day, "the live audit log never became replayable"
+
+    mine =
+      Replay.from_records(Enum.filter(day.records, &(&1["tx"] == id or &1["kind"] == "control")))
+
+    result = Rules.verify(mine)
+    assert result.ok?, inspect(result.violations)
+    assert %{completed: 1} = result.outcomes
+
+    assert Enum.any?(
+             mine.records,
+             &(&1["kind"] == "control" and &1["data"]["command"]["do"] == "authorise_fails")
+           )
+
+    assert Enum.any?(mine.records, &(&1["kind"] == "undone"))
+  end
 
   defp free_port do
     {:ok, l} = :gen_tcp.listen(0, [])

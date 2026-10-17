@@ -49,6 +49,14 @@ timezone database behind the offset function.
 Next on this thread: supervise the audit writer and fail closed; authentication and identity;
 retention and off-host anchoring; reject card-like input; load/soak mode for realistic costs.
 
+## Phase 2c: Replay the day - first version DONE (2026-10-17)
+- `Journal` events in the audit log: request, policy, guarantee, settings, every provider
+  answer with latency, operator actions. `Selector.evaluate/3` extracted as the pure decision.
+- `Replay`: verified load, `state_at`, `Rules.verify` (11 rules), `WhatIf`, `Compare`; `mix replay`.
+Next: re-execution engine (replay provider adapter, virtual clock) to rebuild a running world at
+a moment; capture the policy cascade layers and the rate card; log compression and tiering;
+branch-level what-if over several days; cost what-if.
+
 ## Phase 3: Sentinel and observability
 Metrics sampler, rollups and Performance view DONE (see docs/architecture/07).
 - Scheduled probes (configurable interval) + passive observation; drift detection.

@@ -67,7 +67,9 @@ defmodule Mix.Tasks.Demo do
   defp loop do
     receive do
       {:tx_event, event} ->
-        IO.puts(ActorTxSpike.Narrative.format(event, color: true))
+        unless ActorTxSpike.Journal.journal?(event.actor),
+          do: IO.puts(ActorTxSpike.Narrative.format(event, color: true))
+
         loop()
     end
   end

@@ -50,8 +50,8 @@ defmodule ActorTxSpike.MixProject do
   @tooling [ActorTxSpike.Demo, ActorTxSpike.Demo.Handler]
 
   defp ignored_modules do
-    # Mix.Tasks.Demo and Mix.Tasks.Audit.Verify are thin entry points and is never measured.
-    always = [Mix.Tasks.Demo, Mix.Tasks.Audit.Verify]
+    # Mix.Tasks.Demo, Mix.Tasks.Audit.Verify and Mix.Tasks.Replay are thin entry points and is never measured.
+    always = [Mix.Tasks.Demo, Mix.Tasks.Audit.Verify, Mix.Tasks.Replay]
     if System.get_env("COVERAGE_IGNORE_TOOLING") == "1", do: always ++ @tooling, else: always
   end
 

@@ -19,7 +19,7 @@ defmodule ActorTxSpike.Selector do
   `{:fallback, baseline}` when no usable quote arrives).
   """
 
-  alias ActorTxSpike.{Events, Money, Policy, Selection}
+  alias ActorTxSpike.{Events, Journal, Money, Policy, Selection}
   alias ActorTxSpike.Provider.{Quote, Server}
   alias ActorTxSpike.Selection.Candidate
 
@@ -52,19 +52,26 @@ defmodule ActorTxSpike.Selector do
     {callable, skipped} =
       Enum.split_with(with_state, fn {_p, state} -> not Policy.exclude_state?(policy, state) end)
 
-    {candidates, failures} =
+    observed_at = System.system_time(:millisecond)
+
+    observations =
       request
       |> fan_out(callable, deadline_ms)
-      |> Enum.reduce({[], []}, &classify(&1, &2, request, policy))
-
-    {within, too_dear} = Policy.within_best(policy, candidates)
-
-    failures =
-      Enum.reduce(too_dear, failures, fn {c, bps}, acc ->
-        [{c.provider_id, {:worse_than_best_bps, Float.round(bps, 1)}} | acc]
+      |> Enum.map(fn {p, state, result, latency} ->
+        %{
+          provider_id: p.id,
+          server: p.server,
+          state: state,
+          result: result,
+          latency_ms: latency,
+          observed_at_ms: observed_at
+        }
       end)
 
-    ranked = rank(within, policy)
+    Enum.each(observations, &journal_observation(request, &1))
+
+    %{items: items, ranked: ranked, excluded: failures} = evaluate(request, observations, policy)
+    Enum.each(items, &announce_item(request, &1))
 
     outcome =
       case {ranked, baseline} do
@@ -76,13 +83,48 @@ defmodule ActorTxSpike.Selector do
     selection = %Selection{
       outcome: outcome,
       ranked: ranked,
-      excluded:
-        Enum.map(skipped, fn {p, state} -> {p.id, {:state, state}} end) ++ Enum.reverse(failures),
+      excluded: Enum.map(skipped, fn {p, state} -> {p.id, {:state, state}} end) ++ failures,
       elapsed_ms: now() - started
     }
 
     announce_outcome(request, selection)
     selection
+  end
+
+  @doc """
+  The pure heart of selection: what each provider answered, judged under a
+  policy. No processes, no clock, no events, so a recorded day can be judged
+  again with the *same code* that made the live decision (see
+  `ActorTxSpike.Replay`).
+
+  Each observation is `%{provider_id, server, state, result, latency_ms,
+  observed_at_ms}`. Returns `%{items, ranked, excluded}`: `items` are the
+  per-provider judgements in order, `ranked` the admissible candidates best
+  first, `excluded` the `{provider_id, reason}` of every one that was not.
+  """
+  @spec evaluate(map(), [map()], Policy.t()) :: %{items: list(), ranked: list(), excluded: list()}
+  def evaluate(request, observations, %Policy{} = policy) do
+    items = Enum.map(observations, &judge(&1, request, policy))
+    candidates = for {:candidate, c} <- items, do: c
+
+    failures =
+      for item <- items, reduce: [] do
+        acc ->
+          case item do
+            {:candidate, _} -> acc
+            {:excluded, c, reason} -> [{c.provider_id, reason} | acc]
+            {:failed, obs, reason} -> [{obs.provider_id, reason} | acc]
+          end
+      end
+
+    {within, too_dear} = Policy.within_best(policy, candidates)
+
+    failures =
+      Enum.reduce(too_dear, failures, fn {c, bps}, acc ->
+        [{c.provider_id, {:worse_than_best_bps, Float.round(bps, 1)}} | acc]
+      end)
+
+    %{items: items, ranked: rank(within, policy), excluded: Enum.reverse(failures)}
   end
 
   defp announce_outcome(request, %Selection{outcome: {:selected, best}} = sel) do
@@ -167,50 +209,86 @@ defmodule ActorTxSpike.Selector do
     {result, now() - started}
   end
 
-  defp classify({p, state, {:ok, %Quote{} = quote}, latency}, {cands, fails}, request, policy) do
+  defp judge(%{result: {:ok, %Quote{} = quote}} = obs, request, policy) do
     candidate = %Candidate{
-      provider_id: p.id,
-      server: p.server,
+      provider_id: obs.provider_id,
+      server: obs.server,
       quote: quote,
       net: Money.convert(request.amount, quote.rate) - quote.fee,
-      latency_ms: latency,
-      validity_ms: quote.expires_at_ms - System.system_time(:millisecond),
-      state: state
+      latency_ms: obs.latency_ms,
+      validity_ms: quote.expires_at_ms - obs.observed_at_ms,
+      state: obs.state
     }
 
     case Policy.check(policy, candidate) do
-      :ok ->
-        announce(
-          request,
-          :quote_received,
-          "#{p.id} quoted rate #{Money.format_rate(quote.rate)}, fee #{Money.format(quote.fee)} (net #{Money.format(candidate.net)}, #{latency}ms)",
-          %{provider: p.id, rate: quote.rate, fee: quote.fee, latency_ms: latency}
-        )
-
-        {[candidate | cands], fails}
-
-      {:excluded, reason} ->
-        announce(request, :quote_excluded, "#{p.id}'s quote is unusable: #{reason}", %{
-          provider: p.id,
-          reason: reason
-        })
-
-        {cands, [{p.id, reason} | fails]}
+      :ok -> {:candidate, candidate}
+      {:excluded, reason} -> {:excluded, candidate, reason}
     end
   end
 
-  defp classify({p, _state, other, latency}, {cands, fails}, request, _policy) do
+  defp judge(%{result: other} = obs, _request, _policy) do
     reason =
       if match?({:rejected, _}, other) or match?({:error, _}, other), do: other, else: :timeout
 
+    {:failed, obs, reason}
+  end
+
+  defp announce_item(request, {:candidate, c}) do
+    announce(
+      request,
+      :quote_received,
+      "#{c.provider_id} quoted rate #{Money.format_rate(c.quote.rate)}, fee #{Money.format(c.quote.fee)} (net #{Money.format(c.net)}, #{c.latency_ms}ms)",
+      %{provider: c.provider_id, rate: c.quote.rate, fee: c.quote.fee, latency_ms: c.latency_ms}
+    )
+  end
+
+  defp announce_item(request, {:excluded, c, reason}) do
+    announce(request, :quote_excluded, "#{c.provider_id}'s quote is unusable: #{reason}", %{
+      provider: c.provider_id,
+      reason: reason
+    })
+  end
+
+  defp announce_item(request, {:failed, obs, reason}) do
     announce(
       request,
       :quote_failed,
-      "#{p.id} gave no quote: #{inspect(reason)} after #{latency}ms",
-      %{provider: p.id, reason: inspect(reason), latency_ms: latency}
+      "#{obs.provider_id} gave no quote: #{inspect(reason)} after #{obs.latency_ms}ms",
+      %{provider: obs.provider_id, reason: inspect(reason), latency_ms: obs.latency_ms}
     )
+  end
 
-    {cands, [{p.id, reason} | fails]}
+  # Journal: the raw answer of one provider, with everything a later replay
+  # needs to judge it again (health state at call time, latency, when seen).
+  defp journal_observation(request, obs) do
+    {kind, detail} =
+      case obs.result do
+        {:ok, %Quote{} = q} ->
+          {:quote,
+           %{rate: q.rate, fee: q.fee, expires_at_ms: q.expires_at_ms, request_id: q.request_id}}
+
+        {:rejected, why} ->
+          {:rejected, %{reason: inspect(why)}}
+
+        {:error, why} ->
+          {:error, %{reason: inspect(why)}}
+
+        _timeout ->
+          {:timeout, %{}}
+      end
+
+    Journal.record(
+      request.id,
+      :quote_observed,
+      "journal: #{obs.provider_id} answered the quote request (#{kind})",
+      Map.merge(detail, %{
+        provider: obs.provider_id,
+        outcome: kind,
+        state: obs.state,
+        latency_ms: obs.latency_ms,
+        observed_at_ms: obs.observed_at_ms
+      })
+    )
   end
 
   defp rank(candidates, policy) do
