@@ -45,7 +45,13 @@ defmodule ActorTxSpike.DemoIntegrationTest do
     assert provider in [:bluebird, :cobalt, :meridian, :northwind, :zenith]
 
     assert_receive {:tx_event, %{kind: :tx_completed, tx_id: ^id}}, 2_000
+
+    # the economics of that transaction are priced and announced
+    assert_receive {:tx_event, %{kind: :tx_costed, tx_id: ^id, message: msg}}, 2_000
+    assert msg =~ "vs the median quote"
     snap = Demo.snapshot()
+    assert %{completed: n, cost: %{total: cost}} = snap.economics.overall
+    assert n >= 1 and cost > 0
     assert snap.submitted == 1
     assert length(snap.providers) == 5
     assert %{state: :healthy} = provider(snap, provider)

@@ -173,6 +173,7 @@
   <div class="chart"><h3><span>End-to-end latency</span><span id="e2eNow"></span></h3><svg id="cE2e" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lE2e"></div></div>
   <div class="chart"><h3><span>Provider latency p95</span><span></span></h3><svg id="cProv" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lProv"></div></div>
   <div class="chart"><h3><span>Hottest processes</span><span></span></h3><table class="top" id="topTable"></table></div>
+  <div class="chart"><h3><span>Economics: what it saves vs what it costs</span><span id="econNet"></span></h3><table class="top" id="econTable"><tr><td>no transactions yet</td></tr></table></div>
   <div class="chart"><h3><span>Guarantee ledger</span><span></span></h3><table class="top" id="ledgerTable"><tr><td>no guaranteed transactions yet</td></tr></table></div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -208,8 +209,32 @@ function renderLedger(s) {
     rows.map(r => `<tr><td>${esc(r.merchant_id)}</td><td>${esc(r.period)}</td><td>${r.count}</td><td style="color:${r.margin_total >= 0 ? 'var(--ok)' : 'var(--bad)'}">${(r.margin_total / 100).toFixed(2)}</td><td>${(r.exposure_total / 100).toFixed(2)}</td></tr>`).join('')
     : '<tr><td>no guaranteed transactions yet</td></tr>';
 }
+// Money arrives as integers: value in minor units, cost in pico-units (1e-12 of a major unit).
+const major = (minor) => (minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const picoMajor = (n) => (n / 1e12).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+function renderEconomics(s) {
+  const e = s.economics; if (!e) return;
+  const o = e.overall, t = $('econTable');
+  const rows = [
+    ['Saved vs median quote', major(o.saved_vs_median), o.saved_vs_median],
+    ['Saved vs worst quote', major(o.saved_vs_worst), o.saved_vs_worst],
+    ['Regret vs best (price of speed/reliability)', major(o.regret_vs_best), -o.regret_vs_best],
+    ['Margin vs guarantees', major(o.margin), o.margin],
+    ['Provider fees (inside net)', major(o.provider_fees), 0],
+    ['Run cost: cpu / mem / net / storage / calls', ['cpu','memory','network','storage','provider_calls'].map(k => picoMajor(o.cost[k])).join(' / '), 0],
+    ['Run cost, variable', picoMajor(o.cost.total), 0],
+    ['Platform cost (time)', picoMajor(o.platform_picos), 0],
+  ];
+  const html = '<tr><th>measure</th><th>total</th></tr>' + rows.map(r => `<tr><td>${esc(r[0])}</td><td style="color:${r[2] > 0 ? 'var(--ok)' : r[2] < 0 ? 'var(--bad)' : 'inherit'}">${esc(r[1])}</td></tr>`).join('') +
+    Object.entries(e.by_provider).map(([id, p]) => `<tr><td>via ${esc(id)}: ${p.completed} done, ${p.failed + p.needs_review} not</td><td>saved ${major(p.saved_vs_median)}, cost ${picoMajor(p.cost.total)}</td></tr>`).join('');
+  if (t.dataset.h !== html) { t.innerHTML = html; t.dataset.h = html; }
+  const net = o.net_picos / 1e12;
+  $('econNet').textContent = 'net ' + (net >= 0 ? '+' : '') + net.toFixed(4);
+  $('econNet').style.color = net >= 0 ? 'var(--ok)' : 'var(--bad)';
+}
 function syncControls(s) {
   renderLedger(s);
+  renderEconomics(s);
   const a = $('auto'); a.textContent = 'Auto traffic: ' + (s.auto ? 'on' : 'off'); a.classList.toggle('on', s.auto);
 }
 

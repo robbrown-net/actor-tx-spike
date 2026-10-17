@@ -73,6 +73,13 @@ defmodule ActorTxSpike.LiveSystemTest do
 
     assert hd(kinds) == "tx_received"
 
+    # what it cost and what it saved is part of the story (and the snapshot)
+    costed = await_story(port, id, "tx_costed")
+    assert Enum.any?(costed, &(&1["kind"] == "tx_costed" and &1["message"] =~ "to run"))
+    assert {200, snap} = http(port, "GET", "/api/snapshot")
+    assert %{"economics" => %{"overall" => %{"completed" => c}}} = JSON.decode!(snap)
+    assert c >= 1
+
     for k <-
           ~w(select_started quote_received selection_made provider_chosen step_succeeded tx_completed) do
       assert k in kinds, "missing #{k} in #{inspect(kinds)}"

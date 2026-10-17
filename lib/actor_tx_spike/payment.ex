@@ -105,7 +105,15 @@ defmodule ActorTxSpike.Payment do
       pending: nil,
       history: [],
       waiters: [],
-      result: nil
+      result: nil,
+      # economics: what this transaction consumed (see ActorTxSpike.Economics)
+      started_ms: System.system_time(:millisecond),
+      reductions0: reductions(),
+      quote_nets: [],
+      calls: 0,
+      bytes_out: 0,
+      bytes_in: 0,
+      compensations: 0
     }
 
     {:ok, state, {:continue, :start}}
@@ -150,7 +158,9 @@ defmodule ActorTxSpike.Payment do
   @impl true
   def handle_info({ref, {tag, result}}, %{pending: ref} = state) do
     Process.demonitor(ref, [:flush])
-    {:noreply, handle_result(tag, result, %{state | pending: nil})}
+    state = %{state | pending: nil, bytes_in: state.bytes_in + :erlang.external_size(result)}
+    state = if tag == :selection, do: asked_all(state), else: state
+    {:noreply, handle_result(tag, result, state)}
   end
 
   def handle_info({:retry_step, op}, state), do: {:noreply, run_step(state, op)}
@@ -161,7 +171,14 @@ defmodule ActorTxSpike.Payment do
   # ---- results -----------------------------------------------------------
 
   defp handle_result(:selection, %{outcome: {:selected, _}} = selection, state) do
-    try_next_candidate(%{state | candidates: selection.ranked})
+    state = %{
+      state
+      | candidates: selection.ranked,
+        quote_nets: Enum.map(selection.ranked, & &1.net),
+        bytes_in: state.bytes_in + :erlang.external_size(Enum.map(selection.ranked, & &1.quote))
+    }
+
+    try_next_candidate(state)
   end
 
   defp handle_result(:selection, %{outcome: {:fallback, baseline}}, state) do
@@ -467,6 +484,7 @@ defmodule ActorTxSpike.Payment do
     state =
       note(%{state | phase: phase, result: result}, kind, message, %{result: inspect(result)})
 
+    emit_economics(state, phase)
     Enum.each(state.waiters, &GenServer.reply(&1, result))
     Process.send_after(self(), :linger_over, state.opts.linger_ms)
     %{state | waiters: []}
@@ -517,7 +535,7 @@ defmodule ActorTxSpike.Payment do
 
     state =
       note(
-        %{state | phase: @phase[op]},
+        sent(%{state | phase: @phase[op]}, args),
         :step_started,
         "asking #{c.provider_id} to #{@verb[op]} (attempt #{state.attempt}, key #{key})",
         %{provider: c.provider_id, op: op, key: key, attempt: state.attempt}
@@ -533,11 +551,12 @@ defmodule ActorTxSpike.Payment do
     timeout = state.opts.step_timeout_ms
 
     state =
-      note(state, :undo_started, "asking #{c.provider_id} to #{@verb[undo]} (key #{key})", %{
-        provider: c.provider_id,
-        op: undo,
-        key: key
-      })
+      note(
+        sent(%{state | compensations: state.compensations + 1}, [key]),
+        :undo_started,
+        "asking #{c.provider_id} to #{@verb[undo]} (key #{key})",
+        %{provider: c.provider_id, op: undo, key: key}
+      )
 
     run(state, {:undo, undo, original}, fn -> Server.invoke(c.server, undo, [key], timeout) end)
   end
@@ -549,7 +568,7 @@ defmodule ActorTxSpike.Payment do
 
     state =
       note(
-        %{state | phase: :reconciling},
+        sent(%{state | phase: :reconciling}, [key]),
         :status_check,
         "asking #{c.provider_id} what it holds for #{op}",
         %{
@@ -564,8 +583,14 @@ defmodule ActorTxSpike.Payment do
 
   defp run(state, tag, fun) do
     task = Task.async(fn -> {tag, guarded(fun)} end)
-    %{state | pending: task.ref}
+    # the selection round is counted per provider asked, not as one call
+    calls = if tag == :selection, do: state.calls, else: state.calls + 1
+    %{state | pending: task.ref, calls: calls}
   end
+
+  defp asked_all(state), do: %{state | calls: state.calls + length(state.providers)}
+
+  defp sent(state, term), do: %{state | bytes_out: state.bytes_out + :erlang.external_size(term)}
 
   # A provider server that has died must not take the transaction down with it:
   # treat it as a technical error and let retry / compensation / escalation decide.
@@ -574,6 +599,66 @@ defmodule ActorTxSpike.Payment do
   catch
     :exit, reason -> {:error, {:exit, reason}}
   end
+
+  # What this transaction consumed and what it earned, as raw measurements.
+  # `ActorTxSpike.Economics` prices them, so the rate card can change without
+  # touching the orchestrator, and the audit log keeps the raw facts.
+  defp emit_economics(state, outcome) do
+    {:memory, memory} = Process.info(self(), :memory)
+    now = System.system_time(:millisecond)
+
+    Events.emit(state.id, :economics, :tx_economics, "measured #{state.id}", %{
+      outcome: outcome,
+      provider: state.current && state.current.provider_id,
+      merchant: state.request[:merchant_id],
+      amount: state.request[:amount],
+      usage: %{
+        reductions: reductions() - state.reductions0,
+        memory_bytes: memory,
+        duration_ms: now - state.started_ms,
+        provider_calls: state.calls,
+        bytes_out: state.bytes_out,
+        bytes_in: state.bytes_in,
+        state_changes: length(state.history),
+        compensations: state.compensations
+      },
+      discovery: discovery(state, outcome),
+      margin: margin(state, outcome),
+      provider_fee: if(outcome == :completed, do: state.current.quote.fee, else: 0)
+    })
+  end
+
+  # Price discovery: how the rate we actually got compares with the quotes we
+  # could have had. The median is the reference ("what an unoptimised pick
+  # would typically have cost"); the worst is the floor; the best shows what
+  # non-price goals (speed, reliability) cost us.
+  defp discovery(%{quote_nets: [_ | _] = nets, current: %{net: net}}, :completed) do
+    sorted = Enum.sort(nets)
+
+    %{
+      quotes: length(nets),
+      chosen_net: net,
+      median_net: median(sorted),
+      worst_net: hd(sorted),
+      best_net: List.last(sorted)
+    }
+  end
+
+  defp discovery(_state, _outcome), do: nil
+
+  defp median(sorted) do
+    n = length(sorted)
+    mid = div(n, 2)
+
+    if rem(n, 2) == 1,
+      do: Enum.at(sorted, mid),
+      else: Money.div_half_even(Enum.at(sorted, mid - 1) + Enum.at(sorted, mid), 2)
+  end
+
+  defp margin(%{result: {:ok, %{guarantee: %{margin: margin}}}}, :completed), do: margin
+  defp margin(_state, _outcome), do: 0
+
+  defp reductions, do: elem(:erlang.process_info(self(), :reductions), 1)
 
   defp announce_policy(%{policy_layers: []} = state), do: state
 

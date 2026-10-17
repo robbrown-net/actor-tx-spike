@@ -282,6 +282,96 @@ defmodule ActorTxSpike.PaymentTest do
     assert {:error, :not_found} = Payment.await(id)
   end
 
+  describe "economics" do
+    test "a completed transaction reports what it consumed and how its price compares" do
+      Events.subscribe()
+      m = market()
+      id = submit(m, [], request: %{amount: 100_000, merchant_id: "acme"})
+      assert {:ok, _} = Payment.await(id)
+
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_economics, data: d}}, 1_000
+      assert %{outcome: :completed, provider: :best, merchant: "acme", amount: 100_000} = d
+
+      # three providers quoted nets 1100.00 / 1050.00 / 1000.00; we took the best
+      assert %{
+               quotes: 3,
+               chosen_net: 110_000,
+               median_net: 105_000,
+               worst_net: 100_000,
+               best_net: 110_000
+             } = d.discovery
+
+      assert d.margin == 0 and d.provider_fee == 0
+
+      u = d.usage
+      assert u.reductions > 0 and u.memory_bytes > 0 and u.duration_ms >= 0
+      # three quote requests plus accept, authorise, pay, settle
+      assert u.provider_calls == 7
+      assert u.bytes_out > 0 and u.bytes_in > 0
+      assert u.state_changes >= 8
+      assert u.compensations == 0
+    end
+
+    test "with an even number of quotes the median is the half-even average" do
+      Events.subscribe()
+      m = market(%{third: [rate: 1.00, quote_mode: :reject]})
+      id = submit(m, [], request: %{amount: 100_001})
+      assert {:ok, _} = Payment.await(id)
+
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_economics, data: d}}, 1_000
+      # nets 110_001.1 -> 110_001 and 105_001.05 -> 105_001; median = 107_501
+      assert %{quotes: 2, median_net: 107_501, worst_net: 105_001, best_net: 110_001} =
+               d.discovery
+    end
+
+    test "failover and compensation show up as extra calls and a compensation" do
+      Events.subscribe()
+      m = market(%{best: [rate: 1.10, authorise_mode: :reject]})
+      id = submit(m, [], request: %{amount: 100_000})
+      assert {:ok, _} = Payment.await(id)
+
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_economics, data: d}}, 1_000
+      assert %{outcome: :completed, provider: :second} = d
+      assert d.usage.compensations == 1
+      assert d.usage.provider_calls > 7
+    end
+
+    test "a failed transaction still reports its consumption, with no discovery" do
+      Events.subscribe()
+
+      m =
+        market(%{
+          best: [accept_quote_mode: :reject],
+          second: [accept_quote_mode: :reject],
+          third: [accept_quote_mode: :reject]
+        })
+
+      id = submit(m)
+      assert {:error, _} = Payment.await(id)
+
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_economics, data: d}}, 1_000
+      assert %{outcome: :failed, discovery: nil, margin: 0, provider_fee: 0} = d
+      assert d.usage.provider_calls > 3
+    end
+
+    test "margin against a guarantee is carried into the economics" do
+      Events.subscribe()
+      {:ok, ledger} = Ledger.start_link(name: :"ledger_#{System.unique_integer([:positive])}")
+      {:ok, g} = Guarantee.new(%{"merchant_id" => "acme", "period" => "W9", "rate" => 1.05})
+
+      id =
+        submit(market(), [],
+          request: %{merchant_id: "acme", amount: 100_000},
+          guarantees: %{"acme" => g},
+          ledger: ledger
+        )
+
+      assert {:ok, _} = Payment.await(id)
+      assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_economics, data: d}}, 1_000
+      assert d.margin == 5_000
+    end
+  end
+
   test "the whole story is narrated in order" do
     Events.subscribe()
     m = market(%{best: [rate: 1.10, authorise_mode: :reject]})

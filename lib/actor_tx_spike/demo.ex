@@ -10,7 +10,7 @@ defmodule ActorTxSpike.Demo do
   """
   use GenServer
 
-  alias ActorTxSpike.{Cutoff, Events, Guarantee, Ledger, Money, PolicySet}
+  alias ActorTxSpike.{Cutoff, Economics, Events, Guarantee, Ledger, Money, PolicySet}
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   @providers [
@@ -327,6 +327,7 @@ defmodule ActorTxSpike.Demo do
           }
         ),
       ledger: Ledger.all(),
+      economics: Economics.summary(),
       auto: state.auto,
       pace: state.pace,
       submitted: state.counter
