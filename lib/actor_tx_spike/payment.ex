@@ -86,10 +86,11 @@ defmodule ActorTxSpike.Payment do
     :exit, {:timeout, _} -> {:error, :timeout}
   end
 
+  # nil when the transaction is not running, including when it is killed mid-call
   def snapshot(id) do
     GenServer.call(via(id), :snapshot)
   catch
-    :exit, {:noproc, _} -> nil
+    :exit, _ -> nil
   end
 
   @impl true

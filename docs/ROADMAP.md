@@ -76,6 +76,12 @@ Supervised audit router and `require_audit` (production refuses to start without
 Next: retention and rotation; forward deal lifecycle on the log; sanctions and KYC gates; load mode
 to measure barrier cost; alerting when the audit router restarts.
 
+## Phase 3b: Design for Test lab - DONE (2026-10-20)
+- Test lab tab (`mix demo --lab`): audit-log fault injection (down, fails after N steps), crash at an
+  exact event, recovery plan (dry run) and recover, idempotency probes, router kill, log verification
+  and residency, and a library of 17 scenarios with hard checks (docs/architecture/08-test-lab.md).
+  The library runs as an integration test.
+
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).
 - Sanctions and KYC gates before accept, recorded in the journal.

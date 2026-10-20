@@ -25,7 +25,7 @@ defmodule ActorTxSpike.Demo.Lab do
   use GenServer
 
   alias ActorTxSpike.Audit.Router
-  alias ActorTxSpike.{Demo, Events, Payment, Recovery, Replay}
+  alias ActorTxSpike.{Demo, Events, Recovery, Replay}
   alias ActorTxSpike.Demo.Lab.Scenarios
   alias ActorTxSpike.Provider.{Fake, Server}
   alias ActorTxSpike.Replay.{Residency, Rules, Tx}
@@ -91,11 +91,14 @@ defmodule ActorTxSpike.Demo.Lab do
   @doc "Wait until the transaction's process is gone (finished lingering, or killed)."
   def wait_gone(tx, tries \\ 400) do
     cond do
-      Payment.snapshot(tx) == nil -> :ok
+      not running?(tx) -> :ok
       tries == 0 -> :timeout
       true -> Process.sleep(10) && wait_gone(tx, tries - 1)
     end
   end
+
+  # A registry lookup, not a call: asking a process that is being killed raises an exit.
+  defp running?(tx), do: Registry.lookup(ActorTxSpike.Registry, {:payment, tx}) != []
 
   @doc "How many times each provider performed each operation for this transaction."
   @spec effects(String.t()) :: %{{String.t(), atom()} => non_neg_integer()}
@@ -136,7 +139,7 @@ defmodule ActorTxSpike.Demo.Lab do
         op: p.op,
         done: p.done,
         undo: for({undo, original} <- p.undo_queue, do: "#{undo} (of #{original})"),
-        running: Payment.snapshot(p.tx) != nil
+        running: running?(p.tx)
       }
     end)
   end

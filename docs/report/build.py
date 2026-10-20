@@ -16,6 +16,7 @@ SECTIONS = [
     ("System structure", "architecture/05-system-structure.md"),
     ("Data model", "architecture/06-data-model.md"),
     ("Observability & performance", "architecture/07-observability-and-performance.md"),
+    ("Test lab", "architecture/08-test-lab.md"),
     ("Compliance evidence", "compliance/COMPLIANCE_EVIDENCE.md"),
     ("Quality snapshot", "quality/QUALITY_SNAPSHOT.md"),
     ("Decisions (ADRs)", None),
