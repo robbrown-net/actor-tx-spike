@@ -25,7 +25,7 @@ defmodule ActorTxSpike.Demo.Lab do
   use GenServer
 
   alias ActorTxSpike.Audit.Router
-  alias ActorTxSpike.{Demo, Events, Recovery, Replay}
+  alias ActorTxSpike.{Demo, Events, Poll, Recovery, Replay}
   alias ActorTxSpike.Demo.Lab.Scenarios
   alias ActorTxSpike.Provider.{Fake, Server}
   alias ActorTxSpike.Replay.{Residency, Rules, Tx}
@@ -90,11 +90,7 @@ defmodule ActorTxSpike.Demo.Lab do
 
   @doc "Wait until the transaction's process is gone (finished lingering, or killed)."
   def wait_gone(tx, tries \\ 400) do
-    cond do
-      not running?(tx) -> :ok
-      tries == 0 -> :timeout
-      true -> Process.sleep(10) && wait_gone(tx, tries - 1)
-    end
+    if Poll.until(fn -> not running?(tx) end, tries: tries), do: :ok, else: :timeout
   end
 
   # A registry lookup, not a call: asking a process that is being killed raises an exit.
@@ -154,33 +150,37 @@ defmodule ActorTxSpike.Demo.Lab do
   def resend(tx, op, dir) when op in @ops do
     with {:ok, days} <- days(dir),
          {:ok, records} <- records_of(days, tx),
-         summary = Tx.summarize(records),
-         provider when is_binary(provider) <- summary.provider,
-         %{server: server, fake: fake} <- find_provider(provider) do
-      key = "#{tx}:#{provider}:#{@short[op]}"
-      quote = Tx.quote_for(records, provider)
-      before = Fake.effects(fake) |> Map.get({op, key})
-      args = if op == :settle, do: [key], else: [quote, key]
-      answer = Server.invoke(server, op, args, 5_000)
-      after_ = Fake.effects(fake) |> Map.get({op, key})
-
-      {:ok,
-       %{
-         tx: tx,
-         provider: provider,
-         op: op,
-         key: key,
-         answer: inspect(answer),
-         effect_before: inspect(before),
-         effect_after: inspect(after_),
-         unchanged?: before == after_ and before != nil
-       }}
+         provider when is_binary(provider) <- Tx.summarize(records).provider,
+         %{} = world <- find_provider(provider) do
+      {:ok, replay_step(tx, op, provider, Tx.quote_for(records, provider), world)}
     else
       nil -> {:error, "#{tx} did not go through any provider (nothing to re-send)"}
       {:error, _} = error -> error
       _ -> {:error, "no such provider or transaction"}
     end
   end
+
+  # Send a step again, exactly as it was sent, and report whether the provider did anything new.
+  defp replay_step(tx, op, provider, quote, %{server: server, fake: fake}) do
+    key = "#{tx}:#{provider}:#{@short[op]}"
+    before = fake |> Fake.effects() |> Map.get({op, key})
+    answer = Server.invoke(server, op, step_args(op, quote, key), 5_000)
+    after_ = fake |> Fake.effects() |> Map.get({op, key})
+
+    %{
+      tx: tx,
+      provider: provider,
+      op: op,
+      key: key,
+      answer: inspect(answer),
+      effect_before: inspect(before),
+      effect_after: inspect(after_),
+      unchanged?: before == after_ and before != nil
+    }
+  end
+
+  defp step_args(:settle, _quote, key), do: [key]
+  defp step_args(_op, quote, key), do: [quote, key]
 
   @doc "Verify every regional log's chain, every transaction's rules, and data residency."
   def verify_logs, do: verify_logs(GenServer.call(__MODULE__, :dir))
@@ -241,15 +241,7 @@ defmodule ActorTxSpike.Demo.Lab do
     n = Map.get(state.calls, tx, 0)
     state = %{state | calls: Map.put(state.calls, tx, n + 1)}
 
-    result =
-      case state.audit do
-        :ok -> Events.barrier()
-        :down -> {:error, :audit_down}
-        {:after, limit} when n < limit -> Events.barrier()
-        {:after, _limit} -> {:error, :disk_full}
-      end
-
-    {:reply, result, state}
+    {:reply, barrier_result(state.audit, n), state}
   end
 
   def handle_call({:audit, mode}, _from, state) do
@@ -340,12 +332,7 @@ defmodule ActorTxSpike.Demo.Lab do
 
   defp handle_command(%{"do" => "resend", "tx" => tx, "op" => op}, _from, state) do
     op = Enum.find(@ops, &(Atom.to_string(&1) == op))
-
-    case op && resend(tx, op, state.dir) do
-      {:ok, result} -> {:reply, {:ok, result}, put_last(state, :resend, result)}
-      {:error, _} = error -> {:reply, error, state}
-      nil -> {:reply, {:error, "choose accept_quote, authorise, pay or settle"}, state}
-    end
+    resent(op && resend(tx, op, state.dir), state)
   end
 
   defp handle_command(%{"do" => "duplicate", "tx" => tx}, _from, state)
@@ -433,7 +420,7 @@ defmodule ActorTxSpike.Demo.Lab do
   defp watch_loop(lab, kind, op) do
     receive do
       {:tx_event, %{tx_id: tx, kind: k, data: data}} when is_binary(tx) ->
-        if to_string(k) == kind and (op == nil or to_string(data[:op]) == op) and crash(tx) do
+        if armed?(k, data, kind, op) and crash(tx) do
           GenServer.cast(lab, {:crash_fired, tx, kind, op})
         else
           watch_loop(lab, kind, op)
@@ -443,6 +430,21 @@ defmodule ActorTxSpike.Demo.Lab do
         watch_loop(lab, kind, op)
     end
   end
+
+  defp resent({:ok, result}, state), do: {:reply, {:ok, result}, put_last(state, :resend, result)}
+  defp resent({:error, _} = error, state), do: {:reply, error, state}
+
+  defp resent(nil, state),
+    do: {:reply, {:error, "choose accept_quote, authorise, pay or settle"}, state}
+
+  # What the lab's stand-in for the durable log answers, given the fault it was set to.
+  defp barrier_result(:ok, _n), do: Events.barrier()
+  defp barrier_result(:down, _n), do: {:error, :audit_down}
+  defp barrier_result({:after, limit}, n) when n < limit, do: Events.barrier()
+  defp barrier_result({:after, _limit}, _n), do: {:error, :disk_full}
+
+  defp armed?(k, data, kind, op),
+    do: to_string(k) == kind and (op == nil or to_string(data[:op]) == op)
 
   defp crash(tx) do
     case Registry.lookup(ActorTxSpike.Registry, {:payment, tx}) do

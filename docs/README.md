@@ -2,6 +2,10 @@
 
 | Document | What it is |
 |---|---|
+| [USER_GUIDE.md](USER_GUIDE.md) | Running and watching the system: dashboard, breaking providers, the Test lab, the audit log, replay, recovery, production settings |
+| [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | Set-up, commands, **quality limits and how they are enforced**, layout, conventions, recipes |
+| [TESTING.md](TESTING.md) | Test layers, gates and thresholds, testing by hand in the lab, writing tests, known flaky tests, what is not covered |
+| [REQUIREMENTS.md](REQUIREMENTS.md) | Functional and non-functional requirements, each with where it is verified and its status |
 | [ENGINEERING_STORY.md](ENGINEERING_STORY.md) | The full story: start, decisions, steers, open questions, risks, roadmap |
 | [ROADMAP.md](ROADMAP.md) | Phase status and known gaps |
 | [adr/](adr/README.md) | Architecture decision records |

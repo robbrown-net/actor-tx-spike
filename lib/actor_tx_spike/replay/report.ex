@@ -24,26 +24,26 @@ defmodule ActorTxSpike.Replay.Report do
       "operator actions so far: #{length(s.controls)}"
     ]
 
-    providers =
-      for {id, p} <- s.providers do
-        h = p.health || %{}
-        q = p.last_quote || %{}
-
-        "  #{id}: #{h["state"] || "no health record"}, breaker #{h["breaker"] || "?"}, last quote #{inspect(Map.take(q, ["outcome", "rate", "fee", "latency_ms"]))}"
-      end
-
-    Enum.join(lines ++ ["providers:" | providers], "\n")
+    Enum.join(lines ++ ["providers:" | Enum.map(s.providers, &provider_line/1)], "\n")
   end
+
+  defp provider_line({id, p}) do
+    health = fallback(p.health, %{})
+    quote = p.last_quote |> fallback(%{}) |> Map.take(["outcome", "rate", "fee", "latency_ms"])
+    state = fallback(health["state"], "no health record")
+
+    "  #{id}: #{state}, breaker #{fallback(health["breaker"], "?")}, last quote #{inspect(quote)}"
+  end
+
+  defp fallback(nil, default), do: default
+  defp fallback(value, _default), do: value
 
   @spec what_if(map()) :: String.t()
   def what_if(w) do
     head =
       "what if #{inspect(w.overrides)}: #{w.changed} of #{w.comparable} transactions would route differently; " <>
         "net #{signed(w.net_delta)}, latency #{signed_ms(w.latency_delta_ms)} in total" <>
-        if(w.lost_all_options > 0,
-          do: "; #{w.lost_all_options} would have had no option at all",
-          else: ""
-        )
+        lost_note(w.lost_all_options)
 
     changed =
       for row <- w.rows, row.changed? do
@@ -64,6 +64,9 @@ defmodule ActorTxSpike.Replay.Report do
 
     Enum.join([head | lines], "\n")
   end
+
+  defp lost_note(0), do: ""
+  defp lost_note(n), do: "; #{n} would have had no option at all"
 
   defp violation(v), do: "  [#{v.rule}] #{v.tx || "-"} record #{v.n || "?"}: #{v.detail}"
   defp outcomes(o), do: o |> Enum.sort() |> Enum.map_join(", ", fn {k, n} -> "#{n} #{k}" end)

@@ -21,6 +21,10 @@ TARGETS = {
     "lib/actor_tx_spike/guarantee.ex": ["test/unit/guarantee_ledger_test.exs"],
     "lib/actor_tx_spike/ledger.ex": ["test/unit/guarantee_ledger_test.exs"],
     "lib/actor_tx_spike/metrics/stats.ex": ["test/unit/metrics/stats_test.exs"],
+    "lib/actor_tx_spike/validation.ex": ["test/unit/policy_test.exs", "test/unit/cutoff_test.exs", "test/unit/guarantee_ledger_test.exs"],
+    "lib/actor_tx_spike/eligibility/parser.ex": ["test/unit/eligibility_test.exs"],
+    "lib/actor_tx_spike/money.ex": ["test/unit/money_test.exs"],
+    "lib/actor_tx_spike/poll.ex": ["test/unit/poll_test.exs"],
 }
 if "--only" in sys.argv:
     wanted = sys.argv[sys.argv.index("--only") + 1].split(",")
@@ -49,8 +53,12 @@ def candidate_lines(lines):
 
 
 def run_tests(tests):
-    p = subprocess.run(["mix", "test", "--no-color", "--max-failures", "1"] + tests,
-                       capture_output=True, text=True, env={**os.environ, "MIX_ENV": "test"})
+    try:
+        p = subprocess.run(["mix", "test", "--no-color", "--max-failures", "1"] + tests,
+                           capture_output=True, text=True, env={**os.environ, "MIX_ENV": "test"},
+                           timeout=300)
+    except subprocess.TimeoutExpired:
+        return "killed"  # a mutant that makes the code hang is noticed by the tests (they time out)
     out = p.stdout + p.stderr
     if "CompileError" in out or "error:" in out and "tests," not in out:
         return "invalid"

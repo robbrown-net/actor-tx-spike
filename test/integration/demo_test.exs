@@ -2,6 +2,8 @@ defmodule ActorTxSpike.DemoIntegrationTest do
   # The demo world is a named singleton, so these tests cannot run concurrently.
   use ExUnit.Case, async: false
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.{Demo, Events}
 
   @fast [
@@ -27,13 +29,7 @@ defmodule ActorTxSpike.DemoIntegrationTest do
 
   defp ctl(cmd), do: Demo.control(cmd)
 
-  defp wait_until(fun, tries \\ 200) do
-    cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition not met")
-      true -> Process.sleep(10) && wait_until(fun, tries - 1)
-    end
-  end
+  defp wait_until(fun, tries \\ 200), do: Wait.until!(fun, tries: tries, every_ms: 10)
 
   defp provider(snapshot, id), do: Enum.find(snapshot.providers, &(&1.id == id))
 

@@ -9,6 +9,23 @@ defmodule ActorTxSpike.Metrics.Rollup do
 
   @minute 60_000
 
+  # How each series is summarised for a minute: output name => series
+  @means [
+    memory_total_mean: :memory_total,
+    cpu_mean: :cpu,
+    sched_mean: :sched,
+    net_in_mean: :net_in,
+    net_out_mean: :net_out,
+    reductions_mean: :reductions
+  ]
+  @maxima [
+    memory_total_max: :memory_total,
+    cpu_max: :cpu,
+    run_queue_max: :run_queue,
+    e2e_p95_max: :e2e_p95
+  ]
+  @sums [completed: :completed, failed: :failed, needs_review: :needs_review]
+
   @spec minute(integer()) :: integer()
   def minute(at_ms), do: div(at_ms, @minute) * @minute
 
@@ -26,24 +43,14 @@ defmodule ActorTxSpike.Metrics.Rollup do
   @doc "Turn an accumulating bucket into its compact, chartable form."
   @spec finalize(map()) :: map()
   def finalize(%{at: at, n: n, acc: acc}) do
-    %{
-      at: at,
-      samples: n,
-      memory_total_mean: Stats.mean(acc[:memory_total]),
-      memory_total_max: Enum.max(acc[:memory_total]),
-      cpu_mean: Stats.mean(acc[:cpu]),
-      cpu_max: Enum.max(acc[:cpu]),
-      sched_mean: Stats.mean(acc[:sched]),
-      run_queue_max: Enum.max(acc[:run_queue]),
-      net_in_mean: Stats.mean(acc[:net_in]),
-      net_out_mean: Stats.mean(acc[:net_out]),
-      reductions_mean: Stats.mean(acc[:reductions]),
-      completed: Enum.sum(acc[:completed]),
-      failed: Enum.sum(acc[:failed]),
-      needs_review: Enum.sum(acc[:needs_review]),
-      e2e_p95_max: Enum.max(acc[:e2e_p95])
-    }
+    %{at: at, samples: n}
+    |> Map.merge(fold(acc, @means, &Stats.mean/1))
+    |> Map.merge(fold(acc, @maxima, &Enum.max/1))
+    |> Map.merge(fold(acc, @sums, &Enum.sum/1))
   end
+
+  # {output name, series} pairs reduced with one function each
+  defp fold(acc, spec, reduce), do: Map.new(spec, fn {name, key} -> {name, reduce.(acc[key])} end)
 
   defp series(s) do
     [

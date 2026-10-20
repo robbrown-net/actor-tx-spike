@@ -31,6 +31,7 @@ defmodule ActorTxSpike.Replay do
   end
 
   @terminal ~w(tx_completed tx_failed needs_review)
+  @position_keys %{at_ms: "at", seq: "seq", n: "n"}
 
   @doc "Load a day from an audit log file. Verifies the chain unless `verify: false`."
   @spec load(Path.t(), keyword()) :: {:ok, Day.t()} | {:error, term()}
@@ -87,14 +88,8 @@ defmodule ActorTxSpike.Replay do
   """
   @spec state_at(Day.t(), {:at_ms | :seq | :n, integer()}) :: map()
   def state_at(%Day{} = day, {field, value}) do
-    key = %{at_ms: "at", seq: "seq", n: "n"}[field]
-    upto = Enum.take_while(day.records, &(&1[key] <= value))
-    by_tx = upto |> Enum.reject(&is_nil(&1["tx"])) |> Enum.group_by(& &1["tx"])
-
-    txs =
-      for {id, rs} <- by_tx, Enum.any?(rs, &(&1["kind"] == "tx_received")), into: %{} do
-        {id, Tx.summarize(rs)}
-      end
+    upto = Enum.take_while(day.records, &(&1[@position_keys[field]] <= value))
+    txs = summaries(upto)
 
     %{
       as_of: %{field => value, last_n: last(upto, "n"), last_at_ms: last(upto, "at")},
@@ -105,10 +100,19 @@ defmodule ActorTxSpike.Replay do
       policy: latest_data(upto, "tx_received", "policy"),
       guarantee: latest_data(upto, "tx_received", "guarantee"),
       config: latest_data(upto, "tx_received", "config"),
-      controls:
-        for(r <- upto, r["kind"] == "control", do: %{at: r["at"], command: r["data"]["command"]}),
+      controls: controls(upto),
       economics: economics(upto)
     }
+  end
+
+  # Every transaction that had started by the end of `records`, summarised as of then.
+  defp summaries(records) do
+    day = from_records(records)
+    Map.new(day.tx_order, &{&1, Tx.summarize(day.by_tx[&1])})
+  end
+
+  defp controls(records) do
+    for r <- records, r["kind"] == "control", do: %{at: r["at"], command: r["data"]["command"]}
   end
 
   @doc "Terminal event kinds."

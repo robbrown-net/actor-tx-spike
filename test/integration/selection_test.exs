@@ -1,6 +1,8 @@
 defmodule ActorTxSpike.SelectionIntegrationTest do
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.{Policy, Selector}
   alias ActorTxSpike.Provider.{Fake, Server}
 
@@ -12,13 +14,7 @@ defmodule ActorTxSpike.SelectionIntegrationTest do
     %{id: id, fake: fake, server: server}
   end
 
-  defp wait_until(fun, tries \\ 100) do
-    cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition not met")
-      true -> Process.sleep(5) && wait_until(fun, tries - 1)
-    end
-  end
+  defp wait_until(fun, tries \\ 100), do: Wait.until!(fun, tries: tries, every_ms: 5)
 
   defp market do
     health = [failure_threshold: 2, cool_down_ms: 10_000, slow_ms: 80]

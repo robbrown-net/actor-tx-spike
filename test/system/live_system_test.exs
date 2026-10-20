@@ -10,6 +10,8 @@ defmodule ActorTxSpike.LiveSystemTest do
   """
   use ExUnit.Case, async: false
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.Replay
   alias ActorTxSpike.Replay.Rules
 
@@ -351,21 +353,11 @@ defmodule ActorTxSpike.LiveSystemTest do
   end
 
   defp wait_for(fun, timeout) do
-    deadline = System.monotonic_time(:millisecond) + timeout
-
-    Stream.repeatedly(fn ->
-      cond do
-        fun.() ->
-          :ok
-
-        System.monotonic_time(:millisecond) > deadline ->
-          flunk("condition not met in #{timeout}ms")
-
-        true ->
-          Process.sleep(100) && :wait
-      end
-    end)
-    |> Enum.find(&(&1 == :ok))
+    Wait.until!(fun,
+      tries: div(timeout, 100),
+      every_ms: 100,
+      message: "condition not met in #{timeout}ms"
+    )
   end
 
   defp open_stream(port) do
@@ -383,19 +375,25 @@ defmodule ActorTxSpike.LiveSystemTest do
   defp do_collect(socket, buffer, events, done, deadline) do
     if System.monotonic_time(:millisecond) > deadline, do: flunk("stream condition not met")
 
-    case :gen_tcp.recv(socket, 0, 1_000) do
-      {:ok, data} ->
-        {parsed, rest} = parse_sse(buffer <> data)
-        events = events ++ parsed
-        if done.(events), do: events, else: do_collect(socket, rest, events, done, deadline)
-
-      {:error, :timeout} ->
-        do_collect(socket, buffer, events, done, deadline)
-
-      {:error, reason} ->
-        flunk("stream closed: #{inspect(reason)}")
+    socket
+    |> :gen_tcp.recv(0, 1_000)
+    |> received(buffer, events, done)
+    |> case do
+      {:done, events} -> events
+      {:more, buffer, events} -> do_collect(socket, buffer, events, done, deadline)
     end
   end
+
+  defp received({:ok, data}, buffer, events, done) do
+    {parsed, rest} = parse_sse(buffer <> data)
+    events = events ++ parsed
+    if done.(events), do: {:done, events}, else: {:more, rest, events}
+  end
+
+  defp received({:error, :timeout}, buffer, events, _done), do: {:more, buffer, events}
+
+  defp received({:error, reason}, _buffer, _events, _done),
+    do: flunk("stream closed: #{inspect(reason)}")
 
   defp parse_sse(text) do
     parts = String.split(text, "\n\n")

@@ -12,6 +12,7 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | Merchant system | primary (ingress) | Get a customer's payment converted and paid, fast and at a good rate, exactly once |
 | Operator | primary | See what is happening, change conditions, intervene |
 | Finance / compliance reviewer | primary (planned) | Resolve anything the system could not safely decide |
+| Tester / developer | primary | Provoke the hard-to-reach behaviours (restart, idempotency, router, audit-log downtime) and judge the outcome, without writing code |
 | Auditor / QSA | primary | Evidence that the system did the right things, and that the evidence has not been altered |
 | Provider (FX / payment third party) | supporting | Receives requests; we do not control it |
 | Sentinel (timer) | supporting | Keeps our knowledge of providers fresh |
@@ -160,7 +161,7 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Main scenario** | 1. System starts; the logs are verified and loaded. 2. System lists the open transactions and, for each, where it stood. 3. Each is resumed: quoting again, sending the step that was never sent, asking the provider about a step that may have been sent, finishing undos, or recording a completion. 4. Resumed work is recorded in the same log, chained after the crash. |
 | **Extensions** | 1a. A log fails verification: the system refuses to start on it. 2a. The same transaction is in several regional logs: resumed once. 3a. The provider it was using no longer exists, or its quote was never recorded: escalated to a person. 3b. A pay or settle cannot be confirmed: never failed over; a person decides. 3c. The cut-off has passed: it undoes what it did and stops. |
 | **Special requirements** | A call in the log is reconciled, never repeated blindly; a call not in the log is safe to make (write-ahead). |
-| **Status** | Implemented, proven by cut-point, random-kill and restart tests. Not built: refusing to start without a registered audit sink, supervision of the audit writer in the application tree. See ADR 0010. |
+| **Status** | Implemented, proven by cut-point, random-kill and restart tests. The audit router is supervised and production refuses to start without it (`require_audit`). Recovery is started by the host (as `mix demo` does), not automatically by the application, because it needs the live provider registry. See ADR 0010. |
 
 ## UC-11 Keep a transaction inside its jurisdiction ✅ (mechanism)
 
@@ -171,3 +172,15 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Main scenario** | 1. A request names origin and destination regions, instrument and customer type. 2. System decides eligibility from the rules, strictest region winning. 3. Ineligible providers are not asked. 4. The decision is recorded. 5. Every event of the transaction is written to the logs the decision names. 6. Auditor runs the residency check across the regional logs. |
 | **Extensions** | 2a. Instrument or customer type not permitted: the transaction fails before any provider is called, with the reasons. 3a. No provider is eligible: fails with `no_eligible_provider`. 5a. The decision names a log the system does not have: the router stops (fail closed). 6a. A transaction is found in a log it must not be in, or missing from one it must be in: reported. |
 | **Status** | Implemented as mechanism. The rules themselves need counsel per country; retention is recorded but not enforced; sanctions and KYC gates are not built. See ADR 0011. |
+
+## UC-12 Test the hard-to-reach behaviours ✅
+
+| | |
+|---|---|
+| **Primary actor** | Tester / developer |
+| **Preconditions** | `mix demo --lab` is running (regional logs in a fresh temporary directory, under a supervisor). |
+| **Success guarantee** | For the router, idempotency, restarts and audit-log downtime, the tester can put the system in a chosen state, see what it did, and see a pass/fail verdict backed by what the providers actually did and by the logs. |
+| **Main scenario** | 1. Tester opens the Test lab tab. 2. Tester runs a scenario (or all 17), or builds a situation by hand: sets the audit log healthy, down or failing after N steps; arms a crash at an exact event; submits transactions. 3. System shows each check with its evidence. 4. Tester asks for a recovery plan (dry run), then recovers. 5. Tester verifies every log's chain, every transaction's rules, and residency. |
+| **Extensions** | 2a. Tester submits the same transaction id twice, or re-sends a completed step with the same key: the provider does nothing more. 2b. Tester kills the audit router: money stops while it is down; the supervisor restarts it. 2c. The lab is not enabled: the tab explains how to start it and scenarios needing the logs are skipped. |
+| **Special requirements** | Scenarios are deterministic (prices fixed, providers healed, healthy log restored before each). The scenario library is also an automated integration test. |
+| **Status** | Implemented. See [08](08-test-lab.md). Known limit: the crash trigger hits the next matching event of any transaction. |

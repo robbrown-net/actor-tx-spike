@@ -99,7 +99,7 @@ defmodule ActorTxSpike.Demo do
 
   # Resume whatever was open in the given logs, and make sure new ids cannot collide with old ones.
   def handle_call({:recover, days}, _from, state) do
-    providers = for {pid, p} <- state.providers, do: %{id: pid, server: p.server}
+    providers = registry(state)
 
     results =
       ActorTxSpike.Recovery.recover(days,
@@ -327,10 +327,13 @@ defmodule ActorTxSpike.Demo do
 
   defp do_control(_other, state), do: {{:error, "unknown command"}, state}
 
+  # The providers as the orchestrator is given them.
+  defp registry(state), do: for({pid, p} <- state.providers, do: %{id: pid, server: p.server})
+
   defp submit(state, amount, extras \\ %{}, given_id \\ nil) do
     n = state.counter + 1
     id = if is_binary(given_id) and given_id != "", do: given_id, else: "#{state.prefix}-#{n}"
-    providers = for {pid, p} <- state.providers, do: %{id: pid, server: p.server}
+    providers = registry(state)
 
     result =
       ActorTxSpike.submit(Map.merge(%{id: id, amount: amount}, extras),

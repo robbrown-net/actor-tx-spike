@@ -7,6 +7,8 @@ defmodule ActorTxSpike.RecoveryTest do
   """
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.{Audit, Events, Panel, Payment, Policy, Recovery, Replay}
   alias ActorTxSpike.Provider.{Fake, Server}
   alias ActorTxSpike.Replay.Rules
@@ -104,6 +106,15 @@ defmodule ActorTxSpike.RecoveryTest do
   test "a chosen provider with nothing sent yet: the first step was never sent" do
     assert %{mode: :next, op: "accept_quote", provider: "a", remaining: ["b"], done: []} =
              Recovery.plan(base_records([chosen(5)]))
+  end
+
+  test "records without eligibility or a remaining list still plan" do
+    [received | rest] = base_records()
+    received = update_in(received, ["data"], &Map.delete(&1, "eligibility"))
+    bare = rec(5, "provider_chosen", %{"provider" => "a"})
+
+    assert %{eligibility_logs: nil, remaining: [], mode: :next} =
+             Recovery.plan([received | rest] ++ [bare])
   end
 
   test "a step sent without a recorded answer is in doubt, whichever step it was" do
@@ -647,11 +658,5 @@ defmodule ActorTxSpike.RecoveryTest do
     end
   end
 
-  defp wait_for(fun, tries \\ 200) do
-    cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition not met")
-      true -> Process.sleep(10) && wait_for(fun, tries - 1)
-    end
-  end
+  defp wait_for(fun, tries \\ 200), do: Wait.until!(fun, tries: tries, every_ms: 10)
 end

@@ -3,6 +3,8 @@ defmodule ActorTxSpike.AuditFailClosedTest do
   # replaced, which would starve every payment running in a parallel test.
   use ExUnit.Case, async: false
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.{Audit, Events}
 
   test "an audit that crashes leaves the system failing closed until it is replaced" do
@@ -42,11 +44,11 @@ defmodule ActorTxSpike.AuditFailClosedTest do
   end
 
   # The kill is delivered asynchronously; the barrier fails once the event server has seen it.
-  defp refute_barrier_ok(name, tries \\ 100) do
-    case Events.barrier() do
-      {:error, {:sink_down, {:audit, ^name}}} -> :ok
-      _ when tries == 0 -> flunk("barrier never failed for #{inspect(name)}")
-      _ -> Process.sleep(10) && refute_barrier_ok(name, tries - 1)
-    end
+  defp refute_barrier_ok(name) do
+    Wait.until!(fn -> Events.barrier() == {:error, {:sink_down, {:audit, name}}} end,
+      tries: 100,
+      every_ms: 10,
+      message: "barrier never failed for #{inspect(name)}"
+    )
   end
 end

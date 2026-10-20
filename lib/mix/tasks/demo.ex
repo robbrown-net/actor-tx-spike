@@ -19,23 +19,23 @@ defmodule Mix.Tasks.Demo do
 
   alias ActorTxSpike.Audit.Router
   alias ActorTxSpike.Demo
+  alias ActorTxSpike.Panel
   alias ActorTxSpike.Replay
+
+  @switches [
+    port: :integer,
+    auto: :boolean,
+    quiet: :boolean,
+    pace: :float,
+    sentinel_ms: :integer,
+    audit: :string,
+    audit_dir: :string,
+    lab: :boolean
+  ]
 
   @impl true
   def run(args) do
-    {opts, _, _} =
-      OptionParser.parse(args,
-        strict: [
-          port: :integer,
-          auto: :boolean,
-          quiet: :boolean,
-          pace: :float,
-          sentinel_ms: :integer,
-          audit: :string,
-          audit_dir: :string,
-          lab: :boolean
-        ]
-      )
+    {opts, _, _} = OptionParser.parse(args, strict: @switches)
 
     Mix.Task.run("app.start")
 
@@ -43,16 +43,8 @@ defmodule Mix.Tasks.Demo do
     previous = previous_days(opts)
     lab_dir = start_logs(opts)
 
-    demo_opts = if opts[:sentinel_ms], do: [sentinel_interval_ms: opts[:sentinel_ms]], else: []
-    {:ok, _} = ActorTxSpike.Demo.start_link(demo_opts)
-    recover(previous)
-    if lab_dir, do: start_lab(lab_dir)
-    if opts[:pace], do: ActorTxSpike.Demo.control(%{"action" => "pace", "factor" => opts[:pace]})
-
-    {:ok, panel} =
-      ActorTxSpike.Panel.start_link(handler: ActorTxSpike.Demo.Handler, port: opts[:port] || 4040)
-
-    if opts[:auto], do: ActorTxSpike.Demo.control(%{"action" => "auto", "on" => true})
+    start_world(opts, previous, lab_dir)
+    panel = start_panel(opts)
 
     Mix.shell().info("""
 
@@ -65,6 +57,25 @@ defmodule Mix.Tasks.Demo do
     Process.sleep(:infinity)
   end
 
+  defp start_world(opts, previous, lab_dir) do
+    {:ok, _} = Demo.start_link(sentinel_options(opts[:sentinel_ms]))
+    recover(previous)
+    start_lab(lab_dir)
+    set_pace(opts[:pace])
+  end
+
+  defp sentinel_options(nil), do: []
+  defp sentinel_options(ms), do: [sentinel_interval_ms: ms]
+
+  defp set_pace(nil), do: :ok
+  defp set_pace(factor), do: Demo.control(%{"action" => "pace", "factor" => factor})
+
+  defp start_panel(opts) do
+    {:ok, panel} = Panel.start_link(handler: Demo.Handler, port: opts[:port] || 4040)
+    if opts[:auto], do: Demo.control(%{"action" => "auto", "on" => true})
+    panel
+  end
+
   defp start_audit(path) do
     case ActorTxSpike.Audit.start_link(path: path) do
       {:ok, _} -> Mix.shell().info("audit log: #{path} (verify with: mix audit.verify #{path})")
@@ -73,16 +84,14 @@ defmodule Mix.Tasks.Demo do
   end
 
   defp previous_days(opts) do
-    paths =
-      List.wrap(opts[:audit]) ++
-        if(opts[:audit_dir], do: Path.wildcard(Path.join(opts[:audit_dir], "*.log")), else: [])
+    (List.wrap(opts[:audit]) ++ logs_in(opts[:audit_dir])) |> Enum.flat_map(&previous_day/1)
+  end
 
-    Enum.flat_map(paths, fn path ->
-      case File.exists?(path) && Replay.load(path) do
-        {:ok, day} -> [day]
-        _ -> []
-      end
-    end)
+  defp logs_in(nil), do: []
+  defp logs_in(dir), do: Path.wildcard(Path.join(dir, "*.log"))
+
+  defp previous_day(path) do
+    with true <- File.exists?(path), {:ok, day} <- Replay.load(path), do: [day], else: (_ -> [])
   end
 
   defp recover([]), do: :ok
@@ -113,6 +122,8 @@ defmodule Mix.Tasks.Demo do
 
     dir
   end
+
+  defp start_lab(nil), do: :ok
 
   defp start_lab(dir) do
     {:ok, _} = Demo.Lab.start_link(dir: dir, supervised: true)

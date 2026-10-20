@@ -53,6 +53,8 @@ so any state can be set up by hand and then inspected.
 
 ## The scenario library
 
+In code (`Demo.Lab.Scenarios`) the 17 are grouped by theme: `routing/0`, `idempotency/0`, `provider_faults/0`, `audit_outage/0`, `restarts/0`. Waiting inside scenarios uses `Poll.until/2`, the same helper the tests use.
+
 | Scenario | Provokes | Expected |
 |---|---|---|
 | Happy path | nothing | completed via cobalt; each step done once |

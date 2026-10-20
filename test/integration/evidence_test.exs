@@ -6,6 +6,8 @@ defmodule ActorTxSpike.EvidenceIntegrationTest do
   """
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.{Audit, Policy}
   alias ActorTxSpike.Provider.{Fake, Server}
 
@@ -56,12 +58,15 @@ defmodule ActorTxSpike.EvidenceIntegrationTest do
     |> Enum.filter(&(&1["tx"] == tx))
   end
 
-  defp wait_for(path, tx, kind, tries \\ 100) do
-    cond do
-      File.exists?(path) and Enum.any?(records(path, tx), &(&1["kind"] == kind)) -> :ok
-      tries == 0 -> flunk("audit log never recorded #{kind} for #{tx}")
-      true -> Process.sleep(20) && wait_for(path, tx, kind, tries - 1)
-    end
+  defp recorded?(path, tx, kind),
+    do: File.exists?(path) and Enum.any?(records(path, tx), &(&1["kind"] == kind))
+
+  defp wait_for(path, tx, kind) do
+    Wait.until!(fn -> recorded?(path, tx, kind) end,
+      tries: 100,
+      every_ms: 20,
+      message: "audit log never recorded #{kind} for #{tx}"
+    )
   end
 
   test "a completed and a failed transaction both leave verifiable evidence", %{path: path} do

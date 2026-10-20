@@ -1,7 +1,7 @@
 defmodule ActorTxSpike.AuditTest do
   use ExUnit.Case, async: true
 
-  alias ActorTxSpike.{Audit, Events}
+  alias ActorTxSpike.{Audit, Events, Poll}
 
   setup do
     dir = Path.join(System.tmp_dir!(), "audit-#{System.unique_integer([:positive])}")
@@ -137,13 +137,7 @@ defmodule ActorTxSpike.AuditTest do
     assert n >= 1
   end
 
-  defp eventually(fun, tries \\ 100) do
-    cond do
-      fun.() -> true
-      tries == 0 -> false
-      true -> Process.sleep(20) && eventually(fun, tries - 1)
-    end
-  end
+  defp eventually(fun), do: Poll.until(fun, tries: 100, every_ms: 20)
 
   test "a subscribed audit is a durable sink: the barrier waits for it, and stopping removes it",
        %{path: path} do

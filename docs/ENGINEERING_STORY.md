@@ -121,6 +121,7 @@ These came from the owner and are standing rules.
 | Keep it local until the harness exists, then push on request | Commit and push only when asked |
 | 100% unit / > 85% integration coverage | Gates in `mix.exs`; tests first for new modules |
 | Branch-level coverage "later" | Deferred, tracked in the roadmap |
+| "Lower complexity and duplication thresholds; nested ifs are better handled by design patterns, interfaces and abstractions; it matters for new people" | Cyclomatic complexity 4, nesting 2, ABC 40, duplicate mass 16 enforced by Credo in CI ([ADR 0012](adr/0012-code-shape-limits.md)); about 30 functions reshaped into clauses, small modules and tables |
 | "It's a black box, I want to see and feel it" | Observability became a requirement, not a nicety |
 | Prefer recommendations over option lists | Decisions are brought with a recommended default |
 | Ask when it matters | Questions are batched; defaults are stated |
@@ -151,6 +152,13 @@ These came from the owner and are standing rules.
 | Monitoring | `Metrics` sampler, rollups and a Performance view |
 | Slice 3 | Cascading policy, standing guarantees and ledger, regional cut-offs, deadline enforcement, settlement step |
 | Dashboard motion | Persistent-DOM rewrite and calm motion (from David's handover notes) |
+| Money, evidence, economics | Integer money, hash-chained audit log, cost and savings ledger, PCI and Dodd-Frank evidence notes (ADR 0008) |
+| Replay the day | Journal in the log; `Replay`: state at a moment, 11 rules, what-if, comparison (ADR 0009) |
+| Recovery and jurisdiction | Write-ahead barrier, fail closed, one writer per log, recovery from the log (ADR 0010); eligibility, regional logs, residency proof for 11 jurisdictions (ADR 0011) |
+| Supervised audit | Audit router under the application supervisor; production refuses to start without it |
+| Design for Test lab | `mix demo --lab`: fault injection, crash at an exact event, recover, 17 scenarios (architecture/08) |
+| Code-shape limits | Credo limits on complexity, nesting, size and duplication; refactor of ~30 functions; shared `Validation`, `Poll`, `Selector.Narrator`, `Eligibility.Parser` (ADR 0012) |
+| Documentation pass | Developer, testing, requirements and user guides; diagrams and quality snapshot brought up to date |
 
 ## 8. Open questions
 
@@ -201,10 +209,12 @@ These came from the owner and are standing rules.
 | R27 | Data residency: regional logs and a residency proof exist, but retention is not enforced, rules are unconfirmed by counsel, and a corridor touching a local-only region leaves the other side without a record | high | high | Retention and archival; counsel review; decide the corridor policy |
 | R28 | Recovery reconciles a pay it cannot prove was never sent as in doubt, so a crash in that window costs a human review; resumed work loses cost attribution and the policy label | certain | low | Accept; improve with provider-side status guarantees |
 | R29 | Two writers on one log would break the chain; guarded by a lock file that relies on the OS process table | low | high | Keep the lock; use a real distributed lock if the log moves off a local disk |
+| R30 | A one-off cascade of failures from a failed global audit sink was seen twice in full `mix test` runs and never reproduced | low | medium | If it recurs keep the first failure's output; suspected shared global state between suites |
+| R31 | `selection_test` "mixed providers" compares latencies a millisecond apart and can flip under heavy parallel load | low | low | Re-run alone; make the fake's latencies explicit when next touched |
 
 ## 10. Roadmap
 
-Status as of 2026-10-15. See also [ROADMAP.md](ROADMAP.md).
+Status as of 2026-10-20. See also [ROADMAP.md](ROADMAP.md).
 
 | Phase | Content | Status |
 |---|---|---|
@@ -213,12 +223,13 @@ Status as of 2026-10-15. See also [ROADMAP.md](ROADMAP.md).
 | 2.1 | Policy + quote-and-select | ✅ done |
 | 2.2 | Lifecycle, undo, reconcile, narrative, dashboard | ✅ done |
 | 2.3 | Cascading policy, standing guarantees, deadlines, regional cut-offs, settlement step | ✅ done (multi-phase settlement and timezone data remain) |
-| 3 | Sentinel (configurable, persistent), event-sourced durable log, durable store, supervision of providers; performance metrics | 🟡 metrics and charts done; the rest 🔲 |
+| 2.4 | Exact money, audit chain, economics, replay, write-ahead recovery, jurisdiction and regional logs, supervised audit, Test lab, code-shape limits | ✅ done (retention, forwards, sanctions/KYC remain) |
+| 3 | Sentinel (configurable, persistent), event-sourced durable log, durable store, supervision of providers; performance metrics | 🟡 metrics, charts, log-based recovery done; durable deal store and supervision of providers 🔲 |
 | 4 | Load / soak / chaos testing, system suite, regression pack, CI | 🟡 system suite, regression pack, mutation testing, CI workflow done; load testing 🔲 |
 | 5 | Distribution: single owner per transaction across nodes, partition convergence, provider discovery | 🔲 |
 | 6 | Production hardening: auth, TLS, money types, compliance, operations runbook | 🔲 |
 
-Near-term: run CI, Dialyzer, load/soak mode, durable store, UC-4 review tooling, timezone data.
+Near-term: make CI a required check, Dialyzer, load/soak mode, retention and rotation, forward deal lifecycle, sanctions/KYC gates, counsel review of the jurisdiction matrix, UC-4 review tooling, timezone data.
 
 ## 11. Reading order for a newcomer
 
@@ -226,5 +237,6 @@ Near-term: run CI, Dialyzer, load/soak mode, durable store, UC-4 review tooling,
 2. [architecture/01-use-cases.md](architecture/01-use-cases.md): what the system is for.
 3. [architecture/04-design-sequences-and-activities.md](architecture/04-design-sequences-and-activities.md): how it behaves.
 4. `lib/actor_tx_spike/payment.ex`, `selector.ex`, `provider/health.ex`: the three modules that matter.
-5. Run `mix demo` and break things.
-6. [adr/](adr/) for the reasons; [quality/QUALITY_SNAPSHOT.md](quality/QUALITY_SNAPSHOT.md) for the evidence.
+5. Run `mix demo --lab` and break things (the [user guide](USER_GUIDE.md)).
+6. [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for the commands and the quality limits, [TESTING.md](TESTING.md) for the test layers, [REQUIREMENTS.md](REQUIREMENTS.md) for what the system must do and where each is verified.
+7. [adr/](adr/) for the reasons; [quality/QUALITY_SNAPSHOT.md](quality/QUALITY_SNAPSHOT.md) for the evidence.

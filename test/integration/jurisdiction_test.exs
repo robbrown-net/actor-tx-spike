@@ -6,6 +6,8 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
   """
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.Audit.Router
   alias ActorTxSpike.{Eligibility, Events, Policy, Recovery, Replay}
   alias ActorTxSpike.Provider.{Fake, Server}
@@ -71,13 +73,16 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
   defp wait_logged(ctx, log, id, kind \\ "tx_costed") do
     path = Path.join(ctx.dir, log <> ".log")
 
-    Enum.reduce_while(1..300, nil, fn _, _ ->
-      found =
-        File.exists?(path) and
-          path |> File.stream!() |> Enum.any?(&(&1 =~ id and &1 =~ ~s("kind":"#{kind}")))
+    Wait.until!(fn -> logged?(path, id, kind) end,
+      tries: 300,
+      every_ms: 20,
+      message: "#{id} never reached #{log}"
+    )
+  end
 
-      if found, do: {:halt, :ok}, else: Process.sleep(20) && {:cont, nil}
-    end)
+  defp logged?(path, id, kind) do
+    File.exists?(path) and
+      path |> File.stream!() |> Enum.any?(&(&1 =~ id and &1 =~ ~s("kind":"#{kind}")))
   end
 
   defp day(ctx, log, ids) do

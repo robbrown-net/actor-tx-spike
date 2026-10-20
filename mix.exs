@@ -37,7 +37,9 @@ defmodule ActorTxSpike.MixProject do
         "cmd env MIX_ENV=test COVERAGE_THRESHOLD=85 mix test --cover test/integration"
       ],
       "test.regression": ["cmd env MIX_ENV=test mix test --only regression"],
-      "test.system": ["cmd env MIX_ENV=test mix test --include system test/system"]
+      "test.system": ["cmd env MIX_ENV=test mix test --include system test/system"],
+      # the pre-commit check: format, static analysis incl. the code-shape limits, unit gate
+      quality: ["format --check-formatted", "credo --strict", "test.unit"]
     ]
   end
 
@@ -55,8 +57,9 @@ defmodule ActorTxSpike.MixProject do
   ]
 
   defp ignored_modules do
-    # Mix.Tasks.Demo, Mix.Tasks.Audit.Verify and Mix.Tasks.Replay are thin entry points and is never measured.
-    always = [Mix.Tasks.Demo, Mix.Tasks.Audit.Verify, Mix.Tasks.Replay]
+    # Mix.Tasks.Demo, Mix.Tasks.Audit.Verify and Mix.Tasks.Replay are thin entry points, and
+    # ActorTxSpike.Wait (test/support) is a test helper: none of them is measured.
+    always = [Mix.Tasks.Demo, Mix.Tasks.Audit.Verify, Mix.Tasks.Replay, ActorTxSpike.Wait]
     if System.get_env("COVERAGE_IGNORE_TOOLING") == "1", do: always ++ @tooling, else: always
   end
 

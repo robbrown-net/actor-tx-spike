@@ -24,8 +24,12 @@ defmodule ActorTxSpike.Replay.Residency do
     %{transactions: length(ids), violations: violations, ok?: violations == []}
   end
 
+  @doc "The logs (by name) that hold records of a transaction."
+  @spec logs_holding(%{String.t() => Day.t()}, String.t()) :: [String.t()]
+  def logs_holding(days, id), do: for({log, day} <- days, Map.has_key?(day.by_tx, id), do: log)
+
   defp check_tx(id, days) do
-    present = for {log, day} <- days, Map.has_key?(day.by_tx, id), do: log
+    present = logs_holding(days, id)
     expected = expected_logs(id, days, present)
 
     leaks =

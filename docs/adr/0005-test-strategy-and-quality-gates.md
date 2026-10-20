@@ -22,6 +22,12 @@ Owner requirement: 100% automated unit-test coverage and >85% automated integrat
   (`muzak` was tried first and is incompatible with Elixir 1.18's ExUnit.)
 * **CI** (`.github/workflows/ci.yml`): format, Credo strict, audits, unit/integration gates, regression, system.
 
+## Amendment (2026-10-20): code-shape gates and shared waiting
+* Credo strict now also gates **code shape**: cyclomatic complexity at most 4, nesting at most 2, ABC size at most 40 and duplicated code (mass 16) in `lib/`. See [ADR 0012](0012-code-shape-limits.md).
+* Tests wait for conditions with `ActorTxSpike.Wait.until!/2` (over `ActorTxSpike.Poll`); hand-rolled `cond` + `Process.sleep` loops are no longer written.
+* `mix quality` runs format check, Credo strict and the unit gate in one command.
+* `test/support/` holds test-only helpers (compiled in the test environment only) and is excluded from coverage.
+
 ## Known limits
 * Coverage is **line-based**; Erlang's `cover` has no branch coverage. Mutation testing is the stand-in and is run on demand over a sample, not exhaustively.
 * The system suite runs the SUT in another OS process, so it has no line coverage; scenario coverage against the use cases is tracked instead.

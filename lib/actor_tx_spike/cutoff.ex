@@ -15,32 +15,27 @@ defmodule ActorTxSpike.Cutoff do
   """
 
   @enforce_keys [:region]
+  alias ActorTxSpike.Validation
+
   defstruct [:region, :hour, :minute, :offset, :at_ms]
 
   @type t :: %__MODULE__{}
 
   @spec new(map()) :: {:ok, t()} | {:error, [String.t()]}
   def new(data) when is_map(data) do
-    data = Map.new(data, fn {k, v} -> {to_string(k), v} end)
+    data = Validation.stringify(data)
     region = Map.get(data, "region")
     hour = Map.get(data, "hour")
     minute = Map.get(data, "minute", 0)
     offset = Map.get(data, "utc_offset_minutes")
 
-    errors =
-      [
-        {is_binary(region) and region != "", "region: required"},
-        {is_integer(hour) and hour in 0..23, "hour: must be 0..23"},
-        {is_integer(minute) and minute in 0..59, "minute: must be 0..59"},
-        {valid_offset?(offset),
-         "utc_offset_minutes: must be an integer in -840..840 or a function of a Date"}
-      ]
-      |> Enum.reject(&elem(&1, 0))
-      |> Enum.map(&elem(&1, 1))
-
-    if errors == [],
-      do: {:ok, %__MODULE__{region: region, hour: hour, minute: minute, offset: offset}},
-      else: {:error, errors}
+    Validation.build(%__MODULE__{region: region, hour: hour, minute: minute, offset: offset}, [
+      {Validation.present?(region), "region: required"},
+      {Validation.in_range?(hour, 0..23), "hour: must be 0..23"},
+      {Validation.in_range?(minute, 0..59), "minute: must be 0..59"},
+      {valid_offset?(offset),
+       "utc_offset_minutes: must be an integer in -840..840 or a function of a Date"}
+    ])
   end
 
   @doc "An absolute-instant cut-off (UTC milliseconds)."

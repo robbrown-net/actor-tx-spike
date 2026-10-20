@@ -34,44 +34,45 @@ defmodule ActorTxSpike.Replay.WhatIf do
 
   defp replay(day, overrides) do
     rows = for id <- day.tx_order, row = row(id, day.by_tx[id], overrides), do: row
+    Map.merge(%{overrides: overrides, transactions: length(rows), rows: rows}, totals(rows))
+  end
 
+  # What the change is worth, over the transactions that have a price both ways.
+  defp totals(rows) do
     comparable = Enum.filter(rows, &(&1.base_net && &1.alt_net))
 
     %{
-      overrides: overrides,
-      transactions: length(rows),
       comparable: length(comparable),
       changed: Enum.count(comparable, & &1.changed?),
       lost_all_options: Enum.count(rows, &(&1.base && is_nil(&1.alt))),
       net_delta: comparable |> Enum.map(&(&1.alt_net - &1.base_net)) |> Enum.sum(),
-      latency_delta_ms: comparable |> Enum.map(&(&1.alt_latency - &1.base_latency)) |> Enum.sum(),
-      rows: rows
+      latency_delta_ms: comparable |> Enum.map(&(&1.alt_latency - &1.base_latency)) |> Enum.sum()
     }
   end
 
-  defp row(id, rs, overrides) do
-    if Tx.all(rs, "quote_observed") == [] do
-      nil
-    else
-      {:ok, base} = Tx.reselect(rs)
-      {:ok, alt} = Tx.reselect(rs, overrides)
-      summary = Tx.summarize(rs)
-      {b, a} = {top(base), top(alt)}
+  defp row(id, rs, overrides), do: row(id, rs, overrides, Tx.all(rs, "quote_observed"))
 
-      %{
-        tx: id,
-        outcome: summary.outcome,
-        actual: summary.provider,
-        actual_net: summary.net,
-        base: b.id,
-        base_net: b.net,
-        base_latency: b.latency,
-        alt: a.id,
-        alt_net: a.net,
-        alt_latency: a.latency,
-        changed?: b.id != a.id
-      }
-    end
+  defp row(_id, _rs, _overrides, []), do: nil
+
+  defp row(id, rs, overrides, _observed) do
+    {:ok, base} = Tx.reselect(rs)
+    {:ok, alt} = Tx.reselect(rs, overrides)
+    summary = Tx.summarize(rs)
+    {b, a} = {top(base), top(alt)}
+
+    %{
+      tx: id,
+      outcome: summary.outcome,
+      actual: summary.provider,
+      actual_net: summary.net,
+      base: b.id,
+      base_net: b.net,
+      base_latency: b.latency,
+      alt: a.id,
+      alt_net: a.net,
+      alt_latency: a.latency,
+      changed?: b.id != a.id
+    }
   end
 
   # The provider a selection puts first, as plain values (nil fields when nobody is left).

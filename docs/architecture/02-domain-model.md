@@ -193,6 +193,11 @@ classDiagram
 | **Breaker** | Per-provider circuit: `closed / open / half_open`. |
 | **Quarantine** | A provider whose version changed is not trusted until released. |
 | **Narrative** | The ordered stream of events describing everything the system does. |
+| **Test lab** | The dashboard tab (`mix demo --lab`) for provoking and judging restarts, idempotency, the router and audit-log downtime. |
+| **Scenario** | A named situation in the Test lab with an expected outcome and hard checks (17 exist). |
+| **Fault mode** | The state the lab puts the durable log in: healthy, down, or failing after N steps. |
+| **Armed crash** | A request to kill the next transaction the moment a given event happens, as a node dying at that instant would. |
+| **Code-shape limit** | A numeric limit on function complexity, nesting, size and duplication, enforced in CI (ADR 0012). |
 
 ## Operation contracts (key system operations)
 

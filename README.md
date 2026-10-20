@@ -15,7 +15,7 @@ A transaction asks several providers for FX quotes, scores them under a cascadin
 - can **replay a day** from the log: the state at any moment, rule verification, what-if strategies, comparison with another system;
 - prices what each transaction **costs and saves**.
 
-See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning, [docs/README.md](docs/README.md) for the full documentation index, and [docs/ROADMAP.md](docs/ROADMAP.md) for status.
+See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning and [docs/ROADMAP.md](docs/ROADMAP.md) for status. Documentation by audience ([full index](docs/README.md)): [user guide](docs/USER_GUIDE.md), [developer guide](docs/DEVELOPER_GUIDE.md), [testing guide](docs/TESTING.md), [requirements](docs/REQUIREMENTS.md), [architecture](docs/architecture/05-system-structure.md).
 
 ```text
 submit ─► Payment (one process per transaction, owns the lifecycle)
@@ -46,7 +46,21 @@ mix test.system          # boots the real system and drives it over HTTP/SSE
 mix demo                 # live world + dashboard on http://127.0.0.1:4040
 mix demo --lab           # the same, plus the Test lab tab (see below)
 python3 scripts/mutate.py  # mutation testing of the pure core (slow, on demand)
+mix quality              # before committing: format check + Credo strict (code-shape limits) + unit gate
 ```
+
+### Quality limits
+
+Enforced in CI by `mix credo --strict` and the coverage gates (reasons in [ADR 0012](docs/adr/0012-code-shape-limits.md), how to stay inside them in the [developer guide](docs/DEVELOPER_GUIDE.md#3-quality-limits-and-how-they-are-enforced)):
+
+| Limit | Value |
+|---|---|
+| Cyclomatic complexity per function | 4 or less |
+| Nesting depth | 2 or less |
+| ABC size per function (`lib/`) | 40 or less |
+| Duplicated code (`lib/`) | none at mass 16 |
+| Unit coverage / integration coverage | 100% / above 85% |
+| Compiler warnings, formatting | none / `mix format` clean |
 
 `mix demo` options:
 

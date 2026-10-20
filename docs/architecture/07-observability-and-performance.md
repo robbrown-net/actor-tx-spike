@@ -128,6 +128,11 @@ partitioning and a retention policy (e.g. full detail 30 days, summaries after).
 | Load generator / benchmark mode | 🔲 |
 | `:telemetry` conventions for external tools | 🔲 |
 
+Structure (2026-10-20): `Metrics.take_sample/1` is a pipeline of small steps: `reading` (raw cumulative counters) →
+`rates` (per-second figures between two readings) → `tx_deltas` (counts of outcomes since the last sample) → `store` (raw ring) →
+`roll` (fold into the minute bucket, closing the previous minute when it ended). `Rollup.finalize/1` is table-driven:
+each output is a mean, maximum or sum of one series. Behaviour and data are unchanged.
+
 Known limits: per-process CPU attribution uses reductions in the top-process table only;
 host CPU/memory (`os_mon`) is not collected; network figures cover this VM's TCP sockets,
 including the dashboard's own polling.

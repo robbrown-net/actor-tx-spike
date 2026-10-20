@@ -219,6 +219,9 @@ erDiagram
 
 ## Journal schema v1 (added 2026-10-17)
 
+> Unchanged by the 2026-10-20 refactor. A recorded quote is rebuilt in exactly one place,
+> `Replay.Tx.quotes/1` / `quote_from/1`, which both replay and recovery use.
+
 Journal events live in the same stream and audit log as the narrative (actor `journal`).
 Together with the existing narrative kinds they are the replay script.
 

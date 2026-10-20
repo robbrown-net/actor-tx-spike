@@ -170,8 +170,8 @@ Consequences, before any jurisdiction detail:
 **Built since this list was written (2026-10-17):** fail closed when the log is unavailable
 (write-ahead barrier), one writer per log, recovery of open transactions from the log
 (ADR 0010); jurisdiction eligibility, regional logs and provable residency (ADR 0011).
-Still open from the items below: supervising the audit writer in the application tree and
-refusing to start without it; retention, rotation and off-host copy; sanctions and KYC gates;
+Supervision of the audit router and refusing to start without it were done on 2026-10-20.
+Still open from the items below: alerting when the router restarts; retention, rotation and off-host copy; sanctions and KYC gates;
 the forward deal lifecycle and trade reporting; counsel's confirmation of every rule.
 
 1. ~~Supervise the audit writer and fail closed.~~ **Done 2026-10-20:** the router is supervised and permanent, fails closed while down, and production refuses to start without it. Alerting on a restart is still to do.

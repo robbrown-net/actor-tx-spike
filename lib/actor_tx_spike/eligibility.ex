@@ -36,11 +36,10 @@ defmodule ActorTxSpike.Eligibility do
   `local_only` (default false), `retention_days` (default none).
   """
 
-  @rule_keys ~w(instruments customer_types providers logs local_only retention_days)
   @instruments [:spot, :forward]
   @customer_types [:business, :retail]
 
-  alias ActorTxSpike.Eligibility.Rule
+  alias ActorTxSpike.Eligibility.{Parser, Rule}
 
   defstruct default: %Rule{}, regions: %{}
   @type t :: %__MODULE__{default: Rule.t(), regions: %{String.t() => Rule.t()}}
@@ -48,24 +47,8 @@ defmodule ActorTxSpike.Eligibility do
   @doc "Build from plain data (string or atom keys). Returns every error found."
   @spec new(map()) :: {:ok, t()} | {:error, [String.t()]}
   def new(data) when is_map(data) do
-    data = stringify(data)
-
-    unknown =
-      for key <- Map.keys(data) -- ~w(default regions), do: "unknown key: #{key}"
-
-    {default, e1} = parse_rule(Map.get(data, "default", %{}), "default")
-
-    {regions, e2} =
-      data
-      |> Map.get("regions", %{})
-      |> Enum.reduce({%{}, []}, fn {code, raw}, {acc, errs} ->
-        {rule, e} = parse_rule(raw, "regions.#{code}")
-        {Map.put(acc, to_string(code), rule), errs ++ e}
-      end)
-
-    case unknown ++ e1 ++ e2 do
-      [] -> {:ok, %__MODULE__{default: default, regions: regions}}
-      errors -> {:error, errors}
+    with {:ok, {default, regions}} <- Parser.parse(data) do
+      {:ok, %__MODULE__{default: default, regions: regions}}
     end
   end
 
@@ -82,25 +65,11 @@ defmodule ActorTxSpike.Eligibility do
   """
   @spec decide(t(), map()) :: map()
   def decide(%__MODULE__{} = e, request) do
-    regions =
-      for key <- [:origin_region, :destination_region],
-          r = request[key],
-          uniq: true,
-          do: to_string(r)
-
-    rules = if regions == [], do: [e.default], else: Enum.map(regions, &rule_for(e, &1))
+    regions = regions_of(request)
+    rules = rules_for(e, regions)
     instrument = to_atom(request[:instrument], :spot)
     customer = to_atom(request[:customer_type], :business)
-
-    reasons =
-      for {region, rule} <- pairs(regions, rules),
-          reason <- [
-            instrument not in rule.instruments && "#{instrument} is not permitted in #{region}",
-            customer not in rule.customer_types &&
-              "#{customer} customers are not permitted in #{region}"
-          ],
-          reason,
-          do: reason
+    reasons = violations(pairs(regions, rules), instrument, customer)
 
     %{
       permitted?: reasons == [],
@@ -110,11 +79,7 @@ defmodule ActorTxSpike.Eligibility do
       customer_type: customer,
       provider_rules: for(r <- rules, r.providers != :all, do: provider_rule(r.providers)),
       logs: logs(rules),
-      retention_days:
-        rules
-        |> Enum.map(& &1.retention_days)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.max(fn -> nil end)
+      retention_days: longest_retention(rules)
     }
   end
 
@@ -136,7 +101,37 @@ defmodule ActorTxSpike.Eligibility do
 
   # ---- internals ---------------------------------------------------------
 
+  defp regions_of(request) do
+    for key <- [:origin_region, :destination_region],
+        r = request[key],
+        uniq: true,
+        do: to_string(r)
+  end
+
+  defp rules_for(e, []), do: [e.default]
+  defp rules_for(e, regions), do: Enum.map(regions, &rule_for(e, &1))
+
   defp rule_for(e, region), do: Map.get(e.regions, region, e.default)
+
+  defp violations(pairs, instrument, customer) do
+    Enum.flat_map(pairs, fn {region, rule} ->
+      [
+        forbidden(instrument, rule.instruments, "#{instrument} is not permitted in #{region}"),
+        forbidden(
+          customer,
+          rule.customer_types,
+          "#{customer} customers are not permitted in #{region}"
+        )
+      ]
+      |> Enum.reject(&is_nil/1)
+    end)
+  end
+
+  defp forbidden(value, allowed, message), do: if(value in allowed, do: nil, else: message)
+
+  defp longest_retention(rules) do
+    rules |> Enum.map(& &1.retention_days) |> Enum.reject(&is_nil/1) |> Enum.max(fn -> nil end)
+  end
 
   defp pairs([], [rule]), do: [{"default", rule}]
   defp pairs(regions, rules), do: Enum.zip(regions, rules)
@@ -155,77 +150,4 @@ defmodule ActorTxSpike.Eligibility do
 
   defp to_atom(value, default),
     do: Enum.find(@instruments ++ @customer_types, default, &(Atom.to_string(&1) == value))
-
-  defp parse_rule(raw, path) when is_map(raw) do
-    raw = stringify(raw)
-    unknown = for key <- Map.keys(raw) -- @rule_keys, do: "#{path}: unknown key #{key}"
-
-    fields = [
-      {:instruments, "instruments", &enum_list(&1, @instruments)},
-      {:customer_types, "customer_types", &enum_list(&1, @customer_types)},
-      {:providers, "providers", &parse_providers/1},
-      {:logs, "logs", &parse_logs/1},
-      {:local_only, "local_only", &parse_bool/1},
-      {:retention_days, "retention_days", &parse_retention/1}
-    ]
-
-    {values, errors} =
-      Enum.reduce(fields, {%{}, unknown}, fn {field, key, parse}, {vals, errs} ->
-        with {:ok, value} <- Map.fetch(raw, key),
-             {:error, message} <- parse.(value) do
-          {vals, errs ++ ["#{path}.#{key}: #{message}"]}
-        else
-          :error -> {vals, errs}
-          {:ok, parsed} -> {Map.put(vals, field, parsed), errs}
-        end
-      end)
-
-    {struct!(Rule, values), errors}
-  end
-
-  defp parse_rule(_raw, path), do: {%Rule{}, ["#{path}: must be a map"]}
-
-  defp enum_list(list, allowed) when is_list(list) and list != [] do
-    parsed = Enum.map(list, fn v -> Enum.find(allowed, &(Atom.to_string(&1) == to_string(v))) end)
-
-    if Enum.any?(parsed, &is_nil/1),
-      do: {:error, "unknown value (expected some of #{inspect(allowed)})"},
-      else: {:ok, parsed}
-  end
-
-  defp enum_list(_, _), do: {:error, "must be a non-empty list"}
-
-  defp parse_providers("all"), do: {:ok, :all}
-
-  defp parse_providers(%{} = map) do
-    case stringify(map) do
-      %{"allow" => list} when is_list(list) and map_size(map) == 1 ->
-        {:ok, {:allow, Enum.map(list, &to_string/1)}}
-
-      %{"deny" => list} when is_list(list) and map_size(map) == 1 ->
-        {:ok, {:deny, Enum.map(list, &to_string/1)}}
-
-      _ ->
-        {:error, ~s(must be "all", {"allow": [...]} or {"deny": [...]})}
-    end
-  end
-
-  defp parse_providers(_), do: {:error, ~s(must be "all", {"allow": [...]} or {"deny": [...]})}
-
-  defp parse_logs([_ | _] = logs) do
-    if Enum.all?(logs, &(is_binary(&1) and &1 =~ ~r/^[A-Za-z0-9_-]+$/)),
-      do: {:ok, logs},
-      else: {:error, "log names must be letters, digits, - or _"}
-  end
-
-  defp parse_logs(_), do: {:error, "must be a non-empty list of log names"}
-
-  defp parse_bool(v) when is_boolean(v), do: {:ok, v}
-  defp parse_bool(_), do: {:error, "must be true or false"}
-
-  defp parse_retention(nil), do: {:ok, nil}
-  defp parse_retention(v) when is_integer(v) and v > 0, do: {:ok, v}
-  defp parse_retention(_), do: {:error, "must be nil or a positive number of days"}
-
-  defp stringify(map), do: Map.new(map, fn {k, v} -> {to_string(k), v} end)
 end

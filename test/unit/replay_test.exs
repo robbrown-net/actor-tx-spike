@@ -6,7 +6,7 @@ defmodule ActorTxSpike.ReplayTest do
   """
   use ExUnit.Case, async: true
 
-  alias ActorTxSpike.{Audit, Guarantee, Journal, Ledger, Policy, Replay}
+  alias ActorTxSpike.{Audit, Guarantee, Journal, Ledger, Policy, Replay, Wait}
   alias ActorTxSpike.Provider.{Fake, Server}
   alias ActorTxSpike.Replay.{Compare, Report, Rules, Tx, WhatIf}
 
@@ -43,17 +43,16 @@ defmodule ActorTxSpike.ReplayTest do
   end
 
   defp wait_costed(path, ids) do
-    done = fn ->
-      File.exists?(path) and
-        path
-        |> File.stream!()
-        |> Enum.map(&JSON.decode!/1)
-        |> Enum.count(&(&1["kind"] == "tx_costed" and &1["tx"] in ids)) == length(ids)
-    end
+    Wait.until!(fn -> costed(path, ids) == length(ids) end, tries: 200, every_ms: 20)
+    :ok
+  end
 
-    Enum.reduce_while(1..200, nil, fn _, _ ->
-      if done.(), do: {:halt, :ok}, else: Process.sleep(20) && {:cont, nil}
-    end)
+  defp costed(path, ids) do
+    File.exists?(path) and
+      path
+      |> File.stream!()
+      |> Enum.map(&JSON.decode!/1)
+      |> Enum.count(&(&1["kind"] == "tx_costed" and &1["tx"] in ids))
   end
 
   # One good day: happy + guarantee, failover, needs_review, failed.
@@ -265,6 +264,7 @@ defmodule ActorTxSpike.ReplayTest do
     assert [%{at: 10, command: %{"action" => "pace"}}] = s.controls
     assert s.providers["p"].health["state"] == "stalled"
     assert s.providers["p"].last_quote == nil
+    assert Report.state(s) =~ "p: stalled, breaker"
     assert Replay.state_at(day, {:at_ms, 35}).providers["p"].health["state"] == "healthy"
   end
 
@@ -421,6 +421,14 @@ defmodule ActorTxSpike.ReplayTest do
       end)
 
     assert :margin_arithmetic in rules(day)
+  end
+
+  test "margin_arithmetic: a transaction that never chose a provider has no margin to check", %{
+    fixture: f
+  } do
+    day = mutate(f, fn rs -> drop(rs, &(&1["kind"] in ~w(provider_chosen tx_economics))) end)
+
+    refute :margin_arithmetic in rules(day)
   end
 
   test "economics_consistent: a chosen net that is not the quote's is caught", %{fixture: f} do

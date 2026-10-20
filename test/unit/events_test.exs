@@ -1,6 +1,8 @@
 defmodule ActorTxSpike.EventsTest do
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.Events
 
   # Each test gets its own event server; `emit/5` talks to the named global,
@@ -147,11 +149,5 @@ defmodule ActorTxSpike.EventsTest do
     assert {:error, {:events_unavailable, _}} = Events.barrier(:no_such_events_server)
   end
 
-  defp wait_until(fun, tries \\ 100) do
-    cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition not met")
-      true -> Process.sleep(10) && wait_until(fun, tries - 1)
-    end
-  end
+  defp wait_until(fun, tries \\ 100), do: Wait.until!(fun, tries: tries, every_ms: 10)
 end

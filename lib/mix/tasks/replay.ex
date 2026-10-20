@@ -19,35 +19,32 @@ defmodule Mix.Tasks.Replay do
   alias ActorTxSpike.Replay
   alias ActorTxSpike.Replay.Report
 
+  @positions [n: :n, ms: :at_ms, seq: :seq]
+
   @impl true
   def run(args) do
     {opts, rest, _} =
       OptionParser.parse(args, strict: [n: :integer, ms: :integer, seq: :integer, set: :keep])
 
-    case rest do
-      ["verify", path] ->
-        verify(load(path))
+    command(rest, opts)
+  end
 
-      ["txs", path] ->
-        txs(load(path))
+  defp command(["verify", path], _opts), do: path |> load() |> verify()
+  defp command(["txs", path], _opts), do: path |> load() |> txs()
+  defp command(["at", path], opts), do: path |> load() |> at(opts)
 
-      ["at", path] ->
-        at(load(path), opts)
+  defp command(["whatif", path], opts),
+    do: path |> load() |> whatif(Keyword.get_values(opts, :set))
 
-      ["whatif", path] ->
-        whatif(load(path), Keyword.get_values(opts, :set))
+  defp command(["residency", dir], _opts), do: residency(dir)
 
-      ["residency", dir] ->
-        residency(dir)
+  defp command(["diff", a, b], _opts),
+    do: Mix.shell().info(Report.diff(Replay.Compare.diff(load(a), load(b))))
 
-      ["diff", a, b] ->
-        Mix.shell().info(Report.diff(Replay.Compare.diff(load(a), load(b))))
-
-      _ ->
-        Mix.raise(
-          "usage: mix replay verify|txs|at|whatif PATH  |  mix replay diff A B  |  mix replay residency DIR"
-        )
-    end
+  defp command(_other, _opts) do
+    Mix.raise(
+      "usage: mix replay verify|txs|at|whatif PATH  |  mix replay diff A B  |  mix replay residency DIR"
+    )
   end
 
   defp load(path) do
@@ -58,12 +55,7 @@ defmodule Mix.Tasks.Replay do
   end
 
   defp residency(dir) do
-    days =
-      case Replay.load_dir(dir) do
-        {:ok, days} -> days
-        {:error, why} -> Mix.raise("cannot replay #{dir}: #{inspect(why)}")
-      end
-
+    days = load_dir(dir)
     result = Replay.Residency.check(days)
 
     Mix.shell().info(
@@ -73,6 +65,13 @@ defmodule Mix.Tasks.Replay do
 
     for v <- result.violations, do: Mix.shell().info("  [#{v.rule}] #{v.detail}")
     unless result.ok?, do: Mix.raise("data residency was not respected")
+  end
+
+  defp load_dir(dir) do
+    case Replay.load_dir(dir) do
+      {:ok, days} -> days
+      {:error, why} -> Mix.raise("cannot replay #{dir}: #{inspect(why)}")
+    end
   end
 
   defp verify(day) do
@@ -89,16 +88,11 @@ defmodule Mix.Tasks.Replay do
     end
   end
 
-  defp at(day, opts) do
-    spec =
-      cond do
-        opts[:n] -> {:n, opts[:n]}
-        opts[:ms] -> {:at_ms, opts[:ms]}
-        opts[:seq] -> {:seq, opts[:seq]}
-        true -> Mix.raise("give --n, --ms or --seq")
-      end
+  defp at(day, opts), do: Mix.shell().info(Report.state(Replay.state_at(day, position(opts))))
 
-    Mix.shell().info(Report.state(Replay.state_at(day, spec)))
+  defp position(opts) do
+    Enum.find_value(@positions, fn {option, kind} -> opts[option] && {kind, opts[option]} end) ||
+      Mix.raise("give --n, --ms or --seq")
   end
 
   defp whatif(day, sets) do

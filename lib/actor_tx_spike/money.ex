@@ -64,13 +64,13 @@ defmodule ActorTxSpike.Money do
     r = n - q * d
     twice = 2 * r
 
-    cond do
-      twice < d -> q
-      twice > d -> q + 1
-      rem(q, 2) == 0 -> q
-      true -> q + 1
-    end
+    round_half_even(q, twice, d)
   end
+
+  defp round_half_even(q, twice, d) when twice < d, do: q
+  defp round_half_even(q, twice, d) when twice > d, do: q + 1
+  defp round_half_even(q, _twice, _d) when rem(q, 2) == 0, do: q
+  defp round_half_even(q, _twice, _d), do: q + 1
 
   defp scaled(value, factor) when is_integer(value), do: value * factor
 

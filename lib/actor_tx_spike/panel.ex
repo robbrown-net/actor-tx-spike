@@ -108,18 +108,17 @@ defmodule ActorTxSpike.Panel do
   end
 
   defp read_body(socket, headers) do
-    case Integer.parse(Map.get(headers, "content-length", "0")) do
-      {0, _} ->
-        {:ok, ""}
-
-      {len, _} when len > 0 and len <= 65_536 ->
-        :inet.setopts(socket, packet: :raw)
-        :gen_tcp.recv(socket, len, 5_000)
-
-      _ ->
-        {:error, :bad_length}
-    end
+    headers |> Map.get("content-length", "0") |> Integer.parse() |> body(socket)
   end
+
+  defp body({0, _}, _socket), do: {:ok, ""}
+
+  defp body({len, _}, socket) when len > 0 and len <= 65_536 do
+    :inet.setopts(socket, packet: :raw)
+    :gen_tcp.recv(socket, len, 5_000)
+  end
+
+  defp body(_other, _socket), do: {:error, :bad_length}
 
   # ---- routes ------------------------------------------------------------
 

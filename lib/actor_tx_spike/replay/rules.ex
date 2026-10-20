@@ -146,8 +146,11 @@ defmodule ActorTxSpike.Replay.Rules do
   defp last_of(rs, provider),
     do: rs |> Enum.filter(&(&1["data"]["provider"] == provider)) |> List.last()
 
+  defp unresolved_money_doubt?(r),
+    do: r["kind"] == "in_doubt" and r["data"]["op"] in ~w(pay settle)
+
   defp no_failover_after_doubt(id, rs) do
-    case Enum.find_index(rs, &(&1["kind"] == "in_doubt" and &1["data"]["op"] in ~w(pay settle))) do
+    case Enum.find_index(rs, &unresolved_money_doubt?/1) do
       nil ->
         []
 
@@ -272,31 +275,33 @@ defmodule ActorTxSpike.Replay.Rules do
     end
   end
 
-  defp margin_arithmetic(id, rs, %{provider: provider}) do
-    received = Tx.first(rs, "tx_received")
-    event = Enum.find(rs, &(&1["kind"] in ~w(guarantee_margin guarantee_exposure)))
-    guarantee = received && received["data"]["guarantee"]
-
-    if event && guarantee && provider do
-      amount = received["data"]["request"]["amount"]
+  defp margin_arithmetic(id, rs, %{provider: provider, amount: amount}) when provider != nil do
+    with %{} = event <- Enum.find(rs, &(&1["kind"] in ~w(guarantee_margin guarantee_exposure))),
+         %{} = guarantee <- recorded_guarantee(rs) do
       guaranteed = Money.convert(amount, guarantee["rate"])
       achieved = Tx.net_of(rs, provider)
-
-      if event["data"]["guaranteed_net"] == guaranteed and
-           event["data"]["achieved_net"] == achieved and
-           event["data"]["margin"] == achieved - guaranteed,
-         do: [],
-         else: [
-           v(
-             :margin_arithmetic,
-             id,
-             event,
-             "recorded margin #{event["data"]["margin"]}, recomputed #{achieved - guaranteed}"
-           )
-         ]
+      margin_check(id, event, guaranteed, achieved)
     else
-      []
+      _ -> []
     end
+  end
+
+  defp margin_arithmetic(_id, _rs, _summary), do: []
+
+  defp recorded_guarantee(rs), do: Tx.first(rs, "tx_received")["data"]["guarantee"]
+
+  defp margin_check(id, %{"data" => d} = event, guaranteed, achieved) do
+    if d["guaranteed_net"] == guaranteed and d["achieved_net"] == achieved and
+         d["margin"] == achieved - guaranteed,
+       do: [],
+       else: [
+         v(
+           :margin_arithmetic,
+           id,
+           event,
+           "recorded margin #{d["margin"]}, recomputed #{achieved - guaranteed}"
+         )
+       ]
   end
 
   defp economics_consistent(id, rs, %{outcome: :completed, provider: provider}) do

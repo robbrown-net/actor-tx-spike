@@ -33,25 +33,34 @@ defmodule ActorTxSpike do
 
     {policy, layers} = resolve_policy(opts, request)
 
-    args =
-      [
-        id: id,
-        request: request,
-        providers: Keyword.fetch!(opts, :providers),
-        policy: policy,
-        policy_layers: layers,
-        cutoff: opts |> Keyword.get(:cutoffs, %{}) |> Map.get(request[:destination_region]),
-        guarantee: opts |> Keyword.get(:guarantees, %{}) |> Map.get(request[:merchant_id]),
-        eligibility: Keyword.get(opts, :eligibility, ActorTxSpike.Eligibility.open()),
-        opts: Keyword.get(opts, :opts, [])
-      ] ++ if(opts[:ledger], do: [ledger: opts[:ledger]], else: [])
+    args = payment_args(id, request, policy, layers, opts)
 
-    case TransactionSupervisor.start_payment(args) do
-      {:ok, _pid} -> {:ok, id}
-      {:error, {:already_started, _pid}} -> {:ok, id}
-      {:error, _reason} = error -> error
-    end
+    args |> TransactionSupervisor.start_payment() |> started(id)
   end
+
+  # Submitting an id that is already running is the same transaction, not an error.
+  defp started({:ok, _pid}, id), do: {:ok, id}
+  defp started({:error, {:already_started, _pid}}, id), do: {:ok, id}
+  defp started({:error, _reason} = error, _id), do: error
+
+  defp payment_args(id, request, policy, layers, opts) do
+    [
+      id: id,
+      request: request,
+      providers: Keyword.fetch!(opts, :providers),
+      policy: policy,
+      policy_layers: layers,
+      cutoff: lookup(opts, :cutoffs, request[:destination_region]),
+      guarantee: lookup(opts, :guarantees, request[:merchant_id]),
+      eligibility: Keyword.get(opts, :eligibility, ActorTxSpike.Eligibility.open()),
+      opts: Keyword.get(opts, :opts, [])
+    ] ++ ledger(opts[:ledger])
+  end
+
+  defp lookup(opts, key, id), do: opts |> Keyword.get(key, %{}) |> Map.get(id)
+
+  defp ledger(nil), do: []
+  defp ledger(ledger), do: [ledger: ledger]
 
   defp resolve_policy(opts, request) do
     case Keyword.fetch(opts, :policy_set) do

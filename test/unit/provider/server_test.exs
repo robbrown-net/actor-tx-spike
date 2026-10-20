@@ -1,6 +1,8 @@
 defmodule ActorTxSpike.Provider.ServerTest do
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   defmodule Misbehaving do
@@ -46,13 +48,7 @@ defmodule ActorTxSpike.Provider.ServerTest do
     {server, fake}
   end
 
-  defp wait_until(fun, tries \\ 100) do
-    cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition not met")
-      true -> Process.sleep(5) && wait_until(fun, tries - 1)
-    end
-  end
+  defp wait_until(fun, tries \\ 100), do: Wait.until!(fun, tries: tries, every_ms: 5)
 
   defp synced(server), do: Server.health(server)
 

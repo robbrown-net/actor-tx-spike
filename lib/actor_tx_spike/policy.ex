@@ -24,6 +24,8 @@ defmodule ActorTxSpike.Policy do
   the candidate set* (1 = best); reliability is a fixed factor per health state.
   """
 
+  alias ActorTxSpike.Validation
+
   @keys ~w(weights min_validity_ms max_latency_ms max_bps_from_best exclude_states)
   @weight_keys ~w(cost speed reliability)
   @states [:unknown, :healthy, :degraded, :stalled, :quarantined]
@@ -39,29 +41,21 @@ defmodule ActorTxSpike.Policy do
 
   @spec new(map()) :: {:ok, t()} | {:error, [String.t()]}
   def new(data) when is_map(data) do
-    data = Map.new(data, fn {k, v} -> {to_string(k), v} end)
+    data = Validation.stringify(data)
     unknown = for key <- Map.keys(data) -- @keys, do: "unknown key: #{key}"
+    {values, errors} = Validation.parse_fields(data, fields(), "", unknown)
 
-    fields = [
+    if errors == [], do: {:ok, struct!(__MODULE__, values)}, else: {:error, errors}
+  end
+
+  defp fields do
+    [
       {:weights, "weights", &parse_weights/1},
       {:min_validity_ms, "min_validity_ms", &parse_min_validity/1},
       {:max_latency_ms, "max_latency_ms", &parse_max_latency/1},
       {:max_bps_from_best, "max_bps_from_best", &parse_max_bps/1},
       {:exclude_states, "exclude_states", &parse_states/1}
     ]
-
-    {values, errors} =
-      Enum.reduce(fields, {%{}, unknown}, fn {field, key, parse}, {values, errors} ->
-        with {:ok, raw} <- Map.fetch(data, key),
-             {:error, message} <- parse.(raw) do
-          {values, errors ++ ["#{key}: #{message}"]}
-        else
-          :error -> {values, errors}
-          {:ok, value} -> {Map.put(values, field, value), errors}
-        end
-      end)
-
-    if errors == [], do: {:ok, struct!(__MODULE__, values)}, else: {:error, errors}
   end
 
   @doc "Is a provider in this health state excluded from calling?"
@@ -74,10 +68,13 @@ defmodule ActorTxSpike.Policy do
   def check(%__MODULE__{} = p, %{validity_ms: validity, latency_ms: latency}) do
     cond do
       validity < p.min_validity_ms -> {:excluded, :quote_expires_too_soon}
-      p.max_latency_ms != nil and latency > p.max_latency_ms -> {:excluded, :too_slow}
+      too_slow?(p, latency) -> {:excluded, :too_slow}
       true -> :ok
     end
   end
+
+  defp too_slow?(%__MODULE__{max_latency_ms: nil}, _latency), do: false
+  defp too_slow?(%__MODULE__{max_latency_ms: max}, latency), do: latency > max
 
   @doc """
   Split candidates (with `:net`) into those within `max_bps_from_best` of the
@@ -124,28 +121,35 @@ defmodule ActorTxSpike.Policy do
   end
 
   defp parse_weights(raw) when is_map(raw) do
-    raw = Map.new(raw, fn {k, v} -> {to_string(k), v} end)
-    extra = Map.keys(raw) -- @weight_keys
+    raw = Validation.stringify(raw)
     values = Enum.map(@weight_keys, &Map.get(raw, &1, 0))
 
-    cond do
-      extra != [] ->
-        {:error, "unknown weights: #{Enum.join(extra, ", ")}"}
+    with :ok <- known_weights(Map.keys(raw) -- @weight_keys),
+         :ok <- usable_weights(values) do
+      [cost, speed, reliability] = Enum.map(values, &(&1 / Enum.sum(values)))
+      {:ok, %{cost: cost, speed: speed, reliability: reliability}}
+    end
+  end
 
-      not Enum.all?(values, &(is_number(&1) and &1 >= 0)) ->
+  defp parse_weights(_), do: {:error, "must be a map"}
+
+  defp known_weights([]), do: :ok
+  defp known_weights(extra), do: {:error, "unknown weights: #{Enum.join(extra, ", ")}"}
+
+  defp non_negative?(value), do: is_number(value) and value >= 0
+
+  defp usable_weights(values) do
+    cond do
+      not Enum.all?(values, &non_negative?/1) ->
         {:error, "must be non-negative numbers"}
 
       Enum.sum(values) == 0 ->
         {:error, "must not all be zero"}
 
       true ->
-        total = Enum.sum(values)
-        [cost, speed, reliability] = Enum.map(values, &(&1 / total))
-        {:ok, %{cost: cost, speed: speed, reliability: reliability}}
+        :ok
     end
   end
-
-  defp parse_weights(_), do: {:error, "must be a map"}
 
   defp parse_min_validity(v) when is_integer(v) and v >= 0, do: {:ok, v}
   defp parse_min_validity(_), do: {:error, "must be a non-negative integer"}

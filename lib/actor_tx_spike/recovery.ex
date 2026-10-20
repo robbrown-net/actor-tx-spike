@@ -30,7 +30,6 @@ defmodule ActorTxSpike.Recovery do
   """
 
   alias ActorTxSpike.{Guarantee, TransactionSupervisor}
-  alias ActorTxSpike.Provider.Quote
   alias ActorTxSpike.Replay.{Day, Tx}
 
   @next %{"accept_quote" => "authorise", "authorise" => "pay", "pay" => "settle", "settle" => nil}
@@ -75,13 +74,20 @@ defmodule ActorTxSpike.Recovery do
   # ---- planning ----------------------------------------------------------
 
   defp open_plan(records, received) do
-    data = received["data"]
-    chosen = Tx.all(records, "provider_chosen")
-    deadline = Tx.first(records, "deadline_set")
+    base = base_plan(records, received)
 
+    case records |> Tx.all("provider_chosen") |> List.last() do
+      nil -> Map.put(base, :mode, :fresh)
+      last -> at_provider(base, records, last)
+    end
+  end
+
+  # What is known before any provider was chosen, plus empty slots for the rest.
+  defp base_plan(records, received) do
+    data = received["data"]
     {:ok, policy} = Tx.policy(received, %{})
 
-    base = %{
+    %{
       status: :open,
       tx: received["tx"],
       request: data["request"],
@@ -89,10 +95,8 @@ defmodule ActorTxSpike.Recovery do
       guarantee: guarantee(data["guarantee"]),
       config: config(data["config"]),
       started_ms: received["at"],
-      region: deadline && deadline["data"]["region"],
-      deadline_ms: deadline && deadline["data"]["deadline_ms"],
-      eligibility_logs: data["eligibility"] && data["eligibility"]["logs"],
-      quotes: quotes(records),
+      eligibility_logs: eligibility_logs(data["eligibility"]),
+      quotes: Tx.quotes(records),
       latencies: latencies(records),
       nets: nets(records, data["request"]["amount"]),
       provider: nil,
@@ -103,43 +107,49 @@ defmodule ActorTxSpike.Recovery do
       after_undo: nil,
       reason: nil
     }
-
-    case List.last(chosen) do
-      nil -> Map.put(base, :mode, :fresh)
-      last -> at_provider(base, records, last)
-    end
+    |> Map.merge(deadline(Tx.first(records, "deadline_set")))
   end
+
+  defp deadline(nil), do: %{region: nil, deadline_ms: nil}
+
+  defp deadline(%{"data" => d}), do: %{region: d["region"], deadline_ms: d["deadline_ms"]}
+
+  defp eligibility_logs(nil), do: nil
+  defp eligibility_logs(eligibility), do: eligibility["logs"]
 
   defp at_provider(base, records, last_chosen) do
     provider = last_chosen["data"]["provider"]
     segment = records |> Enum.drop_while(&(&1 != last_chosen)) |> Enum.drop(1)
 
-    done =
-      for %{"kind" => k, "data" => %{"op" => op}} <- segment,
-          k in ~w(step_succeeded reconciled),
-          do: op
-
     base =
       Map.merge(base, %{
         provider: provider,
-        done: done,
-        remaining: Enum.map(last_chosen["data"]["remaining"] || [], &to_string/1)
+        done: succeeded_ops(segment),
+        remaining: remaining(last_chosen)
       })
 
-    cond do
-      not Map.has_key?(base.quotes, provider) ->
-        Map.merge(base, %{
-          mode: :review,
-          reason: "no quote from #{provider} was recorded, so its position cannot be rebuilt"
-        })
-
-      compensating?(segment) ->
-        compensation(base, segment)
-
-      true ->
-        where_it_stood(base, segment)
-    end
+    route(base, segment, Map.has_key?(base.quotes, provider), compensating?(segment))
   end
+
+  defp succeeded_ops(segment) do
+    for %{"kind" => kind, "data" => %{"op" => op}} <- segment,
+        kind in ~w(step_succeeded reconciled),
+        do: op
+  end
+
+  defp remaining(%{"data" => %{"remaining" => ops}}) when is_list(ops),
+    do: Enum.map(ops, &to_string/1)
+
+  defp remaining(_), do: []
+
+  # The log can only be trusted to rebuild a position if it holds the provider's quote.
+  defp route(base, _segment, false, _compensating?) do
+    reason = "no quote from #{base.provider} was recorded, so its position cannot be rebuilt"
+    Map.merge(base, %{mode: :review, reason: reason})
+  end
+
+  defp route(base, segment, true, true), do: compensation(base, segment)
+  defp route(base, segment, true, false), do: where_it_stood(base, segment)
 
   defp compensating?(segment),
     do:
@@ -149,47 +159,51 @@ defmodule ActorTxSpike.Recovery do
       )
 
   defp compensation(base, segment) do
+    Map.merge(base, %{
+      mode: :undo,
+      undo_queue: undo_queue(base.done, segment),
+      after_undo: after_undo(segment)
+    })
+  end
+
+  # Undo what is in doubt first, then the completed steps latest first, skipping what is undone.
+  defp undo_queue(done, segment) do
     doubtful = for %{"kind" => "cancel_by_key", "data" => %{"op" => op}} <- segment, do: op
-    latest_first = Enum.reverse(base.done)
     undone = for %{"kind" => "undone", "data" => %{"op" => op}} <- segment, do: op
 
-    queue =
-      for original <- doubtful ++ latest_first,
-          undo = Tx.undo_for(original),
-          undo not in undone,
-          do: {undo, original}
+    for original <- doubtful ++ Enum.reverse(done),
+        undo = Tx.undo_for(original),
+        undo not in undone,
+        do: {undo, original}
+  end
 
-    aborting = Enum.find(segment, &(&1["kind"] == "deadline_missed"))
-
-    after_undo =
-      if aborting, do: {:abort, aborting["data"]["region"]}, else: :failover
-
-    Map.merge(base, %{mode: :undo, undo_queue: queue, after_undo: after_undo})
+  defp after_undo(segment) do
+    case Enum.find(segment, &(&1["kind"] == "deadline_missed")) do
+      nil -> :failover
+      %{"data" => data} -> {:abort, data["region"]}
+    end
   end
 
   # No compensation under way: the last thing that happened decides.
   defp where_it_stood(base, segment) do
-    last =
-      segment
-      |> Enum.filter(
-        &(&1["kind"] in ~w(step_started step_succeeded reconciled step_retry in_doubt status_check reconcile_pending))
-      )
-      |> List.last()
-
-    case last do
-      nil ->
-        Map.merge(base, %{mode: :next, op: "accept_quote"})
-
-      %{"kind" => k, "data" => %{"op" => op}} when k in ~w(step_succeeded reconciled) ->
-        after_success(base, op)
-
-      %{"kind" => "step_retry", "data" => %{"op" => op}} ->
-        Map.merge(base, %{mode: :next, op: op})
-
-      %{"data" => %{"op" => op}} ->
-        Map.merge(base, %{mode: :doubt, op: op})
-    end
+    segment
+    |> Enum.filter(
+      &(&1["kind"] in ~w(step_started step_succeeded reconciled step_retry in_doubt status_check reconcile_pending))
+    )
+    |> List.last()
+    |> stood_at(base)
   end
+
+  defp stood_at(nil, base), do: Map.merge(base, %{mode: :next, op: "accept_quote"})
+
+  defp stood_at(%{"kind" => k, "data" => %{"op" => op}}, base)
+       when k in ~w(step_succeeded reconciled),
+       do: after_success(base, op)
+
+  defp stood_at(%{"kind" => "step_retry", "data" => %{"op" => op}}, base),
+    do: Map.merge(base, %{mode: :next, op: op})
+
+  defp stood_at(%{"data" => %{"op" => op}}, base), do: Map.merge(base, %{mode: :doubt, op: op})
 
   defp after_success(base, op) do
     case @next[op] do
@@ -200,20 +214,6 @@ defmodule ActorTxSpike.Recovery do
 
   # ---- inputs rebuilt from the journal -----------------------------------
 
-  defp quotes(records) do
-    for %{"kind" => "quote_observed", "data" => %{"outcome" => "quote"} = d} <- records,
-        into: %{} do
-      {d["provider"],
-       %Quote{
-         provider: d["provider"],
-         request_id: d["request_id"],
-         rate: d["rate"],
-         fee: d["fee"],
-         expires_at_ms: d["expires_at_ms"]
-       }}
-    end
-  end
-
   defp latencies(records) do
     for %{"kind" => "quote_observed", "data" => d} <- records,
         into: %{},
@@ -222,7 +222,7 @@ defmodule ActorTxSpike.Recovery do
 
   defp nets(records, amount) do
     records
-    |> quotes()
+    |> Tx.quotes()
     |> Map.values()
     |> Enum.map(&(ActorTxSpike.Money.convert(amount, &1.rate) - &1.fee))
   end

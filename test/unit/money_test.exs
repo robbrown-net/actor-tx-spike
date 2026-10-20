@@ -38,6 +38,7 @@ defmodule ActorTxSpike.MoneyTest do
     assert Money.div_half_even(6, 4) == 2
     assert Money.div_half_even(-2, 4) == 0
     assert Money.div_half_even(-6, 4) == -2
+    assert_raise FunctionClauseError, fn -> Money.div_half_even(1, 0) end
   end
 
   test "formatting for display" do

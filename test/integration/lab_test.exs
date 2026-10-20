@@ -7,6 +7,8 @@ defmodule ActorTxSpike.LabIntegrationTest do
   # The lab kills the router and fails the audit log on purpose: that is global state.
   use ExUnit.Case, async: false
 
+  alias ActorTxSpike.Wait
+
   @moduletag timeout: 180_000
 
   alias ActorTxSpike.Audit.Router
@@ -43,14 +45,14 @@ defmodule ActorTxSpike.LabIntegrationTest do
     %{dir: dir}
   end
 
-  defp wait_idle(tries \\ 1_200) do
-    snapshot = Lab.snapshot()
+  defp wait_idle do
+    Wait.until!(fn -> Lab.snapshot().running == nil end,
+      tries: 1_200,
+      every_ms: 100,
+      message: "the scenario run never finished"
+    )
 
-    cond do
-      snapshot.running == nil -> snapshot
-      tries == 0 -> flunk("the scenario run never finished")
-      true -> Process.sleep(100) && wait_idle(tries - 1)
-    end
+    Lab.snapshot()
   end
 
   test "every scenario in the library passes" do

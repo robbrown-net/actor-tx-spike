@@ -12,12 +12,14 @@ flowchart LR
     subgraph Core["Transaction core"]
         TS["TransactionSupervisor (DynamicSupervisor)"]
         PAY["Payment (1 process per transaction)"]
-        SEL["Selector (fan-out quoting)"]
+        SEL["Selector (fan-out quoting, pure evaluate/3)"]
+        NAR["Selector.Narrator (events and journal of a selection)"]
         POL["Policy (validated data)"]
         PSET["PolicySet (global, merchant, customer cascade)"]
         CUT["Cutoff (regional deadlines)"]
         GUA["Guarantee and Ledger"]
         MON["Money (exact integer arithmetic)"]
+        VAL["Validation (shared field parsing and checks)"]
     end
     subgraph ProviderLayer["Provider layer"]
         PSRV["Provider.Server xN (breaker, health, bulkhead, timeouts)"]
@@ -42,12 +44,25 @@ flowchart LR
         LCK["Audit.Lock (one writer)"]
         REC["Recovery (plan, recover)"]
         ELIG["Eligibility (jurisdiction rules)"]
+        EPAR["Eligibility.Parser (rule data to Rule structs)"]
     end
     DEMO["Demo world (providers, traffic, sentinel, operator controls)"]
+    LAB["Demo.Lab (Design for Test: faults, crash, scenarios)"]
+    POLL["Poll (wait for a condition; used by lab and tests)"]
 
     API --> TS --> PAY
     PAY --> SEL
     SEL --> POL
+    SEL --> NAR
+    NAR -. announces and journals .-> EV
+    POL --> VAL
+    PSET --> VAL
+    CUT --> VAL
+    GUA --> VAL
+    ELIG --> EPAR --> VAL
+    LAB --> DEMO
+    LAB --> POLL
+    LAB --> REC
     API --> PSET
     PAY --> CUT
     PAY --> GUA
@@ -127,7 +142,10 @@ flowchart TD
 |---|---|---|
 | `ActorTxSpike` | Public API: submit / await / snapshot | no |
 | `Payment` | Lifecycle, retries, compensation, reconcile, escalation | no (process) |
-| `Selector` | Concurrent quoting within deadline, ranking, narration | no |
+| `Selector` | Concurrent quoting within deadline; `evaluate/3` is the pure judgement shared with replay | `evaluate/3`: **yes** |
+| `Selector.Narrator` | The story of a selection: events people read and the journal records replay reads | no |
+| `Validation` | The shared shape of "plain data to validated struct": parse each field, collect every error | **yes** |
+| `Poll` | Wait for a condition by asking again (one place that sleeps-and-retries) | no |
 | `Policy` | Validated routing policy, constraints, scoring | **yes** |
 | `Provider` | Adapter behaviour and result vocabulary | n/a |
 | `Provider.Health` | Breaker, rolling stats, drift quarantine, recovery | **yes** |
@@ -142,7 +160,7 @@ flowchart TD
 | `Economics` | Prices each finished transaction, keeps totals overall and per provider, announces `tx_costed` | no (process) |
 | `Audit` | Hash-chained append-only log, verification, card-number scrubbing | no (process) |
 | `Journal` | Records replay inputs (actor `:journal`, hidden from humans) | no |
-| `Eligibility` (+ `Rule`) | Jurisdiction rules: eligible providers, permitted instruments and customer types, logs, retention; strictest region wins | **yes** |
+| `Eligibility` (+ `Rule`, `Parser`) | Jurisdiction rules: eligible providers, permitted instruments and customer types, logs, retention; strictest region wins | **yes** |
 | `Audit.Router` | One hash-chained log per region; routes each transaction's events to the logs its decision names; fails closed | no (process) |
 | `Audit.Lock` | One writer per log (lock file naming the owner; stale locks taken over) | no |
 | `Recovery` | Pure plan of where an open transaction stood; recovery of every open transaction from the logs | plan: **yes** |
@@ -150,8 +168,13 @@ flowchart TD
 | `Metrics` (+ `Stats`, `Rollup`, `VM`) | Resource and application metrics with bounded rollups | mostly |
 | `Events`, `Narrative` | Narrative stream and rendering | no |
 | `Panel`, `Demo` | Dashboard server and demo world | no |
+| `Demo.Lab` (+ `Scenarios`) | Design for Test: audit fault injection, crash watcher, plan/recover/resend, 17 scenarios with checks (see [08](08-test-lab.md)) | no |
 
-The decision-heavy logic (`Policy`, `Health`) is deliberately pure so it can be tested exhaustively.
+The decision-heavy logic (`Policy`, `Health`, `Selector.evaluate/3`, `Eligibility`, `Recovery.plan/1`) is deliberately pure so it can be tested exhaustively.
+
+### Shape rules the structure follows
+
+These are enforced by Credo (see the [quality limits](../DEVELOPER_GUIDE.md#3-quality-limits-and-how-they-are-enforced)): a function has at most **4** decision points (cyclomatic complexity), at most **40** ABC size, and no repeated block of about 16 nodes. In practice that is why the structure looks like this: decisions live in function clauses and small named helpers (`Validation`, `Parser`, `Narrator`), not in nested `if`/`case`, and one concern gets one module (deciding, narrating and parsing are separate).
 
 ## 5.4 Deployment view (today)
 

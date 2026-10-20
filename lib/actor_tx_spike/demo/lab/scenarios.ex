@@ -14,11 +14,15 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
   """
 
   alias ActorTxSpike.Demo.Lab
+  alias ActorTxSpike.{Poll, Replay}
 
   @steps [:accept_quote, :authorise, :pay, :settle]
 
   @spec all() :: [map()]
-  def all do
+  def all, do: routing() ++ idempotency() ++ provider_faults() ++ audit_outage() ++ restarts()
+
+  # Jurisdiction routing: who may be asked, where it is recorded.
+  defp routing do
     [
       s(
         "happy",
@@ -51,7 +55,13 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
         "failed (not permitted); no provider did anything",
         [],
         &forward_in_refused/0
-      ),
+      )
+    ]
+  end
+
+  # Idempotency: the same request twice is one effect.
+  defp idempotency do
+    [
       s(
         "duplicate_submit",
         "Idempotency: the same id submitted twice",
@@ -67,7 +77,13 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
         "the provider does nothing more: effect counts unchanged",
         [:logs],
         &resend_same_key/0
-      ),
+      )
+    ]
+  end
+
+  # Provider faults: failover, doubt and the cases no one may retry.
+  defp provider_faults do
+    [
       s(
         "failover_authorise",
         "Failover: authorise rejected",
@@ -99,7 +115,13 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
         "needs_review; the payment is NOT refunded",
         [],
         &settle_refused/0
-      ),
+      )
+    ]
+  end
+
+  # Audit-log downtime: no durable record, no money moves.
+  defp audit_outage do
+    [
       s(
         "audit_down_start",
         "Audit log down before the transaction starts",
@@ -115,7 +137,13 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
         "needs_review (audit unavailable); accept and authorise done, pay NOT done",
         [],
         &audit_down_mid/0
-      ),
+      )
+    ]
+  end
+
+  # Restarts and the router: recover from the log, supervise the logs.
+  defp restarts do
+    [
       s(
         "crash_after_authorise",
         "Restart: crash right after authorise",
@@ -385,10 +413,21 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
 
   # Kill the transaction at the armed point, read the plan the log gives, recover, judge.
   defp crash_and_recover(kind, op, expect_failover) do
+    id = crash_at(kind, op)
+    recover_and_judge(id)
+    if expect_failover, do: judge_failover(id)
+    {:ok, after_days} = Lab.days()
+    check("data residency still holds", Lab.residency(after_days).ok)
+  end
+
+  defp crash_at(kind, op) do
     :ok = Lab.arm(kind, op)
     id = run_tx()
     check("the transaction was killed at #{kind} #{op}", Lab.wait_gone(id) == :ok)
+    id
+  end
 
+  defp recover_and_judge(id) do
     {:ok, days} = Lab.days()
     plan = Enum.find(Lab.plan(days), &(&1.tx == id))
     check("the log says where it stood", plan != nil, inspect(plan))
@@ -412,23 +451,23 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
 
     check("paid at most once", Lab.total(fx, :pay) <= 1, inspect(fx))
     check("settled at most once", Lab.total(fx, :settle) <= 1)
+  end
 
-    if expect_failover do
-      check(
-        "completed elsewhere",
-        match?({:ok, %{provider: p}} when p != :cobalt, outcome),
-        inspect(outcome)
-      )
+  defp judge_failover(id) do
+    outcome = Lab.await(id)
+    fx = Lab.effects(id)
 
-      check(
-        "cobalt's accept was cancelled",
-        Lab.count(fx, "cobalt", :cancel_accept) == 1,
-        inspect(fx)
-      )
-    end
+    check(
+      "completed elsewhere",
+      match?({:ok, %{provider: p}} when p != :cobalt, outcome),
+      inspect(outcome)
+    )
 
-    {:ok, after_days} = Lab.days()
-    check("data residency still holds", Lab.residency(after_days).ok)
+    check(
+      "cobalt's accept was cancelled",
+      Lab.count(fx, "cobalt", :cancel_accept) == 1,
+      inspect(fx)
+    )
   end
 
   defp router_killed do
@@ -499,7 +538,7 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
   # Where the transaction is recorded: exactly the expected logs.
   defp in_logs(id, expected) do
     {:ok, days} = Lab.days()
-    present = for {log, day} <- days, Map.has_key?(day.by_tx, id), do: log
+    present = Replay.Residency.logs_holding(days, id)
 
     check(
       "recorded in #{Enum.join(expected, ", ")} only",
@@ -508,11 +547,5 @@ defmodule ActorTxSpike.Demo.Lab.Scenarios do
     )
   end
 
-  defp wait_for(fun, tries \\ 300) do
-    cond do
-      fun.() -> true
-      tries == 0 -> false
-      true -> Process.sleep(10) && wait_for(fun, tries - 1)
-    end
-  end
+  defp wait_for(fun), do: Poll.until(fun)
 end

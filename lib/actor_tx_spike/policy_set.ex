@@ -17,7 +17,7 @@ defmodule ActorTxSpike.PolicySet do
     bad override is rejected when the set is built, not mid-transaction.
   """
 
-  alias ActorTxSpike.Policy
+  alias ActorTxSpike.{Policy, Validation}
 
   @enforce_keys [:global]
   defstruct [:global, merchants: %{}, customers: %{}]
@@ -27,17 +27,19 @@ defmodule ActorTxSpike.PolicySet do
 
   @spec new(map()) :: {:ok, t()} | {:error, [String.t()]}
   def new(data) when is_map(data) do
-    data = stringify(data)
+    data = Validation.stringify(data)
     global = Map.get(data, "global", %{})
-    merchants = data |> Map.get("merchants", %{}) |> stringify()
-    customers = data |> Map.get("customers", %{}) |> stringify()
-    set = %__MODULE__{global: stringify(global), merchants: merchants, customers: customers}
+    merchants = data |> Map.get("merchants", %{}) |> Validation.stringify()
+    customers = data |> Map.get("customers", %{}) |> Validation.stringify()
+
+    set = %__MODULE__{
+      global: Validation.stringify(global),
+      merchants: merchants,
+      customers: customers
+    }
 
     errors =
-      case Policy.new(set.global) do
-        {:ok, _} -> []
-        {:error, errs} -> Enum.map(errs, &"global: #{&1}")
-      end ++
+      policy_errors("global", set.global) ++
         layer_errors("merchant", merchants, fn m -> merge(set.global, partial(m)) end) ++
         layer_errors("customer", customers, fn c -> merge(set.global, partial(c)) end)
 
@@ -50,31 +52,31 @@ defmodule ActorTxSpike.PolicySet do
   """
   @spec resolve(t(), map()) :: {Policy.t(), [layer() | {:ignored, layer(), atom()}]}
   def resolve(%__MODULE__{} = set, request) do
-    merchant = request[:merchant_id]
-    customer = request[:customer_id]
-
-    {data, layers} = {set.global, [:global]}
-
     {data, layers} =
-      case merchant && Map.get(set.merchants, to_string(merchant)) do
-        nil ->
-          {data, layers}
-
-        entry ->
-          if entitled?(entry),
-            do: {merge(data, partial(entry)), layers ++ [{:merchant, to_string(merchant)}]},
-            else: {data, layers ++ [{:ignored, {:merchant, to_string(merchant)}, :not_entitled}]}
-      end
-
-    {data, layers} =
-      case customer && Map.get(set.customers, to_string(customer)) do
-        nil -> {data, layers}
-        entry -> {merge(data, partial(entry)), layers ++ [{:customer, to_string(customer)}]}
-      end
+      {set.global, [:global]}
+      |> layer(set.merchants, :merchant, request[:merchant_id], &entitled?/1)
+      |> layer(set.customers, :customer, request[:customer_id], fn _entry -> true end)
 
     {:ok, policy} = Policy.new(data)
     {policy, layers}
   end
+
+  defp layer(acc, _entries, _kind, nil, _entitled?), do: acc
+
+  defp layer({data, layers}, entries, kind, id, entitled?) do
+    id = to_string(id)
+
+    case Map.get(entries, id) do
+      nil -> {data, layers}
+      entry -> contribute({data, layers}, entry, {kind, id}, entitled?.(entry))
+    end
+  end
+
+  defp contribute({data, layers}, entry, layer, true),
+    do: {merge(data, partial(entry)), layers ++ [layer]}
+
+  defp contribute({data, layers}, _entry, layer, false),
+    do: {data, layers ++ [{:ignored, layer, :not_entitled}]}
 
   @doc "Human-readable layer list, e.g. `\"global + merchant:acme + customer:vip-1\"`."
   @spec describe([layer() | tuple()]) :: String.t()
@@ -87,14 +89,16 @@ defmodule ActorTxSpike.PolicySet do
     end)
   end
 
-  defp entitled?(entry), do: stringify(entry)["overrides_allowed"] == true
-  defp partial(entry), do: entry |> stringify() |> Map.get("policy", %{}) |> stringify()
+  defp entitled?(entry), do: Validation.stringify(entry)["overrides_allowed"] == true
+
+  defp partial(entry),
+    do: entry |> Validation.stringify() |> Map.get("policy", %{}) |> Validation.stringify()
 
   defp merge(base, override) do
     weights =
       Map.merge(
-        stringify(Map.get(base, "weights", %{})),
-        stringify(Map.get(override, "weights", %{}))
+        Validation.stringify(Map.get(base, "weights", %{})),
+        Validation.stringify(Map.get(override, "weights", %{}))
       )
 
     merged = Map.merge(base, Map.delete(override, "weights"))
@@ -102,16 +106,13 @@ defmodule ActorTxSpike.PolicySet do
   end
 
   defp layer_errors(kind, entries, build) do
-    Enum.flat_map(entries, fn {id, entry} ->
-      data = build.(entry)
-
-      case Policy.new(data) do
-        {:ok, _} -> []
-        {:error, errs} -> Enum.map(errs, &"#{kind}:#{id}: #{&1}")
-      end
-    end)
+    Enum.flat_map(entries, fn {id, entry} -> policy_errors("#{kind}:#{id}", build.(entry)) end)
   end
 
-  defp stringify(map) when is_map(map), do: Map.new(map, fn {k, v} -> {to_string(k), v} end)
-  defp stringify(_other), do: %{}
+  defp policy_errors(label, data) do
+    case Policy.new(data) do
+      {:ok, _} -> []
+      {:error, errs} -> Enum.map(errs, &"#{label}: #{&1}")
+    end
+  end
 end

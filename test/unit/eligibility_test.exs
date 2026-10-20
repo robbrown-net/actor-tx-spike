@@ -133,9 +133,9 @@ defmodule ActorTxSpike.EligibilityTest do
           "default.instruments",
           "default.customer_types",
           "default.providers",
-          "default.logs",
-          "default.local_only",
-          "default.retention_days",
+          "default.logs: log names must be letters, digits, - or _",
+          "default.local_only: must be true or false",
+          "default.retention_days: must be nil or a positive number of days",
           "default: unknown key extra",
           "regions.IN: must be a map",
           "regions.CN.providers"

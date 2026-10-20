@@ -2,9 +2,12 @@
 
 The narrative version of this plan, with risks and open questions, is in [ENGINEERING_STORY.md](ENGINEERING_STORY.md).
 
-Gates: unit coverage 100%, integration coverage >85% (line coverage via `mix test --cover`).
-Baseline on 2026-10-15: 76.5% total (Transaction 65.7%, ActorTxSpike 78.6%,
-TransactionSupervisor 80%, Store 87.5%, Subsystem 94.4%, Application 100%).
+Gates (all enforced in CI; see [DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#3-quality-limits-and-how-they-are-enforced)):
+unit coverage 100%, integration coverage >85% (line coverage via `mix test --cover`), cyclomatic
+complexity at most 4, nesting at most 2, ABC size at most 40 and no duplicated block of mass 16
+(`mix credo --strict`), no warnings, `mix format` clean. Position on 2026-10-20: unit 100%,
+integration 86.7%, all code-shape limits met (ADR 0012).
+Original baseline on 2026-10-15: 76.5% total.
 
 See ADR 0001 and Amendment 1 for the domain model.
 
@@ -82,6 +85,13 @@ to measure barrier cost; alerting when the audit router restarts.
   and residency, and a library of 17 scenarios with hard checks (docs/architecture/08-test-lab.md).
   The library runs as an integration test.
 
+## Phase 3c: Code-shape limits - DONE (2026-10-20)
+- Cyclomatic complexity 4 (was 9), nesting 2, ABC size 40 and duplicate mass 16 enforced by Credo
+  (ADR 0012). About 30 functions reshaped; new small modules `Selector.Narrator`,
+  `Eligibility.Parser`, `Validation`, `Poll`; shared `Wait` test helper; `mix quality` alias.
+- Documentation brought up to date: developer, testing, requirements and user guides.
+Next: widen mutation testing to `Payment` and `Recovery`; make CI a required check; consider Dialyzer.
+
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).
 - Sanctions and KYC gates before accept, recorded in the journal.
@@ -90,12 +100,14 @@ to measure barrier cost; alerting when the audit router restarts.
 - Retail variant: disclosure, receipt, cancellation window, error resolution.
 
 ## Known gaps
-- Transactions are not persisted (the audit log is evidence, not a recovery store): a node restart loses in-flight work. The old file store
-  was removed with the legacy code; durable, event-sourced recovery is Phase 3.
-- `Demo`, `Demo.Handler` are excluded from the unit gate (exercised by integration tests);
-  `Mix.Tasks.Demo` is excluded everywhere (thin entry point).
-- Finished transactions linger 30s (configurable) then stop; their story stays in the
-  bounded event buffer only. A durable log is Phase 3.
+- Recovery from the audit log exists (`Recovery`, ADR 0010) but is started by the host at boot
+  (as `mix demo` does), not automatically by the application, because it needs the live provider registry. The demo world forgets provider state on restart.
+- Retention is recorded in the jurisdiction rules but not enforced (no rotation, deletion or off-host copy).
+- Not built: forward deal lifecycle, sanctions/KYC gates, trade reporting, retail flows, the review workflow (UC-4). The jurisdiction matrix is unverified by counsel.
+- `Demo`, `Demo.Handler`, `Demo.Lab`, `Demo.Lab.Scenarios` are excluded from the unit gate (exercised by integration tests);
+  the `Mix.Tasks.*` entry points and the `Wait` test helper are excluded everywhere.
+- Finished transactions linger 30s (configurable) then stop; their story outlives them in the
+  audit log (and in the bounded event buffer).
 - Unit coverage is line-based; branch-level measurement is still to do.
 
 ## Deferred

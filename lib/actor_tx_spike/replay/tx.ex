@@ -11,6 +11,11 @@ defmodule ActorTxSpike.Replay.Tx do
     "authorise" => "void_authorisation",
     "pay" => "refund"
   }
+  @terminal_kinds %{
+    "tx_completed" => :completed,
+    "tx_failed" => :failed,
+    "needs_review" => :needs_review
+  }
   @states [:unknown, :healthy, :degraded, :stalled, :quarantined, :down]
 
   @doc "The undo operation that reverses a step, or nil."
@@ -20,17 +25,8 @@ defmodule ActorTxSpike.Replay.Tx do
   @spec summarize([map()]) :: map()
   def summarize(records) do
     received = first(records, "tx_received")
-    terminal = Enum.find(records, &(&1["kind"] in ~w(tx_completed tx_failed needs_review)))
+    terminal = Enum.find(records, &Map.has_key?(@terminal_kinds, &1["kind"]))
     economics = first(records, "tx_economics")
-
-    outcome =
-      case terminal && terminal["kind"] do
-        "tx_completed" -> :completed
-        "tx_failed" -> :failed
-        "needs_review" -> :needs_review
-        nil -> :open
-      end
-
     provider = final_provider(records, economics)
 
     %{
@@ -38,15 +34,23 @@ defmodule ActorTxSpike.Replay.Tx do
       request: received["data"]["request"],
       amount: received["data"]["request"]["amount"],
       started_at_ms: received["at"],
-      ended_at_ms: terminal && terminal["at"],
-      outcome: outcome,
+      ended_at_ms: field(terminal, "at"),
+      outcome: outcome(terminal),
       phase: records |> payment_phases() |> List.last(),
       provider: provider,
       steps: succeeded_ops(records, provider),
-      net: provider && net_of(records, provider),
-      margin: economics && economics["data"]["margin"]
+      net: net_of(records, provider),
+      margin: economics |> data() |> field("margin")
     }
   end
+
+  defp outcome(nil), do: :open
+  defp outcome(%{"kind" => kind}), do: Map.fetch!(@terminal_kinds, kind)
+
+  # nil-tolerant reads: a missing record has no fields
+  defp field(nil, _key), do: nil
+  defp field(map, key), do: map[key]
+  defp data(record), do: field(record, "data")
 
   @doc "Records of one kind, in order."
   def all(records, kind), do: Enum.filter(records, &(&1["kind"] == kind))
@@ -64,35 +68,39 @@ defmodule ActorTxSpike.Replay.Tx do
 
   @doc "The provider the transaction ended with (the last one chosen)."
   def final_provider(records, economics) do
-    if economics && economics["data"]["provider"] do
-      economics["data"]["provider"]
-    else
-      records |> all("provider_chosen") |> List.last() |> then(&(&1 && &1["data"]["provider"]))
-    end
+    economics |> data() |> field("provider") || last_chosen_provider(records)
+  end
+
+  defp last_chosen_provider(records) do
+    records |> all("provider_chosen") |> List.last() |> data() |> field("provider")
   end
 
   @doc "Net value (minor units) of a provider's recorded quote for this transaction."
-  def net_of(records, provider) do
-    request = first(records, "tx_received")["data"]["request"]
+  def net_of(_records, nil), do: nil
 
+  def net_of(records, provider) do
     case quote_for(records, provider) do
       nil -> nil
-      %Quote{} = q -> Money.convert(request["amount"], q.rate) - q.fee
+      %Quote{} = q -> Money.convert(request_amount(records), q.rate) - q.fee
     end
   end
 
+  defp request_amount(records), do: first(records, "tx_received")["data"]["request"]["amount"]
+
   @doc "The recorded quote of a provider, rebuilt as a `Quote`."
   def quote_for(records, provider) do
-    Enum.find_value(records, fn
-      %{
-        "kind" => "quote_observed",
-        "data" => %{"provider" => ^provider, "outcome" => "quote"} = d
-      } ->
-        to_quote(d)
+    records
+    |> quote_payloads()
+    |> Enum.find_value(&(&1["provider"] == provider && quote_from(&1)))
+  end
 
-      _ ->
-        nil
-    end)
+  @doc "Every quote the providers gave, by provider (the latest wins), rebuilt as `Quote`s."
+  def quotes(records) do
+    for d <- quote_payloads(records), into: %{}, do: {d["provider"], quote_from(d)}
+  end
+
+  defp quote_payloads(records) do
+    for %{"kind" => "quote_observed", "data" => %{"outcome" => "quote"} = d} <- records, do: d
   end
 
   @doc """
@@ -192,7 +200,8 @@ defmodule ActorTxSpike.Replay.Tx do
     for %{"actor" => "payment", "data" => %{"phase" => phase}} <- records, do: phase
   end
 
-  defp to_quote(d) do
+  @doc "A `Quote` from a recorded `quote_observed` payload."
+  def quote_from(d) do
     %Quote{
       provider: d["provider"],
       request_id: d["request_id"],
@@ -202,7 +211,7 @@ defmodule ActorTxSpike.Replay.Tx do
     }
   end
 
-  defp result(%{"outcome" => "quote"} = d), do: {:ok, to_quote(d)}
+  defp result(%{"outcome" => "quote"} = d), do: {:ok, quote_from(d)}
   defp result(%{"outcome" => "rejected", "reason" => r}), do: {:rejected, r}
   defp result(%{"outcome" => "error", "reason" => r}), do: {:error, r}
   defp result(_timeout), do: :timeout

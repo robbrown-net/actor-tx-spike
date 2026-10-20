@@ -171,23 +171,20 @@ defmodule ActorTxSpike.Provider.Fake do
     announce(s, tx_of(key), :received, "received a status lookup for #{op} #{key}")
     delay(s, tx_of(key))
 
-    result =
-      case mode do
-        :ok ->
-          case Map.fetch(effects(pid), {op, key}) do
-            {:ok, receipt} -> {:ok, receipt}
-            :error -> :not_found
-          end
-
-        :unknown ->
-          :unknown
-
-        other ->
-          failure(other)
-      end
+    result = status_result(mode, pid, op, key)
 
     answered(s, tx_of(key), :status, result)
   end
+
+  defp status_result(:ok, pid, op, key) do
+    case Map.fetch(effects(pid), {op, key}) do
+      {:ok, receipt} -> {:ok, receipt}
+      :error -> :not_found
+    end
+  end
+
+  defp status_result(:unknown, _pid, _op, _key), do: :unknown
+  defp status_result(other, _pid, _op, _key), do: failure(other)
 
   @impl true
   def probe(pid) do
@@ -210,47 +207,50 @@ defmodule ActorTxSpike.Provider.Fake do
     announce(s, tx, :received, "received #{op} (key #{key})")
     delay(s, tx)
 
-    result =
-      cond do
-        mode == :timeout or match?({:error, _}, mode) ->
-          failure(mode)
-
-        quote != nil and Quote.expired?(quote, System.system_time(:millisecond)) ->
-          {:rejected, :quote_expired}
-
-        mode == :reject ->
-          {:rejected, :declined}
-
-        mode == :in_doubt ->
-          _ = perform(pid, s, op, quote, key)
-          :in_doubt
-
-        true ->
-          {:ok, perform(pid, s, op, quote, key)}
-      end
+    expired? = quote != nil and Quote.expired?(quote, System.system_time(:millisecond))
+    result = effect_result(mode, expired?, fn -> perform(pid, s, op, quote, key) end)
 
     answered(s, tx, op, result)
   end
 
-  defp perform(pid, settings, op, quote, key) do
-    Agent.get_and_update(pid, fn state ->
-      case Map.fetch(state.effects, {op, key}) do
-        {:ok, receipt} ->
-          {receipt, state}
+  # The provider's answer to a call, given the mode scripted for it. `perform` records the
+  # effect; a call that fails outright or is declined never reaches it.
+  defp effect_result(:timeout = mode, _expired?, _perform), do: failure(mode)
+  defp effect_result({:error, _} = mode, _expired?, _perform), do: failure(mode)
+  defp effect_result(_mode, true, _perform), do: {:rejected, :quote_expired}
+  defp effect_result(:reject, false, _perform), do: {:rejected, :declined}
 
-        :error ->
-          receipt = %{
-            provider: settings.id,
-            op: op,
-            key: key,
-            rate: quote && quote.rate,
-            fee: quote && quote.fee
-          }
-
-          {receipt, %{state | effects: Map.put(state.effects, {op, key}, receipt)}}
-      end
-    end)
+  defp effect_result(:in_doubt, false, perform) do
+    _ = perform.()
+    :in_doubt
   end
+
+  defp effect_result(_ok, false, perform), do: {:ok, perform.()}
+
+  defp perform(pid, settings, op, quote, key),
+    do: Agent.get_and_update(pid, &remember(&1, settings, op, quote, key))
+
+  # The first time an effect is performed it is recorded; asked again, the same receipt comes back.
+  defp remember(state, settings, op, quote, key) do
+    case Map.fetch(state.effects, {op, key}) do
+      {:ok, receipt} ->
+        {receipt, state}
+
+      :error ->
+        receipt = %{
+          provider: settings.id,
+          op: op,
+          key: key,
+          rate: quoted(quote, :rate),
+          fee: quoted(quote, :fee)
+        }
+
+        {receipt, %{state | effects: Map.put(state.effects, {op, key}, receipt)}}
+    end
+  end
+
+  defp quoted(nil, _field), do: nil
+  defp quoted(quote, field), do: Map.fetch!(quote, field)
 
   # Take this call's mode (consuming scripted lists) and count the call.
   defp begin_call(pid, op) do

@@ -46,27 +46,29 @@ defmodule ActorTxSpike.Audit.Router do
     dir = Keyword.fetch!(opts, :dir)
     names = opts |> Keyword.get(:logs, []) |> Enum.concat([@global]) |> Enum.uniq()
     File.mkdir_p!(dir)
-    sync = Keyword.get(opts, :sync, true)
-    name = Keyword.get(opts, :name, __MODULE__)
-    subscribe? = Keyword.get(opts, :subscribe, true)
 
-    case start_logs(names, dir, sync) do
+    case start_logs(names, dir, Keyword.get(opts, :sync, true)) do
       {:ok, audits} ->
-        if subscribe? do
-          Events.subscribe()
-          Events.register_sink({:audit_router, name}, self())
-        end
-
         {:ok,
          %{
            dir: dir,
            audits: audits,
            tx_logs: open_transactions(dir, Map.keys(audits)),
-           sink: if(subscribe?, do: {:audit_router, name})
+           sink: subscribe(opts)
          }}
 
       {:error, reason} ->
         {:stop, reason}
+    end
+  end
+
+  # Listen to the narrative and register as a durable sink; returns the sink's name.
+  defp subscribe(opts) do
+    if Keyword.get(opts, :subscribe, true) do
+      sink = {:audit_router, Keyword.get(opts, :name, __MODULE__)}
+      Events.subscribe()
+      Events.register_sink(sink, self())
+      sink
     end
   end
 
@@ -108,22 +110,25 @@ defmodule ActorTxSpike.Audit.Router do
 
   defp route(event, state) do
     state = learn(event, state)
-
-    for log <- targets(event, state) do
-      case Map.fetch(state.audits, log) do
-        {:ok, audit} ->
-          :ok = Audit.record(audit, event)
-
-        :error ->
-          raise "no audit log named #{inspect(log)} for #{event.tx_id}: refusing to record it elsewhere"
-      end
-    end
-
-    # the last event of a transaction closes its routing entry
-    if event.kind == :tx_costed,
-      do: %{state | tx_logs: Map.delete(state.tx_logs, event.tx_id)},
-      else: state
+    Enum.each(targets(event, state), &record(&1, event, state))
+    close(event, state)
   end
+
+  defp record(log, event, state) do
+    case Map.fetch(state.audits, log) do
+      {:ok, audit} ->
+        :ok = Audit.record(audit, event)
+
+      :error ->
+        raise "no audit log named #{inspect(log)} for #{event.tx_id}: refusing to record it elsewhere"
+    end
+  end
+
+  # the last event of a transaction closes its routing entry
+  defp close(%{kind: :tx_costed, tx_id: tx}, state),
+    do: %{state | tx_logs: Map.delete(state.tx_logs, tx)}
+
+  defp close(_event, state), do: state
 
   defp learn(%{kind: kind, tx_id: tx, data: %{eligibility: %{logs: logs}}}, state)
        when kind in [:tx_received, :tx_resumed],

@@ -1,6 +1,8 @@
 defmodule ActorTxSpike.SelectorTest do
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.{Events, Policy, Selection, Selector}
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
@@ -27,13 +29,7 @@ defmodule ActorTxSpike.SelectorTest do
     p
   end
 
-  defp wait_until(fun, tries \\ 100) do
-    cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition not met")
-      true -> Process.sleep(5) && wait_until(fun, tries - 1)
-    end
-  end
+  defp wait_until(fun, tries \\ 100), do: Wait.until!(fun, tries: tries, every_ms: 5)
 
   defp ids(%Selection{ranked: ranked}), do: Enum.map(ranked, & &1.provider_id)
 

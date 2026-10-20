@@ -1,6 +1,8 @@
 defmodule ActorTxSpike.ProviderResilienceIntegrationTest do
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Wait
+
   alias ActorTxSpike.Provider.{Fake, Server}
 
   defp provider(id, fake_opts, health \\ []) do
@@ -9,13 +11,7 @@ defmodule ActorTxSpike.ProviderResilienceIntegrationTest do
     %{id: id, fake: fake, server: server}
   end
 
-  defp wait_until(fun, tries \\ 100) do
-    cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition not met")
-      true -> Process.sleep(5) && wait_until(fun, tries - 1)
-    end
-  end
+  defp wait_until(fun, tries \\ 100), do: Wait.until!(fun, tries: tries, every_ms: 5)
 
   test "a stalled provider is isolated by its breaker while others keep serving" do
     health = [failure_threshold: 3, cool_down_ms: 25, slow_ms: 40]

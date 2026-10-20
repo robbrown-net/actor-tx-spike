@@ -153,6 +153,32 @@ sequenceDiagram
     end
 ```
 
+## SSD-9 · Test the hard-to-reach behaviours (UC-12)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor T as Tester
+    participant S as ":System with the Test lab"
+
+    T->>S: run scenario (or all 17)
+    S-->>T: pass / fail per check, with evidence
+    opt build a situation by hand
+        T->>S: set audit log healthy / down / fails after N steps
+        T->>S: arm a crash at an event (kind, step)
+        T->>S: submit transactions (same id twice if testing idempotency)
+        S-->>T: what each transaction did, and what the providers really did
+        T->>S: plan recovery (dry run)
+        S-->>T: for each open transaction: where the log says it stood
+        T->>S: recover now
+        S-->>T: resumed, or escalated to a person
+        T->>S: kill the audit router
+        S-->>T: money refused while it is down, then restarted by the supervisor
+        T->>S: verify logs and residency
+        S-->>T: chains intact, rules held, residency held (or what broke)
+    end
+```
+
 ## SSD-8 · Submit within a jurisdiction (UC-11)
 
 ```mermaid

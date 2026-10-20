@@ -8,7 +8,7 @@ defmodule ActorTxSpike.Guarantee do
       margin         = achieved_net - net guaranteed
   """
 
-  alias ActorTxSpike.Money
+  alias ActorTxSpike.{Money, Validation}
 
   @enforce_keys [:merchant_id, :period, :rate]
   defstruct [:merchant_id, :period, :rate]
@@ -17,23 +17,16 @@ defmodule ActorTxSpike.Guarantee do
 
   @spec new(map()) :: {:ok, t()} | {:error, [String.t()]}
   def new(data) when is_map(data) do
-    data = Map.new(data, fn {k, v} -> {to_string(k), v} end)
+    data = Validation.stringify(data)
     merchant = Map.get(data, "merchant_id")
     period = Map.get(data, "period")
     rate = data |> Map.get("rate") |> to_rate()
 
-    errors =
-      [
-        {is_binary(merchant) and merchant != "", "merchant_id: required"},
-        {is_binary(period) and period != "", "period: required (e.g. \"2026-W42\")"},
-        {is_integer(rate) and rate > 0, "rate: must be a positive number"}
-      ]
-      |> Enum.reject(&elem(&1, 0))
-      |> Enum.map(&elem(&1, 1))
-
-    if errors == [],
-      do: {:ok, %__MODULE__{merchant_id: merchant, period: period, rate: rate}},
-      else: {:error, errors}
+    Validation.build(%__MODULE__{merchant_id: merchant, period: period, rate: rate}, [
+      {Validation.present?(merchant), "merchant_id: required"},
+      {Validation.present?(period), "period: required (e.g. \"2026-W42\")"},
+      {is_integer(rate) and rate > 0, "rate: must be a positive number"}
+    ])
   end
 
   @doc "Compare what we achieved with what we guaranteed."

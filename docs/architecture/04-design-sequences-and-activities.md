@@ -13,6 +13,7 @@ sequenceDiagram
     participant API as ActorTxSpike
     participant P as Payment (per tx)
     participant SEL as Selector
+    participant NAR as Selector.Narrator
     participant PS as Provider.Server (xN)
     participant AD as Adapter (provider)
     participant EV as Events
@@ -20,9 +21,11 @@ sequenceDiagram
     M->>API: submit(request, providers, policy)
     API->>P: start under TransactionSupervisor
     API-->>M: {:ok, id}
-    P->>EV: tx_received
+    P->>EV: tx_received (and the journal copy)
+    Note over P: admission: eligibility decided first<br/>(not permitted or no eligible provider: fail here, no provider asked)
     P->>SEL: select(request, providers, policy)
-    SEL->>EV: select_started
+    SEL->>NAR: started
+    NAR->>EV: select_started
     par each callable provider
         SEL->>PS: request_quote(request, deadline)
         PS->>AD: request_quote (in caller-owned task, timeout enforced)
@@ -31,8 +34,10 @@ sequenceDiagram
         PS-->>SEL: quote
         PS->>EV: health sample
     end
-    SEL->>SEL: constraints, max_bps_from_best, scoring, ranking
-    SEL->>EV: selection_made
+    SEL->>NAR: observation (journal of each answer)
+    SEL->>SEL: evaluate/3 (pure): constraints, max_bps_from_best, scoring, ranking
+    SEL->>NAR: item per provider, then outcome
+    NAR->>EV: quote_received / quote_excluded / selection_made
     SEL-->>P: Selection (ranked candidates)
     P->>PS: accept_quote(quote, key "tx:prov:accept")
     PS->>AD: accept_quote
@@ -46,6 +51,22 @@ sequenceDiagram
     P->>EV: guarantee margin (if any), tx_completed
     M->>P: await(id)
     P-->>M: {:ok, summary}
+```
+
+### 4.1b Inside a selection: decide, observe, narrate
+
+`Selector.select/4` is a pipeline of small steps; the only judgement is the pure `evaluate/3`, which
+replay calls with the recorded answers. Everything people read or replay needs is said by `Selector.Narrator`.
+
+```mermaid
+flowchart LR
+    A["partition providers by health state<br/>(excluded states are not called)"] --> B["observe: ask the rest concurrently,<br/>within the deadline, stamp the time"]
+    B --> C["Narrator.observation<br/>(journal: raw answer, latency, state)"]
+    B --> D["evaluate/3 (pure)<br/>judge, within_best, rank"]
+    D --> E["Narrator.item per provider"]
+    D --> F["build Selection<br/>(selected / fallback / none)"]
+    F --> G["Narrator.outcome"]
+    D -. same code .-> R["Replay.Tx.reselect"]
 ```
 
 ## 4.2 Authorise rejected: compensate and fail over (UC-1 ext 7a)

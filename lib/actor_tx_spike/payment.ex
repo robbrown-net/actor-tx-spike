@@ -161,36 +161,7 @@ defmodule ActorTxSpike.Payment do
         eligibility: journal_eligibility(state)
       })
 
-    cond do
-      not state.eligibility.permitted? ->
-        reasons = state.eligibility.reasons
-
-        {:noreply,
-         finish(
-           state,
-           :failed,
-           {:error, {:not_permitted, reasons}},
-           :tx_failed,
-           "not permitted: #{Enum.join(reasons, "; ")}"
-         )}
-
-      state.providers == [] and state.eligibility.denied != [] ->
-        {:noreply,
-         finish(
-           state,
-           :failed,
-           {:error, :no_eligible_provider},
-           :tx_failed,
-           "no provider is eligible for the #{Enum.join(state.eligibility.regions, "/")} corridor"
-         )}
-
-      true ->
-        state = announce_eligibility(state)
-        state = announce_policy(state)
-        state = announce_deadline(state)
-        state = %{state | phase: :quoting}
-        {:noreply, run(state, :selection, fn -> do_select(state) end)}
-    end
+    {:noreply, proceed(state, admission(state))}
   end
 
   # ---- recovery ----------------------------------------------------------
@@ -225,6 +196,26 @@ defmodule ActorTxSpike.Payment do
       })
 
     {:noreply, resume(state, plan)}
+  end
+
+  # Whether the transaction may go ahead at all, decided before any provider is asked.
+  defp admission(%{eligibility: %{permitted?: false, reasons: reasons}}),
+    do: {:refuse, {:not_permitted, reasons}, "not permitted: #{Enum.join(reasons, "; ")}"}
+
+  defp admission(%{providers: [], eligibility: %{denied: [_ | _], regions: regions}}) do
+    {:refuse, :no_eligible_provider,
+     "no provider is eligible for the #{Enum.join(regions, "/")} corridor"}
+  end
+
+  defp admission(_state), do: :ok
+
+  defp proceed(state, {:refuse, error, message}),
+    do: finish(state, :failed, {:error, error}, :tx_failed, message)
+
+  defp proceed(state, :ok) do
+    state = state |> announce_eligibility() |> announce_policy() |> announce_deadline()
+    state = %{state | phase: :quoting}
+    run(state, :selection, fn -> do_select(state) end)
   end
 
   defp rebuild(state, plan) do
@@ -699,33 +690,30 @@ defmodule ActorTxSpike.Payment do
     )
   end
 
-  defp run_step(state, op) do
-    cond do
-      deadline_passed?(state) and op == :settle ->
-        needs_review(
-          state,
-          {:settlement_overdue, region(state)},
-          "the #{region(state)} cut-off has passed before settlement was confirmed"
-        )
+  defp run_step(state, op), do: run_step(state, op, deadline_passed?(state))
 
-      deadline_passed?(state) ->
-        state =
-          note(
-            state,
-            :deadline_missed,
-            "the #{region(state)} cut-off has passed; stopping and undoing",
-            %{
-              region: region(state)
-            }
-          )
-
-        undos = Enum.map(state.done, &{@undo[&1], &1})
-        start_compensation(state, undos, {:abort, {:deadline_missed, region(state)}})
-
-      true ->
-        do_run_step(state, op)
-    end
+  defp run_step(state, :settle, true) do
+    needs_review(
+      state,
+      {:settlement_overdue, region(state)},
+      "the #{region(state)} cut-off has passed before settlement was confirmed"
+    )
   end
+
+  defp run_step(state, _op, true) do
+    state =
+      note(
+        state,
+        :deadline_missed,
+        "the #{region(state)} cut-off has passed; stopping and undoing",
+        %{region: region(state)}
+      )
+
+    undos = Enum.map(state.done, &{@undo[&1], &1})
+    start_compensation(state, undos, {:abort, {:deadline_missed, region(state)}})
+  end
+
+  defp run_step(state, op, false), do: do_run_step(state, op)
 
   defp do_run_step(state, op) do
     c = state.current
@@ -822,21 +810,9 @@ defmodule ActorTxSpike.Payment do
   defp journal_response(_state, :selection, _result, _latency), do: :ok
 
   defp journal_response(state, tag, result, latency) do
-    {kind, op, original} =
-      case tag do
-        {:step, op} -> {:step, op, op}
-        {:status, op} -> {:status, op, op}
-        {:undo, undo, original} -> {:undo, undo, original}
-      end
-
+    {kind, op, original} = call_of(tag)
     {class, reason} = classify_response(result)
-
-    attempt =
-      case kind do
-        :step -> state.attempt
-        :status -> state.reconcile_n
-        :undo -> state.undo_attempt
-      end
+    attempt = attempt_of(kind, state)
 
     Journal.record(
       state.id,
@@ -854,6 +830,14 @@ defmodule ActorTxSpike.Payment do
       }
     )
   end
+
+  defp call_of({:step, op}), do: {:step, op, op}
+  defp call_of({:status, op}), do: {:status, op, op}
+  defp call_of({:undo, undo, original}), do: {:undo, undo, original}
+
+  defp attempt_of(:step, state), do: state.attempt
+  defp attempt_of(:status, state), do: state.reconcile_n
+  defp attempt_of(:undo, state), do: state.undo_attempt
 
   defp classify_response({:ok, _receipt}), do: {:ok, nil}
   defp classify_response({:error, reason}), do: {:error, inspect(reason)}
