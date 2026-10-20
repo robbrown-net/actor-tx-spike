@@ -146,6 +146,10 @@ defmodule ActorTxSpike.LiveSystemTest do
   test "UC-3: a version drift is detected by the sentinel and quarantines the provider", %{
     port: port
   } do
+    # drift is a *change* from a version we have seen: wait until the sentinel has recorded
+    # bluebird's baseline, otherwise the drifted version would simply become the baseline
+    wait_for(fn -> provider_field(port, "bluebird", "version") != nil end, 10_000)
+
     control(port, %{"action" => "provider", "id" => "bluebird", "do" => "drift"})
     wait_for(fn -> provider_state(port, "bluebird") == "quarantined" end, 10_000)
 
@@ -339,9 +343,11 @@ defmodule ActorTxSpike.LiveSystemTest do
     id
   end
 
-  defp provider_state(port, id) do
+  defp provider_state(port, id), do: provider_field(port, id, "state")
+
+  defp provider_field(port, id, field) do
     {200, body} = http(port, "GET", "/api/snapshot")
-    JSON.decode!(body)["providers"] |> Enum.find(&(&1["id"] == id)) |> Map.get("state")
+    JSON.decode!(body)["providers"] |> Enum.find(&(&1["id"] == id)) |> Map.get(field)
   end
 
   defp wait_for(fun, timeout) do
