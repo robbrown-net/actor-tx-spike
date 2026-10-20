@@ -59,8 +59,9 @@ defmodule Mix.Tasks.Replay do
 
   defp residency(dir) do
     days =
-      for path <- Path.wildcard(Path.join(dir, "*.log")), into: %{} do
-        {Path.basename(path, ".log"), load(path)}
+      case Replay.load_dir(dir) do
+        {:ok, days} -> days
+        {:error, why} -> Mix.raise("cannot replay #{dir}: #{inspect(why)}")
       end
 
     result = Replay.Residency.check(days)

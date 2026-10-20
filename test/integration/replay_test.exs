@@ -30,8 +30,8 @@ defmodule ActorTxSpike.ReplayIntegrationTest do
     {:ok, _} = Demo.control(%{"action" => "pace", "factor" => 0.05})
 
     on_exit(fn ->
-      if Process.alive?(demo), do: GenServer.stop(demo)
-      if Process.alive?(audit), do: GenServer.stop(audit)
+      stop_quietly(demo)
+      stop_quietly(audit)
       File.rm_rf(dir)
     end)
 
@@ -241,5 +241,12 @@ defmodule ActorTxSpike.ReplayIntegrationTest do
         do: {:halt, :ok},
         else: Process.sleep(10) && {:cont, nil}
     end)
+  end
+
+  # The process may already be gone (check-then-stop would race); stopping must not fail a test.
+  defp stop_quietly(pid) do
+    GenServer.stop(pid)
+  catch
+    :exit, _ -> :ok
   end
 end

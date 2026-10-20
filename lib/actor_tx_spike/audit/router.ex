@@ -61,7 +61,7 @@ defmodule ActorTxSpike.Audit.Router do
          %{
            dir: dir,
            audits: audits,
-           tx_logs: %{},
+           tx_logs: open_transactions(dir, Map.keys(audits)),
            sink: if(subscribe?, do: {:audit_router, name})
          }}
 
@@ -133,6 +133,31 @@ defmodule ActorTxSpike.Audit.Router do
 
   defp targets(%{tx_id: nil}, _state), do: [@global]
   defp targets(%{tx_id: tx}, state), do: Map.get(state.tx_logs, tx, [@global])
+
+  # A restarted router must not forget where the open transactions belong, or the
+  # rest of a local-only transaction would leak into the global log. Rebuild the
+  # routing table from the logs: every transaction that has a decision and has not
+  # yet recorded its last event.
+  defp open_transactions(dir, names) do
+    for log <- names,
+        path = Path.join(dir, log <> ".log"),
+        File.exists?(path),
+        record <- path |> File.stream!() |> Stream.map(&JSON.decode!/1),
+        reduce: %{} do
+      acc -> remember(acc, record)
+    end
+  end
+
+  defp remember(acc, %{
+         "kind" => kind,
+         "tx" => tx,
+         "data" => %{"eligibility" => %{"logs" => logs}}
+       })
+       when kind in ["tx_received", "tx_resumed"],
+       do: Map.put(acc, tx, logs)
+
+  defp remember(acc, %{"kind" => "tx_costed", "tx" => tx}), do: Map.delete(acc, tx)
+  defp remember(acc, _record), do: acc
 
   defp start_logs(names, dir, sync) do
     Enum.reduce_while(names, {:ok, %{}}, fn log, {:ok, acc} ->

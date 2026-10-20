@@ -46,7 +46,7 @@ produce today is the **audit log** (`mix audit.verify`) and the **test and CI re
 | Logs protected against modification | 🟡 tamper-**evident**, not tamper-proof: edits, deletions and reorderings are detected at the first affected record. **Truncating the tail is not detectable by the chain alone**; anchor `head` externally |
 | Logs backed up to a separate, secure system | ❌ single local file |
 | Retention: 12 months, 3 months immediately available | ❌ no rotation or archival |
-| Automated review, alerting on log failure | ❌ the log is not under the application supervision tree, so if the writer dies the system keeps running unlogged. A payments system should stop or alert (see roadmap) |
+| Automated review, alerting on log failure | 🟡 if the writer dies no money moves (fail closed) and the supervisor restarts it; production refuses to start without it. There is no alert or automated review yet |
 
 ## 3. Dodd-Frank
 
@@ -174,7 +174,7 @@ Still open from the items below: supervising the audit writer in the application
 refusing to start without it; retention, rotation and off-host copy; sanctions and KYC gates;
 the forward deal lifecycle and trade reporting; counsel's confirmation of every rule.
 
-1. **Supervise the audit writer and fail closed** (stop or alert if it dies). *Fail closed built; supervision and refuse-to-start still open.*
+1. ~~Supervise the audit writer and fail closed.~~ **Done 2026-10-20:** the router is supervised and permanent, fails closed while down, and production refuses to start without it. Alerting on a restart is still to do.
 2. **Authentication and identity** on the control API, so records carry a user.
 3. **Retention, rotation, off-host copy** and an anchoring job.
 4. **Reject card-like data in requests**, not only scrub it from logs.

@@ -85,6 +85,35 @@ defmodule ActorTxSpike.AuditRouterTest do
     assert Enum.map(load(ctx, "US").records, & &1["kind"]) == ~w(tx_resumed step_started)
   end
 
+  test "a restarted router remembers where open transactions belong; finished ones are forgotten",
+       ctx do
+    first = start(ctx)
+
+    for e <- [
+          received(1, "open-in", ["IN"]),
+          received(2, "done-in", ["IN"]),
+          ev(3, "done-in", :tx_costed),
+          received(4, "open-resumed", ["US"]),
+          ev(6, "open-in", :step_started)
+        ],
+        do: send(first, e)
+
+    :ok = GenServer.call(first, :flush)
+    GenServer.stop(first)
+
+    second = start(ctx)
+    assert :sys.get_state(second).tx_logs == %{"open-in" => ["IN"], "open-resumed" => ["US"]}
+
+    # the rest of an open local-only transaction does not leak into the global log
+    send(second, ev(5, "open-in", :step_started))
+    :ok = GenServer.call(second, :flush)
+
+    assert Enum.map(load(ctx, "IN").by_tx["open-in"], & &1["kind"]) ==
+             ~w(tx_received step_started step_started)
+
+    refute Map.has_key?(load(ctx, "GLOBAL").by_tx, "open-in")
+  end
+
   test "regional logs are separate chains with their own heads and paths", ctx do
     pid = start(ctx)
     send(pid, received(1, "a", ["IN"]))

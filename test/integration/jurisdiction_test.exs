@@ -20,7 +20,7 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
     Process.unlink(router)
 
     on_exit(fn ->
-      if Process.alive?(router), do: GenServer.stop(router)
+      stop_quietly(router)
       File.rm_rf(dir)
     end)
 
@@ -233,5 +233,12 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
         do: {:halt, :ok},
         else: Process.sleep(10) && {:cont, nil}
     end)
+  end
+
+  # The process may already be gone (check-then-stop would race); stopping must not fail a test.
+  defp stop_quietly(pid) do
+    GenServer.stop(pid)
+  catch
+    :exit, _ -> :ok
   end
 end

@@ -22,7 +22,7 @@ defmodule ActorTxSpike.EvidenceIntegrationTest do
 
     on_exit(fn ->
       File.rm_rf(dir)
-      if Process.alive?(audit), do: GenServer.stop(audit)
+      stop_quietly(audit)
     end)
 
     %{path: path, audit: audit}
@@ -117,5 +117,12 @@ defmodule ActorTxSpike.EvidenceIntegrationTest do
 
     File.write!(path, original)
     assert {:ok, _} = Audit.verify(path)
+  end
+
+  # The process may already be gone (check-then-stop would race); stopping must not fail a test.
+  defp stop_quietly(pid) do
+    GenServer.stop(pid)
+  catch
+    :exit, _ -> :ok
   end
 end

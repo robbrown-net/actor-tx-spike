@@ -95,6 +95,8 @@ flowchart LR
 flowchart TD
     APP["ActorTxSpike.Supervisor (one_for_one)"]
     APP --> EVS["Events"]
+    APP --> RTR["Audit.Router (when audit is configured; permanent)"]
+    RTR -. links .-> LOGS["one Audit per regional log"]
     APP --> MET["Metrics"]
     APP --> ECON["Economics"]
     APP --> LED["Ledger"]
@@ -112,11 +114,12 @@ flowchart TD
     MT -. "links (only with --audit)" .-> AUDIT["Audit"]
 ```
 
-> **Known gaps:** Provider servers, the panel and the audit writer(s) are *not* under the
-> application's supervision tree today; they are linked to the demo. A dead audit writer
-> now makes the system **fail closed** (no money moves) rather than run unlogged, and open
-> transactions are resumed from the log by `Recovery`, but the system does not yet refuse to
-> start without a registered audit sink, and nothing restarts a dead writer automatically.
+> **Known gaps:** Provider servers and the panel are *not* under the application's supervision
+> tree today; they are linked to the demo. The audit router *is* supervised (when `audit` is
+> configured): a dead writer makes the system fail closed, the supervisor restarts it, and
+> production (`require_audit: true`) refuses to start without it. Open transactions are resumed
+> from the log by `Recovery`, but recovery is run by the host at start (as `mix demo` does), not
+> automatically by the application, because it needs the live provider registry.
 
 ## 5.3 Module responsibilities
 

@@ -21,7 +21,7 @@ defmodule ActorTxSpike.DemoIntegrationTest do
 
     # Make the world quick: scale latencies right down.
     {:ok, _} = Demo.control(%{"action" => "pace", "factor" => 0.05})
-    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+    on_exit(fn -> stop_quietly(pid) end)
     {:ok, demo: pid, prefix: prefix}
   end
 
@@ -170,7 +170,7 @@ defmodule ActorTxSpike.DashboardIntegrationTest do
     {:ok, demo} = Demo.start_link(timers: false, payment_opts: @fast, prefix: prefix)
     {:ok, panel} = Panel.start_link(handler: Demo.Handler, port: 0)
     port = Panel.port(panel)
-    on_exit(fn -> if Process.alive?(demo), do: GenServer.stop(demo) end)
+    on_exit(fn -> stop_quietly(demo) end)
 
     assert http(port, "GET / HTTP/1.1\r\nhost: x\r\n\r\n") =~ "Actor TX Monitor"
 
@@ -211,5 +211,12 @@ defmodule ActorTxSpike.DashboardIntegrationTest do
       {:ok, d} = :gen_tcp.recv(s, 0, 3_000)
       read_until(s, acc <> d, pattern)
     end
+  end
+
+  # The process may already be gone (check-then-stop would race); stopping must not fail a test.
+  defp stop_quietly(pid) do
+    GenServer.stop(pid)
+  catch
+    :exit, _ -> :ok
   end
 end

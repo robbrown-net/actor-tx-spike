@@ -41,6 +41,23 @@ defmodule ActorTxSpike.Replay do
     end
   end
 
+  @doc """
+  Load every regional log in a directory (`<dir>/*.log`), keyed by log name.
+  Refuses if any of them fails verification.
+  """
+  @spec load_dir(Path.t(), keyword()) :: {:ok, %{String.t() => Day.t()}} | {:error, term()}
+  def load_dir(dir, opts \\ []) do
+    dir
+    |> Path.join("*.log")
+    |> Path.wildcard()
+    |> Enum.reduce_while({:ok, %{}}, fn path, {:ok, acc} ->
+      case load(path, opts) do
+        {:ok, day} -> {:cont, {:ok, Map.put(acc, Path.basename(path, ".log"), day)}}
+        {:error, reason} -> {:halt, {:error, {Path.basename(path, ".log"), reason}}}
+      end
+    end)
+  end
+
   @doc "Build a day from already-decoded records (tests, other sources)."
   @spec from_records([map()], map() | nil) :: Day.t()
   def from_records(records, head \\ nil) do
@@ -109,16 +126,23 @@ defmodule ActorTxSpike.Replay do
   end
 
   defp read(path) do
-    if File.exists?(path) do
-      records =
-        path
-        |> File.stream!()
-        |> Enum.map(&JSON.decode!/1)
+    if File.exists?(path), do: decode(path), else: {:error, :no_such_log}
+  end
 
-      {:ok, records}
-    else
-      {:error, :no_such_log}
-    end
+  # Even with verification off, a log that is not JSON is an error, not a crash.
+  defp decode(path) do
+    path
+    |> File.stream!()
+    |> Enum.reduce_while({:ok, []}, fn line, {:ok, acc} ->
+      case JSON.decode(line) do
+        {:ok, record} -> {:cont, {:ok, [record | acc]}}
+        {:error, _} -> {:halt, {:error, :malformed_log}}
+      end
+    end)
+    |> then(fn
+      {:ok, records} -> {:ok, Enum.reverse(records)}
+      error -> error
+    end)
   end
 
   defp last([], _key), do: nil

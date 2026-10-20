@@ -72,8 +72,9 @@ Metrics sampler, rollups and Performance view DONE (see docs/architecture/07).
 - `Recovery`: open transactions resume from the log after a restart; demo resumes at start.
 - `Eligibility`: jurisdiction rules before scoring; `Audit.Router` regional logs; `Residency` proof
   and `mix replay residency` (ADR 0011).
-Next: supervise the audit writer and refuse to start without one; retention and rotation;
-forward deal lifecycle on the log; sanctions and KYC gates; load mode to measure barrier cost.
+Supervised audit router and `require_audit` (production refuses to start without it) DONE 2026-10-20.
+Next: retention and rotation; forward deal lifecycle on the log; sanctions and KYC gates; load mode
+to measure barrier cost; alerting when the audit router restarts.
 
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).

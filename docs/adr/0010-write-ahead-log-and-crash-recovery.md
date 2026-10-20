@@ -62,11 +62,20 @@ choosing, mid-undo, after the last undo, and after a missed cut-off; random kill
 transaction at ten moments asserting at most one payment whatever the timing; a restart from
 regional logs; and a demo that resumes a transaction killed mid-flight.
 
+### 5. The audit log is part of the supervision tree, and mandatory in production
+`config :actor_tx_spike, audit: [dir:, logs:]` starts `Audit.Router` right after the event
+stream, supervised and permanent. If it dies the barrier fails (fail closed), the supervisor
+restarts it, and it re-registers; the lock of the dead writer is taken over. A restarted
+router rebuilds its routing table from the logs, so the rest of an open local-only
+transaction does not leak into the global log. `require_audit: true` (set in production)
+makes the application **refuse to start** without an `:audit` setting.
+
 ## Limits (stated plainly)
 
-- **Fail closed holds only while a sink is registered.** A system started with no audit log
-  runs unlogged, as development and most tests do. Production must register one (and, still
-  to do, supervise it in the application tree and refuse to start without it).
+- **Fail closed holds only while a sink is registered.** Development and most tests run with
+  no audit log, unlogged by design. Production is protected by `require_audit`; nothing stops
+  someone configuring `audit` with an empty or wrong `logs` list (a decision naming a log the
+  router lacks crashes the router, which is the safe failure).
 - A pay that was *never sent* but is in the log as started is reconciled as in doubt, and an
   unprovable "not found" for pay goes to a human. Conservative by design, so a crash in that
   window costs a human review rather than risking a double payment.
