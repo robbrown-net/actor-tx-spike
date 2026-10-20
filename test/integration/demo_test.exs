@@ -134,6 +134,13 @@ defmodule ActorTxSpike.DemoIntegrationTest do
     assert %{providers: [_ | _]} = Demo.Handler.snapshot()
     assert {:ok, _} = Demo.Handler.control(%{"action" => "pace", "factor" => 0.1})
   end
+
+  # The process may already be gone (check-then-stop would race); stopping must not fail a test.
+  defp stop_quietly(pid) do
+    GenServer.stop(pid)
+  catch
+    :exit, _ -> :ok
+  end
 end
 
 defmodule ActorTxSpike.DashboardIntegrationTest do
