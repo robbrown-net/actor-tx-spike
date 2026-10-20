@@ -6,7 +6,16 @@ Latency assumption: **soft real-time (milliseconds)**. That is why this spike is
 
 ## What it demonstrates
 
-A transaction asks several providers for FX quotes, scores them under a cascading policy (global → merchant → customer), then accepts the best quote, authorises, pays and settles before a regional cut-off, failing over and compensating when providers misbehave, and accounting margin against any standing guarantee. See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning and [docs/ROADMAP.md](docs/ROADMAP.md) for status.
+A transaction asks several providers for FX quotes, scores them under a cascading policy (global → merchant → customer), then accepts the best quote, authorises, pays and settles before a regional cut-off, failing over and compensating when providers misbehave, and accounting margin against any standing guarantee. Around that core it also:
+
+- keeps money **exact** (integer minor units, scaled-integer rates);
+- writes a **tamper-evident, write-ahead audit log** (hash-chained, one log per region for data residency) and **fails closed**: if the log is unavailable, no money moves;
+- **recovers** open transactions from that log after a restart, never paying twice;
+- applies **jurisdiction rules** (eligible providers, permitted instruments and customer types, where records may live) before scoring;
+- can **replay a day** from the log: the state at any moment, rule verification, what-if strategies, comparison with another system;
+- prices what each transaction **costs and saves**.
+
+See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning, [docs/README.md](docs/README.md) for the full documentation index, and [docs/ROADMAP.md](docs/ROADMAP.md) for status.
 
 ```text
 submit ─► Payment (one process per transaction, owns the lifecycle)
@@ -35,12 +44,52 @@ mix test.integration     # integration suite, fails below 85% line coverage
 mix test.regression      # tests pinned to defects found so far
 mix test.system          # boots the real system and drives it over HTTP/SSE
 mix demo                 # live world + dashboard on http://127.0.0.1:4040
+mix demo --lab           # the same, plus the Test lab tab (see below)
 python3 scripts/mutate.py  # mutation testing of the pure core (slow, on demand)
 ```
+
+`mix demo` options:
+
+| Option | What it does |
+|---|---|
+| `--port 4545` | dashboard port (default 4040) |
+| `--auto` | start with automatic traffic |
+| `--quiet` | do not print the narrative to the terminal |
+| `--pace 0.2` | scale provider latencies (1.0 = human-watchable; smaller is faster) |
+| `--audit audit/day.log` | keep one tamper-evident audit log; open transactions in it are resumed at start |
+| `--audit-dir audit/` | one log per region (GLOBAL, IN, CN): data residency; resumes open transactions |
+| `--lab` | the **Test lab** tab: regional logs in a fresh temp directory, under a supervisor |
 
 ### Watch it work
 
 `mix demo` starts five fake providers with different prices and speeds and serves a dashboard (loopback only). Submit transactions, switch on auto traffic, then break providers with the buttons (slow, stall, error, authorise fails, pay answer lost, pay vanishes, version drift) and watch selection, failover, compensation and reconciliation unfold in the **Story** pane. Click a transaction to follow just its story. The same narrative is printed in the terminal unless `--quiet` is given.
+
+### The Test lab (design for test)
+
+`mix demo --lab`, then open the **Test lab** tab (next to Live and Performance). It makes the hard-to-reach behaviours easy to provoke and to judge:
+
+- **Scenarios**: 17 named scenarios, each with an expected outcome and hard checks (what each provider actually did, outcomes, residency). *Run* one, or *Run all*. Click a transaction id to follow its story on the Live tab. They are also an automated integration test.
+- **Audit log**: make it *healthy*, *down*, or *fail after N steps* to see what each transaction state does (nothing started: fails cleanly; money moved: stops for a person); *kill the router* and watch the supervisor restart it; *verify logs + residency*.
+- **Crash and recover**: *arm* a kill at an exact event (for example "when authorise succeeds", "when pay is sent"), submit a transaction, then *plan recovery (dry run)* to see what the log says about each open transaction, and *recover now*.
+- **Idempotency**: submit the same id twice; re-send a completed step with the same key and check the provider did nothing more.
+- **What the providers actually did**: the ground truth table the checks are judged against.
+
+The header's submit controls (amount, merchant, region, instrument, customer type) stay visible, so you can set up any state by hand. Without `--lab` the tab explains how to enable it. Details: [docs/architecture/08-test-lab.md](docs/architecture/08-test-lab.md).
+
+### The audit log, replay and recovery
+
+```sh
+mix demo --audit-dir audit/             # keep the regional logs
+mix audit.verify audit/GLOBAL.log       # is the hash chain intact? (prints the head to anchor)
+mix replay verify audit/GLOBAL.log      # did the day follow every rule?
+mix replay txs audit/IN.log             # one line per transaction
+mix replay at audit/GLOBAL.log --n 300  # the system as it stood at audit record 300
+mix replay whatif audit/GLOBAL.log --set max_bps_from_best=25    # try a different policy on a real day
+mix replay diff audit/GLOBAL.log other.log                       # compare two systems' days
+mix replay residency audit/             # is every transaction recorded only where it may be?
+```
+
+In production the application refuses to start without an audit log (`require_audit`, see [config/prod.exs](config/prod.exs)). Compliance notes (PCI DSS, Dodd-Frank, eleven jurisdictions) are in [docs/compliance/COMPLIANCE_EVIDENCE.md](docs/compliance/COMPLIANCE_EVIDENCE.md).
 
 ### From IEx
 
@@ -50,7 +99,8 @@ python3 scripts/mutate.py  # mutation testing of the pure core (slow, on demand)
 {:ok, policy} = ActorTxSpike.Policy.new(%{"weights" => %{"cost" => 1}})
 
 ActorTxSpike.Events.subscribe()
-{:ok, id} = ActorTxSpike.submit(%{amount: 1000}, providers: [%{id: :alpha, server: server}], policy: policy)
+# amounts are integer minor units: 100_000 is 1,000.00
+{:ok, id} = ActorTxSpike.submit(%{amount: 100_000}, providers: [%{id: :alpha, server: server}], policy: policy)
 ActorTxSpike.await(id)
 flush()   # the story, as {:tx_event, %ActorTxSpike.Events.Event{}} messages
 ```
