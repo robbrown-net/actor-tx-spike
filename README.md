@@ -13,7 +13,8 @@ A transaction asks several providers for FX quotes, scores them under a cascadin
 - **recovers** open transactions from that log after a restart, never paying twice;
 - applies **jurisdiction rules** (eligible providers, permitted instruments and customer types, where records may live) before scoring;
 - can **replay a day** from the log: the state at any moment, rule verification, what-if strategies, comparison with another system;
-- prices what each transaction **costs and saves**.
+- prices what each transaction **costs and saves**;
+- **sends many transactions** at once (the Bulk send tab: 1 to 10,000, random amounts between a minimum and maximum, a pause in milliseconds, and an option to randomise every setting).
 
 See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning and [docs/ROADMAP.md](docs/ROADMAP.md) for status. Documentation by audience ([full index](docs/README.md)): [user guide](docs/USER_GUIDE.md), [developer guide](docs/DEVELOPER_GUIDE.md), [testing guide](docs/TESTING.md), [requirements](docs/REQUIREMENTS.md), [architecture](docs/architecture/05-system-structure.md).
 
@@ -77,6 +78,15 @@ Enforced in CI by `mix credo --strict` and the coverage gates (reasons in [ADR 0
 ### Watch it work
 
 `mix demo` starts five fake providers with different prices and speeds and serves a dashboard (loopback only). Submit transactions, switch on auto traffic, then break providers with the buttons (slow, stall, error, authorise fails, pay answer lost, pay vanishes, version drift) and watch selection, failover, compensation and reconciliation unfold in the **Story** pane. Click a transaction to follow just its story. The same narrative is printed in the terminal unless `--quiet` is given.
+
+### Bulk send
+
+The **Bulk send** tab sends a batch of transactions: how many (10, 100, 1,000, 10,000 or any 1 to 10,000), the smallest
+and largest amount (each transaction gets a random amount in between), and the pause between transactions in
+milliseconds. *Send the batch* uses the header's settings; *Randomise everything* draws merchant, customer, regions,
+instrument, customer type and currencies afresh for every transaction (some combinations are refused on purpose, such
+as a forward to IN). An optional seed repeats a random batch exactly. Progress shows sent, in flight, completed, failed,
+needs review and rate. Details: [docs/architecture/09-bulk-send.md](docs/architecture/09-bulk-send.md).
 
 ### The Test lab (design for test)
 

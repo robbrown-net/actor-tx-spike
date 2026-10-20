@@ -199,6 +199,32 @@ defmodule ActorTxSpike.LiveSystemTest do
     assert Enum.count(completed, &(&1["kind"] == "tx_completed")) >= 3
   end
 
+  test "bulk send: a seeded random batch is sent over HTTP and every transaction is accounted for",
+       %{port: port} do
+    %{"ok" => true} =
+      control(port, %{
+        "action" => "bulk",
+        "do" => "start",
+        "count" => 25,
+        "interval_ms" => 0,
+        "mode" => "random",
+        "seed" => 5
+      })
+
+    wait_for(fn -> bulk(port)["status"] == "finished" end, 60_000)
+    done = bulk(port)
+
+    assert done["submitted"] == 25 and done["in_flight"] == 0
+    assert done["completed"] + done["failed"] + done["needs_review"] == 25
+    assert done["completed"] >= 1
+
+    assert %{"ok" => false, "error" => error} =
+             control(port, %{"action" => "bulk", "do" => "start", "count" => 0})
+
+    assert error =~ "count"
+    control(port, %{"action" => "bulk", "do" => "clear"})
+  end
+
   test "UC-5 cascade and standing guarantee: merchant policy and margin are narrated and ledgered",
        %{port: port} do
     %{"ok" => true, "result" => id} =
@@ -343,6 +369,11 @@ defmodule ActorTxSpike.LiveSystemTest do
   defp submit(port, amount) do
     %{"ok" => true, "result" => id} = control(port, %{"action" => "submit", "amount" => amount})
     id
+  end
+
+  defp bulk(port) do
+    {200, body} = http(port, "GET", "/api/bulk")
+    JSON.decode!(body)
   end
 
   defp provider_state(port, id), do: provider_field(port, id, "state")

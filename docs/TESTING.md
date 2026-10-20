@@ -5,11 +5,11 @@ provoke the hard cases by hand, and what is not covered.
 
 ## 1. The layers
 
-| Layer | Where | Run with | Count (2026-10-20) | Gate | What it proves |
+| Layer | Where | Run with | Count (2026-10-21) | Gate | What it proves |
 |---|---|---|---|---|---|
-| Unit | `test/unit` | `mix test.unit` | 333 | 100% line coverage | each module in isolation, incl. every error clause |
-| Integration | `test/integration` | `mix test.integration` | 26 | above 85% line coverage | modules together: a real day recorded, replayed, recovered; jurisdiction; the lab's 17 scenarios |
-| System | `test/system` | `mix test.system` | 11 | scenarios pass | the real system as an OS process, driven only over HTTP/SSE |
+| Unit | `test/unit` | `mix test.unit` | 346 | 100% line coverage | each module in isolation, incl. every error clause |
+| Integration | `test/integration` | `mix test.integration` | 34 | above 85% line coverage | modules together: a real day recorded, replayed, recovered; jurisdiction; the lab's 17 scenarios |
+| System | `test/system` | `mix test.system` | 12 | scenarios pass | the real system as an OS process, driven only over HTTP/SSE |
 | Regression | tagged `:regression` | `mix test.regression` | 23 | pass | one test per defect found so far |
 | Mutation | `scripts/mutate.py` | on demand | sampled | all valid mutants killed | the tests would notice if the code were wrong (line coverage cannot say this) |
 | Static | `.credo.exs` | `mix credo --strict` | n/a | no issues | style, design and the [code-shape limits](DEVELOPER_GUIDE.md#3-quality-limits-and-how-they-are-enforced) |
@@ -23,7 +23,7 @@ except mutation and the lab (the lab's scenarios run inside the integration suit
 | Threshold | Value | Where it is enforced |
 |---|---|---|
 | Unit line coverage | 100% of measured modules | `mix test.unit` (`mix.exs`) |
-| Integration line coverage | above 85% (last measured about 87%) | `mix test.integration` |
+| Integration line coverage | above 85% (last measured 86.7%) | `mix test.integration` |
 | Cyclomatic complexity per function, tests included | 4 or less | `.credo.exs` |
 | Nesting depth, tests included | 2 or less | `.credo.exs` |
 | Mutation kill rate, sampled pure core | every valid mutant | `scripts/mutate.py` |
@@ -65,8 +65,18 @@ testing and for the invariant tests below.
 | Restarts | *Arm* a crash (e.g. `step_succeeded authorise`), submit, *Plan recovery (dry run)*, *Recover now* | the plan says where it stood; paid at most once; never failed over after doubt |
 | Audit-log downtime, by state | set the log *Down*, or *Fails after N steps*, and submit | nothing started: fails cleanly; money moved: stops in `needs_review`, never moves more |
 | Everything at once | *Run all* | 17 scenarios pass |
+| Volume and variety | Bulk send tab: 100 to 10,000 transactions, a pause in ms, *Randomise everything*, optionally a seed | every transaction ends completed, failed (refusals included) or needs review; none are lost; a seed repeats the batch |
 
 The scenario library is also `test/integration/lab_test.exs`, so a regression in any of this fails CI.
+
+### Volume testing by hand
+
+The **Bulk send** tab ([architecture/09](architecture/09-bulk-send.md)) sends 1 to 10,000 transactions with a random amount
+between a minimum and maximum and a pause you set. Use *Randomise everything* to cover every corridor,
+instrument, customer type and currency pair at once, and a **seed** to repeat a batch exactly when you
+find something. Check: sent equals the count you asked for; completed + failed + needs review equals
+sent once *in flight* reaches 0; the audit logs still verify (`mix audit.verify`, `mix replay verify`).
+Note that randomised batches deliberately include combinations the rules refuse.
 
 ## 5. Writing a test
 
@@ -85,6 +95,7 @@ The scenario library is also `test/integration/lab_test.exs`, so a regression in
 | Test | Why | Mitigation |
 |---|---|---|
 | `selection_test.exs` "a world of mixed providers" | the speed-led selection compares latencies a millisecond apart, so a heavily loaded machine can reorder them | passes alone every time; it has been seen to fail once in a full parallel run. If it fails, re-run it alone before suspecting a defect. |
+| Bulk integration tests (`bulk_test.exs`) | they are `async: false` (named singletons) and run a few hundred real transactions | stable in repeated runs; if one times out, check machine load first |
 | A one-off cascade of failures from a failed global audit sink | seen twice in full `mix test` runs (once after running `mix test.system` immediately before); never reproduced in 25+ attempts | recorded as unexplained in the engineering story (risk list); if it recurs, keep the first failure's output |
 
 ## 7. Not covered

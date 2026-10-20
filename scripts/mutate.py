@@ -25,6 +25,7 @@ TARGETS = {
     "lib/actor_tx_spike/eligibility/parser.ex": ["test/unit/eligibility_test.exs"],
     "lib/actor_tx_spike/money.ex": ["test/unit/money_test.exs"],
     "lib/actor_tx_spike/poll.ex": ["test/unit/poll_test.exs"],
+    "lib/actor_tx_spike/demo/bulk/plan.ex": ["test/unit/demo/bulk_plan_test.exs"],
 }
 if "--only" in sys.argv:
     wanted = sys.argv[sys.argv.index("--only") + 1].split(",")

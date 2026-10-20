@@ -119,6 +119,27 @@
   #lab table { width:100%; border-collapse:collapse; font-size:12px; }
   #lab td, #lab th { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
   #lab th { color:var(--dim); font-weight:600; }
+
+  /* ---- bulk send ---- */
+  #bulk { display:none; padding:12px; gap:12px; grid-template-columns:minmax(380px,1.2fr) minmax(320px,1fr); align-items:start; }
+  body.bulk #bulk { display:grid; }
+  body.bulk main { display:none; }
+  @media (max-width:900px) { #bulk { grid-template-columns:1fr; } }
+  #bulk .col { display:flex; flex-direction:column; gap:12px; min-width:0; }
+  #bulk .pad { padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  #bulk .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  #bulk label { color:var(--dim); font-size:11px; }
+  #bulk input, #bulk select { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:12px; }
+  #bulk table { width:100%; border-collapse:collapse; font-size:12px; }
+  #bulk td, #bulk th { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  #bulk th { color:var(--dim); font-weight:600; }
+  #bulk .bar { height:10px; background:var(--panel2); border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  #bulk .bar i { display:block; height:100%; width:0; background:var(--ok); transition:width .3s var(--ease); }
+  #bulk .nums { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:6px; }
+  #bulk .nums div { background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:11px; color:var(--dim); }
+  #bulk .nums b { display:block; font-size:18px; color:var(--text); }
+  #bulk .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:4px; }
+  #bulk .fields label { display:flex; gap:6px; align-items:center; color:var(--text); font-size:12px; }
   .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; }
   .pill.pass { background:var(--ok); color:#04130a; } .pill.fail { background:var(--bad); color:#fff; }
   .pill.skipped, .pill.not_run { background:var(--panel2); color:var(--dim); border:1px solid var(--line); }
@@ -163,9 +184,11 @@
     <label>Region</label><select id="region"><option value="">–</option><option value="UK">UK</option><option value="EU">EU</option><option value="IN">IN (local, 2 providers, spot)</option><option value="CN">CN (local, 1 provider, spot, business)</option></select>
     <label>Instrument</label><select id="instrument"><option value="spot">spot</option><option value="forward">forward</option></select>
     <label>Type</label><select id="ctype"><option value="business">business</option><option value="retail">retail</option></select>
+    <label>From</label><select id="srcCur"><option value="">–</option><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>CNY</option><option>MXN</option><option>BRL</option><option>TRY</option><option>SAR</option><option>JPY</option><option>KRW</option></select>
+    <label>To</label><select id="dstCur"><option value="">–</option><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>CNY</option><option>MXN</option><option>BRL</option><option>TRY</option><option>SAR</option><option>JPY</option><option>KRW</option></select>
     <button class="primary" id="submit">Submit transaction</button>
     <button id="auto">Auto traffic: off</button></div>
-  <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button><button id="viewLab">Test lab</button></div>
+  <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button><button id="viewBulk">Bulk send</button><button id="viewLab">Test lab</button></div>
   <div class="grp"><label>Cut-off in</label><input type="number" id="cutoffSecs" value="20" min="1" style="width:60px"><label>s</label><button id="setCutoff">Set cut-off for region</button><button id="clearCutoff">Clear</button></div>
   <div class="grp"><button id="motion" title="Turn animation on or off">Motion: on</button></div>
   <div class="grp"><label>Pace <span id="paceVal">1.0×</span></label><input type="range" id="pace" min="0.1" max="2" step="0.1" value="1"></div>
@@ -205,6 +228,47 @@
   <div class="chart"><h3><span>Hottest processes</span><span></span></h3><table class="top" id="topTable"></table></div>
   <div class="chart"><h3><span>Economics: what it saves vs what it costs</span><span id="econNet"></span></h3><table class="top" id="econTable"><tr><td>no transactions yet</td></tr></table></div>
   <div class="chart"><h3><span>Guarantee ledger</span><span></span></h3><table class="top" id="ledgerTable"><tr><td>no guaranteed transactions yet</td></tr></table></div>
+</div>
+<div id="bulk">
+  <div class="col">
+    <section>
+      <h2><span>Batch</span><span class="kv">how many, how big, how fast</span></h2>
+      <div class="pad">
+        <div class="row"><label>Transactions</label><input type="number" id="bulkCount" value="100" min="1" max="10000" style="width:80px">
+          <button data-count="10">10</button><button data-count="100">100</button><button data-count="1000">1,000</button><button data-count="10000">10,000</button></div>
+        <div class="row"><label>Smallest amount</label><input type="number" id="bulkMin" value="10" min="0.01" step="any" style="width:90px">
+          <label>largest</label><input type="number" id="bulkMax" value="5000" min="0.01" step="any" style="width:90px">
+          <span class="kv">each transaction gets a random amount in this range</span></div>
+        <div class="row"><label>Pause between transactions</label><input type="number" id="bulkInterval" value="100" min="0" max="60000" style="width:80px"><label>ms</label>
+          <label>Seed</label><input type="number" id="bulkSeed" placeholder="optional" style="width:90px"><span class="kv">a seed repeats a random batch exactly</span></div>
+      </div>
+    </section>
+    <section>
+      <h2><span>Send with the header settings</span></h2>
+      <div class="hint">Every transaction uses the merchant, customer, region, type and currencies currently chosen in the header; only the amount varies.</div>
+      <div class="pad"><div class="row"><button class="primary" id="bulkStart">Send the batch</button></div></div>
+    </section>
+    <section>
+      <h2><span>Randomise everything</span></h2>
+      <div class="hint">Each transaction draws its own settings at random, so you meet refusals (forward to IN, retail to CN) and every corridor. Untick a setting to keep it as in the header.</div>
+      <div class="pad">
+        <div class="fields" id="bulkFields"></div>
+        <div class="row"><button class="primary" id="bulkRandom">Randomise and send the batch</button>
+          <button id="bulkShuffle" title="Set the header controls to random values once, so you can submit one by hand">Shuffle the header settings</button></div>
+      </div>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2><span>Progress <span id="bulkState"></span></span><span class="row"><button id="bulkStop">Stop</button><button id="bulkClear">Clear</button></span></h2>
+      <div class="pad">
+        <div class="kv" id="bulkPlan">Nothing sent yet.</div>
+        <div class="bar"><i id="bulkBar"></i></div>
+        <div class="nums" id="bulkNums"></div>
+        <div class="kv" id="bulkRecent"></div>
+      </div>
+    </section>
+  </div>
 </div>
 <div id="lab">
   <div class="col">
@@ -595,7 +659,7 @@ document.addEventListener('click', e => {
   if (tx) { S.sel = S.sel === tx.dataset.tx ? null : tx.dataset.tx; S.dirty = true; }
 });
 $('clearSel').onclick = () => { S.sel = null; S.dirty = true; };
-$('submit').onclick = () => post({ action:'submit', amount:+$('amount').value, merchant:$('merchant').value, customer:$('customer').value, region:$('region').value, instrument:$('instrument').value, customer_type:$('ctype').value });
+$('submit').onclick = () => post({ action:'submit', amount:+$('amount').value, merchant:$('merchant').value, customer:$('customer').value, region:$('region').value, instrument:$('instrument').value, customer_type:$('ctype').value, source_currency:$('srcCur').value, destination_currency:$('dstCur').value });
 $('setCutoff').onclick = () => { const r = $('region').value; if (!r) return toast('choose a region first', true); post({ action:'cutoff', region:r, in_seconds:+$('cutoffSecs').value }); };
 $('clearCutoff').onclick = () => { const r = $('region').value; if (!r) return toast('choose a region first', true); post({ action:'cutoff', region:r, in_seconds:0 }); };
 $('auto').onclick = () => post({ action:'auto', on: !(S.snap && S.snap.auto) });
@@ -622,13 +686,65 @@ function setView(view) {
   view = view === true ? 'perf' : (view === false ? 'live' : view);
   document.body.classList.toggle('perf', view === 'perf');
   document.body.classList.toggle('lab', view === 'lab');
+  document.body.classList.toggle('bulk', view === 'bulk');
+  $('viewBulk').classList.toggle('on', view === 'bulk');
   $('viewLive').classList.toggle('on', view === 'live'); $('viewPerf').classList.toggle('on', view === 'perf'); $('viewLab').classList.toggle('on', view === 'lab');
   if (view === 'perf') fetchPerf();
   if (view === 'lab') labFetch();
+  if (view === 'bulk') bulkFetch();
 }
 $('viewLive').onclick = () => setView('live');
 $('viewPerf').onclick = () => setView('perf');
 $('viewLab').onclick = () => setView('lab');
+$('viewBulk').onclick = () => setView('bulk');
+
+
+/* ---------- bulk send ---------- */
+const B = { data: null };
+const BULK_FIELDS = [['merchant','merchant'],['customer','customer'],['origin','origin region'],['region','destination region'],['instrument','instrument'],['customer_type','customer type'],['source_currency','from currency'],['destination_currency','to currency']];
+$('bulkFields').innerHTML = BULK_FIELDS.map(([k, l]) => `<label><input type="checkbox" class="bulkField" value="${k}" checked>${l}</label>`).join('');
+function bulkFetch() {
+  if (!document.body.classList.contains('bulk')) return;
+  fetch('/api/bulk').then(r => r.json()).then(d => { B.data = d; renderBulk(); }).catch(() => {});
+}
+function headerSettings() {
+  return { merchant:$('merchant').value, customer:$('customer').value, region:$('region').value, instrument:$('instrument').value,
+           customer_type:$('ctype').value, source_currency:$('srcCur').value, destination_currency:$('dstCur').value };
+}
+function bulkParams() {
+  const p = { action:'bulk', do:'start', count:+$('bulkCount').value, min_amount:$('bulkMin').value, max_amount:$('bulkMax').value,
+              interval_ms:+$('bulkInterval').value, fixed:headerSettings() };
+  if ($('bulkSeed').value !== '') p.seed = +$('bulkSeed').value;
+  return p;
+}
+function bulkSend(extra) { return post(Object.assign(bulkParams(), extra)).then(j => { if (j && j.ok) toast('batch started'); bulkFetch(); }); }
+$('bulkStart').onclick = () => bulkSend({ mode:'fixed' });
+$('bulkRandom').onclick = () => bulkSend({ mode:'random', randomise:[...document.querySelectorAll('.bulkField:checked')].map(c => c.value) });
+$('bulkStop').onclick = () => post({ action:'bulk', do:'stop' }).then(bulkFetch);
+$('bulkClear').onclick = () => post({ action:'bulk', do:'clear' }).then(bulkFetch);
+document.querySelectorAll('[data-count]').forEach(b => b.onclick = () => { $('bulkCount').value = b.dataset.count; });
+$('bulkShuffle').onclick = () => {
+  const pick = id => { const o = $(id).options; $(id).selectedIndex = Math.floor(Math.random() * o.length); };
+  ['merchant','customer','region','instrument','ctype','srcCur','dstCur'].forEach(pick);
+  if ($('srcCur').value && $('srcCur').value === $('dstCur').value) $('dstCur').selectedIndex = ($('dstCur').selectedIndex % ($('dstCur').options.length - 1)) + 1;
+  const lo = +$('bulkMin').value, hi = +$('bulkMax').value;
+  $('amount').value = (lo + Math.random() * Math.max(hi - lo, 0)).toFixed(2);
+  toast('header settings shuffled: press Submit transaction to send one');
+};
+function renderBulk() {
+  const d = B.data; if (!d) return;
+  if (d.available === false) { $('bulkPlan').textContent = 'Bulk sending is not running. Start the demo with mix demo.'; return; }
+  const cls = { running:'running', draining:'running', finished:'pass', stopped:'skipped', idle:'not_run' }[d.status] || 'not_run';
+  $('bulkState').innerHTML = `<span class="pill ${cls}">${esc(d.status)}</span>`;
+  if (d.status === 'idle') { $('bulkPlan').textContent = 'Nothing sent yet.'; $('bulkBar').style.width = '0'; $('bulkNums').innerHTML = ''; $('bulkRecent').innerHTML = ''; return; }
+  $('bulkPlan').textContent = d.plan;
+  $('bulkBar').style.width = (100 * (d.completed + d.failed + d.needs_review) / d.count).toFixed(1) + '%';
+  const cell = (l, v) => `<div>${l}<b>${v}</b></div>`;
+  $('bulkNums').innerHTML = cell('sent', d.submitted + ' / ' + d.count) + cell('in flight', d.in_flight) + cell('completed', d.completed) + cell('failed (incl. refused)', d.failed)
+    + cell('needs review', d.needs_review) + cell('submit errors', d.errors) + cell('elapsed', (d.elapsed_ms / 1000).toFixed(1) + ' s') + cell('rate', d.per_second + ' / s');
+  $('bulkRecent').innerHTML = 'latest: ' + d.recent.map(r => `<span class="txlink" onclick="jumpToTx('${esc(r.id)}')">${esc(r.id)}</span> (${r.amount})`).join(', ');
+}
+setInterval(bulkFetch, 500);
 
 /* ---------- test lab ---------- */
 const L = { data: null, open: new Set() };

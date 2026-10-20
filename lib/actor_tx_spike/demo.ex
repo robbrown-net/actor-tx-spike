@@ -231,21 +231,12 @@ defmodule ActorTxSpike.Demo do
   defp do_control(%{"action" => "submit"} = cmd, state) do
     amount = cmd |> Map.get("amount", 1_000) |> Money.minor()
 
-    extras =
-      for {key, field} <- [
-            {"merchant", :merchant_id},
-            {"customer", :customer_id},
-            {"region", :destination_region},
-            {"origin", :origin_region},
-            {"instrument", :instrument},
-            {"customer_type", :customer_type}
-          ],
-          value = cmd[key],
-          is_binary(value) and value != "",
-          into: %{},
-          do: {field, value}
+    extras = submit_extras(cmd)
 
-    submit(state, amount, extras, cmd["id"])
+    case bad_currency(extras) do
+      nil -> submit(state, amount, extras, cmd["id"])
+      code -> {{:error, "not a currency code (three capital letters): #{inspect(code)}"}, state}
+    end
   end
 
   defp do_control(%{"action" => "market", "on" => on}, state) when is_boolean(on) do
@@ -326,6 +317,31 @@ defmodule ActorTxSpike.Demo do
   end
 
   defp do_control(_other, state), do: {{:error, "unknown command"}, state}
+
+  @submit_fields [
+    {"merchant", :merchant_id},
+    {"customer", :customer_id},
+    {"region", :destination_region},
+    {"origin", :origin_region},
+    {"instrument", :instrument},
+    {"customer_type", :customer_type},
+    {"source_currency", :source_currency},
+    {"destination_currency", :destination_currency}
+  ]
+
+  # The optional settings of a submit command, under the names the request uses.
+  defp submit_extras(cmd) do
+    for {key, field} <- @submit_fields,
+        value = cmd[key],
+        is_binary(value) and value != "",
+        into: %{},
+        do: {field, value}
+  end
+
+  defp bad_currency(extras) do
+    [extras[:source_currency], extras[:destination_currency]]
+    |> Enum.find(&(&1 && not String.match?(&1, ~r/^[A-Z]{3}$/)))
+  end
 
   # The providers as the orchestrator is given them.
   defp registry(state), do: for({pid, p} <- state.providers, do: %{id: pid, server: p.server})
@@ -481,7 +497,7 @@ end
 
 defmodule ActorTxSpike.Demo.Handler do
   @moduledoc "Adapts `ActorTxSpike.Demo` to the `ActorTxSpike.Panel` handler contract."
-  alias ActorTxSpike.Demo.Lab
+  alias ActorTxSpike.Demo.{Bulk, Lab}
 
   def snapshot, do: ActorTxSpike.Demo.snapshot()
 
@@ -491,8 +507,20 @@ defmodule ActorTxSpike.Demo.Handler do
       else: {:error, "the test lab is not running: start with mix demo --lab"}
   end
 
+  def control(%{"action" => "bulk"} = command) do
+    if Process.whereis(Bulk),
+      do: Bulk.command(command),
+      else: {:error, "bulk sending is not running"}
+  end
+
   def control(command), do: ActorTxSpike.Demo.control(command)
   def metrics, do: ActorTxSpike.Metrics.snapshot()
+
+  def bulk do
+    if Process.whereis(Bulk),
+      do: Bulk.snapshot(),
+      else: %{available: false}
+  end
 
   # The test lab exists only when started (mix demo --lab).
   def lab do

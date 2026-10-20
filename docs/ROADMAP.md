@@ -6,7 +6,7 @@ Gates (all enforced in CI; see [DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#3-quality-li
 unit coverage 100%, integration coverage >85% (line coverage via `mix test --cover`), cyclomatic
 complexity at most 4, nesting at most 2, ABC size at most 40 and no duplicated block of mass 16
 (`mix credo --strict`), no warnings, `mix format` clean. Position on 2026-10-20: unit 100%,
-integration 86.7%, all code-shape limits met (ADR 0012).
+integration 86.7%, all code-shape limits met (ADR 0012), 380 non-system tests and 12 system tests.
 Original baseline on 2026-10-15: 76.5% total.
 
 See ADR 0001 and Amendment 1 for the domain model.
@@ -91,6 +91,15 @@ to measure barrier cost; alerting when the audit router restarts.
   `Eligibility.Parser`, `Validation`, `Poll`; shared `Wait` test helper; `mix quality` alias.
 - Documentation brought up to date: developer, testing, requirements and user guides.
 Next: widen mutation testing to `Payment` and `Recovery`; make CI a required check; consider Dialyzer.
+
+## Phase 3d: Bulk send - DONE (2026-10-21)
+- Bulk send tab: 1 to 10,000 transactions, random amount between a minimum and maximum, a pause in ms,
+  optional seed; "Randomise everything" draws merchant, customer, regions, instrument, customer type and
+  currencies per transaction; progress counted from how each ends (docs/architecture/09-bulk-send.md).
+- Source and destination currency carried on requests, shown in the story, recorded in the log.
+- First load observation: 1,000 randomised transactions with no pause took about 12 s, with 29 ending in `needs_review`.
+Next: use it for a load/soak measurement (barrier cost, bulkhead limits); cap in-flight transactions or
+back off to a target rate; make currencies drive pricing and eligibility; record a batch's parameters in the log.
 
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).

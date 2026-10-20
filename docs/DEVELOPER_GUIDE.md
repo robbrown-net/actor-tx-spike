@@ -99,7 +99,8 @@ lib/actor_tx_spike/              core modules (see architecture/05 for the map)
   provider/                        adapter behaviour, health model, server (breaker), fake
   money.ex, costs.ex, economics.ex exact money; the cost and savings ledger
   metrics.ex, metrics/             sampler and rollups
-  demo.ex, demo/                   the demo world and the Test lab (tooling)
+  demo.ex, demo/                   the demo world, the Test lab and Bulk send (tooling)
+  demo/bulk.ex, demo/bulk/plan.ex  batch sender (server) and its pure plan/generator
   panel.ex                         HTTP + SSE dashboard server
 lib/mix/tasks/                   mix demo, audit.verify, replay
 priv/panel.html                  the dashboard (single file)
@@ -145,6 +146,11 @@ behaviour is user-visible.
 (`routing/0`, `idempotency/0`, `provider_faults/0`, `audit_outage/0`, `restarts/0`) and a function
 that runs it and calls `check/3`. Each scenario must make at least two checks. The integration
 test `lab_test.exs` runs them all.
+
+**Add a randomised setting to Bulk send.** Add its name and the values it draws from to `choices` in
+`Demo.Bulk.Plan` (and to `@draw_order`, after any setting it depends on), map the JSON key to the request field in
+`Demo`'s `@submit_fields`, add a tick box in `BULK_FIELDS` in `priv/panel.html`, and extend `bulk_plan_test.exs`
+(every drawn value must be in the choices; a seeded plan must repeat).
 
 **Add a policy field.** Add it to `Policy` (`@keys`, struct, `fields/0`, a `parse_*` function), to
 `Tx.policy/2` so replay rebuilds it, and to `Journal` enrichment of `tx_received`. Unit-test the

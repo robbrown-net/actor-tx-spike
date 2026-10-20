@@ -59,6 +59,7 @@ defmodule Mix.Tasks.Demo do
 
   defp start_world(opts, previous, lab_dir) do
     {:ok, _} = Demo.start_link(sentinel_options(opts[:sentinel_ms]))
+    {:ok, _} = Demo.Bulk.start_link()
     recover(previous)
     start_lab(lab_dir)
     set_pace(opts[:pace])

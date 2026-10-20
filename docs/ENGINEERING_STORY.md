@@ -121,6 +121,7 @@ These came from the owner and are standing rules.
 | Keep it local until the harness exists, then push on request | Commit and push only when asked |
 | 100% unit / > 85% integration coverage | Gates in `mix.exs`; tests first for new modules |
 | Branch-level coverage "later" | Deferred, tracked in the roadmap |
+| "Add a screen for sending many payments with a min and max size, a randomiser and a pause; and a way to randomise every UI setting" | Bulk send tab (`Demo.Bulk`, pure `Bulk.Plan`); same limits and docs standard as everything else |
 | "Lower complexity and duplication thresholds; nested ifs are better handled by design patterns, interfaces and abstractions; it matters for new people" | Cyclomatic complexity 4, nesting 2, ABC 40, duplicate mass 16 enforced by Credo in CI ([ADR 0012](adr/0012-code-shape-limits.md)); about 30 functions reshaped into clauses, small modules and tables |
 | "It's a black box, I want to see and feel it" | Observability became a requirement, not a nicety |
 | Prefer recommendations over option lists | Decisions are brought with a recommended default |
@@ -158,6 +159,7 @@ These came from the owner and are standing rules.
 | Supervised audit | Audit router under the application supervisor; production refuses to start without it |
 | Design for Test lab | `mix demo --lab`: fault injection, crash at an exact event, recover, 17 scenarios (architecture/08) |
 | Code-shape limits | Credo limits on complexity, nesting, size and duplication; refactor of ~30 functions; shared `Validation`, `Poll`, `Selector.Narrator`, `Eligibility.Parser` (ADR 0012) |
+| Bulk send | A tab that sends 1 to 10,000 transactions with random amounts, a settable pause, optional seed and a "randomise everything" mode; currencies carried on requests (architecture/09) |
 | Documentation pass | Developer, testing, requirements and user guides; diagrams and quality snapshot brought up to date |
 
 ## 8. Open questions
@@ -209,6 +211,7 @@ These came from the owner and are standing rules.
 | R27 | Data residency: regional logs and a residency proof exist, but retention is not enforced, rules are unconfirmed by counsel, and a corridor touching a local-only region leaves the other side without a record | high | high | Retention and archival; counsel review; decide the corridor policy |
 | R28 | Recovery reconciles a pay it cannot prove was never sent as in doubt, so a crash in that window costs a human review; resumed work loses cost attribution and the policy label | certain | low | Accept; improve with provider-side status guarantees |
 | R29 | Two writers on one log would break the chain; guarded by a lock file that relies on the OS process table | low | high | Keep the lock; use a real distributed lock if the log moves off a local disk |
+| R32 | Under a sudden burst (1,000 transactions, no pause) some transactions end in `needs_review` (29 in the first run), presumably from provider bulkhead and timeout limits; there is no cap on in-flight transactions or back-off | medium | medium | Measure with Bulk send, then decide limits and back-pressure; keep `needs_review` as the safe outcome |
 | R30 | A one-off cascade of failures from a failed global audit sink was seen twice in full `mix test` runs and never reproduced | low | medium | If it recurs keep the first failure's output; suspected shared global state between suites |
 | R31 | `selection_test` "mixed providers" compares latencies a millisecond apart and can flip under heavy parallel load | low | low | Re-run alone; make the fake's latencies explicit when next touched |
 

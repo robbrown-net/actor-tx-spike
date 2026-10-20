@@ -37,15 +37,15 @@ Options (`mix demo ...`):
 
 ## 3. The dashboard
 
-Three tabs: **Live**, **Performance**, **Test lab**.
+Four tabs: **Live**, **Performance**, **Bulk send** and **Test lab**.
 
 **Live.** The five providers (price, speed, health state, circuit breaker), the transactions in
 flight and finished, the **Story** pane (what each component is doing, in plain words), and the
 **Economics** panel (what the system cost, what better rates saved, margin against guarantees).
 Click a transaction to follow just its story; *show all* clears the filter.
 
-**Header controls.** Amount, merchant, **region**, **instrument** (spot or forward) and **customer
-type** (business or retail), then *Submit transaction*. *Auto traffic* submits transactions for
+**Header controls.** Amount, merchant, customer, **region**, **instrument** (spot or forward), **customer
+type** (business or retail) and the **From** and **To** currencies, then *Submit transaction*. The currencies are shown in the story and recorded; they do not yet change pricing or routing. *Auto traffic* submits transactions for
 you. Region matters: *IN* sends records only to the India log and allows only India-eligible
 providers; *CN* likewise for China; forwards to IN and retail to CN are refused before any
 provider is asked.
@@ -76,7 +76,29 @@ money may have moved).
 **Performance.** CPU, memory, network, scheduler load, run queue, throughput and end-to-end
 latency, per second and rolled up per minute.
 
-## 4. The Test lab
+## 4. Bulk send
+
+The **Bulk send** tab sends many transactions for you. It works with a plain `mix demo`.
+
+* **Batch:** how many (buttons for 10, 100, 1,000 and 10,000, or any number from 1 to 10,000), the
+  smallest and largest amount (each transaction gets a random amount in that range), the pause
+  between transactions in milliseconds (0 sends as fast as it can), and an optional **seed**.
+* **Send with the header settings:** every transaction uses the merchant, customer, region, type
+  and currencies chosen in the header; only the amount varies.
+* **Randomise everything:** every transaction draws its own merchant, customer, origin and
+  destination region, instrument, customer type and currencies at random. Untick a setting to keep it
+  as in the header. Some random combinations are refused on purpose (a forward to IN, a retail customer to CN):
+  they show as *failed* because the system refused them before any provider was asked. A seed makes a random batch repeat exactly.
+* **Shuffle the header settings:** sets the header controls to random values once, so you can submit a single random transaction by hand.
+* **Progress:** state (*running*, *draining* while the last ones finish, *finished*, *stopped*), a bar, and
+  sent, in flight, completed, failed (including refused), needs review, submit errors, elapsed time and
+  rate. *Stop* ends the sending (transactions already sent finish normally); *Clear* forgets a finished batch.
+  Click a latest transaction id to see its story on the Live tab.
+
+One batch runs at a time. Large batches with no pause load the demo heavily (1,000 with no pause took
+about 12 seconds); expect some transactions to end in `needs_review` under that load. Details: [architecture/09](architecture/09-bulk-send.md).
+
+## 5. The Test lab
 
 `mix demo --lab`, tab **Test lab**. It lets you provoke the hard situations and see a verdict.
 
@@ -97,7 +119,7 @@ latency, per second and rolled up per minute.
 
 Without `--lab` the tab explains how to turn it on. More detail: [architecture/08](architecture/08-test-lab.md).
 
-## 5. The audit log: verify, replay, recover
+## 6. The audit log: verify, replay, recover
 
 Run with a kept log (`mix demo --audit-dir audit/`), then:
 
@@ -119,7 +141,7 @@ mix replay residency audit/                      # is every transaction recorded
   `needs_review`. Messages beginning `recovery:` appear in the terminal.
 * **A log that fails verification** is refused: the system will not append to a damaged record.
 
-## 6. Production settings
+## 7. Production settings
 
 The application refuses to start in production without an audit log. Set:
 
@@ -130,7 +152,7 @@ The application refuses to start in production without an audit log. Set:
 
 Note the dashboard has no authentication or TLS: keep it on the loopback interface.
 
-## 7. Jurisdictions
+## 8. Jurisdictions
 
 The eleven jurisdictions in scope are UK, EU, US, India, Mexico, Brazil, Turkey, Saudi Arabia, Japan,
 South Korea and China, for spot and forward, business and retail. The demo implements rules for
@@ -139,7 +161,7 @@ country-by-country picture, what evidence exists and what is missing, is in
 [compliance/COMPLIANCE_EVIDENCE](compliance/COMPLIANCE_EVIDENCE.md). The rules are unverified by
 counsel: do not treat them as legal advice.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | You see | Likely cause | What to do |
 |---|---|---|
@@ -149,11 +171,14 @@ counsel: do not treat them as legal advice.
 | "no such log" / transaction refused for a region | the rules name a log that was not configured | add it to `--audit-dir` setup / `ACTOR_TX_AUDIT_LOGS` |
 | Provider shows `quarantined` | version drift was detected | *heal* it, or leave it out of routing |
 | Test lab tab says to enable the lab | started without `--lab` | restart with `mix demo --lab` |
+| "a batch is already running" | one batch runs at a time | press *Stop*, then *Clear* if you want a fresh one |
+| Many failed in a random batch | refusals by jurisdiction (forward to IN, retail to CN) and, at high speed, provider overload | untick *instrument*, *customer type* and the regions to avoid refusals; add a pause |
+| "not a currency code" | a currency must be three capital letters | use the lists in the header |
 
-## 9. Words used
+## 10. Words used
 
 *Quote*: a provider's offered rate and fee. *Net*: what the customer ends up with (amount × rate − fee).
 *Failover*: moving to the next provider after a definite failure. *Doubt*: a call whose outcome is
 unknown. *Compensation*: undoing what was done at a provider. *Guarantee*: a merchant's promised rate for
 a period. *Cut-off*: the regional deadline for settlement. *Residency*: records stay in the regions they
-must. Full glossary: [architecture/02](architecture/02-domain-model.md).
+must. *Batch*: a run of many transactions sent from the Bulk send tab. *Seed*: a number that makes a random batch repeat exactly. Full glossary: [architecture/02](architecture/02-domain-model.md).

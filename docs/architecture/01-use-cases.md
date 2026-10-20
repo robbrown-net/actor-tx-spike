@@ -12,6 +12,7 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | Merchant system | primary (ingress) | Get a customer's payment converted and paid, fast and at a good rate, exactly once |
 | Operator | primary | See what is happening, change conditions, intervene |
 | Finance / compliance reviewer | primary (planned) | Resolve anything the system could not safely decide |
+| Load generator (operator) | primary | Send many varied transactions, at a chosen pace, and see how the system copes |
 | Tester / developer | primary | Provoke the hard-to-reach behaviours (restart, idempotency, router, audit-log downtime) and judge the outcome, without writing code |
 | Auditor / QSA | primary | Evidence that the system did the right things, and that the evidence has not been altered |
 | Provider (FX / payment third party) | supporting | Receives requests; we do not control it |
@@ -184,3 +185,16 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Extensions** | 2a. Tester submits the same transaction id twice, or re-sends a completed step with the same key: the provider does nothing more. 2b. Tester kills the audit router: money stops while it is down; the supervisor restarts it. 2c. The lab is not enabled: the tab explains how to start it and scenarios needing the logs are skipped. |
 | **Special requirements** | Scenarios are deterministic (prices fixed, providers healed, healthy log restored before each). The scenario library is also an automated integration test. |
 | **Status** | Implemented. See [08](08-test-lab.md). Known limit: the crash trigger hits the next matching event of any transaction. |
+
+## UC-13 Send many transactions ✅
+
+| | |
+|---|---|
+| **Primary actor** | Operator or tester |
+| **Preconditions** | `mix demo` is running. |
+| **Success guarantee** | The requested number of transactions is submitted at the requested pace, with amounts in the requested range, and every one is accounted for (completed, failed or needs review). |
+| **Main scenario** | 1. Operator opens the Bulk send tab. 2. Operator sets the count (for example 10, 100, 1,000 or 10,000), the smallest and largest amount, and the pause between transactions in milliseconds. 3. Operator sends the batch with the header's settings, or chooses *Randomise everything* so each transaction draws its own merchant, customer, regions, instrument, customer type and currencies. 4. System submits one transaction per pause and shows progress: sent, in flight, completed, failed, needs review, rate. 5. System finishes when every transaction has ended. |
+| **Extensions** | 3a. A seed is given: the random batch repeats exactly. 3b. The plan is invalid (count out of range, minimum above maximum, unknown setting): refused with every reason. 4a. Operator stops the batch: sending ends, transactions already sent finish normally. 4b. A batch is already running: a second is refused. 4c. A randomised combination is not permitted (forward to IN, retail to CN): the transaction is refused before any provider is asked and counted as failed. |
+| **Special requirements** | A transaction submitted by a batch is indistinguishable from one submitted by hand (same eligibility, journal, audit log and economics). |
+| **Status** | Implemented. See [09](09-bulk-send.md). Not built: a record of batch parameters in the audit log (batches are not replayable as batches, only as the transactions they made), a target rate with automatic back-off, and a cap on in-flight transactions. |
+

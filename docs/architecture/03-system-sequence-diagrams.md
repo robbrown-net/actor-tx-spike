@@ -179,6 +179,31 @@ sequenceDiagram
     end
 ```
 
+## SSD-10 · Send many transactions (UC-13)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Operator
+    participant S as ":System"
+
+    O->>S: start batch (count, min and max amount, pause in ms, mode, seed, settings)
+    alt plan invalid or a batch already running
+        S-->>O: refused, with every reason
+    else
+        S-->>O: started
+        loop one submission per pause until count is reached
+            S->>S: draw amount (and settings in random mode), submit
+            S-->>O: progress (sent, in flight, completed, failed, needs review, rate)
+        end
+        S-->>O: finished once every transaction has ended
+    end
+    opt stop early
+        O->>S: stop
+        S-->>O: stopped (already sent transactions finish and are counted)
+    end
+```
+
 ## SSD-8 · Submit within a jurisdiction (UC-11)
 
 ```mermaid

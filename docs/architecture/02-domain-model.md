@@ -193,6 +193,9 @@ classDiagram
 | **Breaker** | Per-provider circuit: `closed / open / half_open`. |
 | **Quarantine** | A provider whose version changed is not trusted until released. |
 | **Narrative** | The ordered stream of events describing everything the system does. |
+| **Batch** | A run of many transactions sent by Bulk send: a count, an amount range, a pause, and fixed or randomised settings. |
+| **Plan** | The validated description of a batch; a seeded plan generates the same transactions every time. |
+| **Seed** | A whole number that makes a random batch repeatable. |
 | **Test lab** | The dashboard tab (`mix demo --lab`) for provoking and judging restarts, idempotency, the router and audit-log downtime. |
 | **Scenario** | A named situation in the Test lab with an expected outcome and hard checks (17 exist). |
 | **Fault mode** | The state the lab puts the durable log in: healthy, down, or failing after N steps. |

@@ -53,7 +53,8 @@ defmodule ActorTxSpike.MixProject do
     ActorTxSpike.Demo,
     ActorTxSpike.Demo.Handler,
     ActorTxSpike.Demo.Lab,
-    ActorTxSpike.Demo.Lab.Scenarios
+    ActorTxSpike.Demo.Lab.Scenarios,
+    ActorTxSpike.Demo.Bulk
   ]
 
   defp ignored_modules do

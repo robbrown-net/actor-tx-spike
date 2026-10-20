@@ -151,15 +151,20 @@ defmodule ActorTxSpike.Payment do
     amount = state.request[:amount]
 
     state =
-      note(state, :tx_received, "transaction received: amount #{Money.format(amount)}", %{
-        amount: amount,
-        request: state.request,
-        policy: Map.from_struct(state.policy),
-        guarantee: state.guarantee && Map.from_struct(state.guarantee),
-        config: Map.drop(state.opts, [:baseline, :barrier]),
-        providers: Enum.map(state.providers, & &1.id),
-        eligibility: journal_eligibility(state)
-      })
+      note(
+        state,
+        :tx_received,
+        "transaction received: amount #{Money.format(amount)}#{pair(state.request)}",
+        %{
+          amount: amount,
+          request: state.request,
+          policy: Map.from_struct(state.policy),
+          guarantee: state.guarantee && Map.from_struct(state.guarantee),
+          config: Map.drop(state.opts, [:baseline, :barrier]),
+          providers: Enum.map(state.providers, & &1.id),
+          eligibility: journal_eligibility(state)
+        }
+      )
 
     {:noreply, proceed(state, admission(state))}
   end
@@ -197,6 +202,11 @@ defmodule ActorTxSpike.Payment do
 
     {:noreply, resume(state, plan)}
   end
+
+  # " (USD to EUR)" when the request names its currencies, which are carried and recorded
+  # but do not yet change pricing or routing.
+  defp pair(%{source_currency: from, destination_currency: to}), do: " (#{from} to #{to})"
+  defp pair(_request), do: ""
 
   # Whether the transaction may go ahead at all, decided before any provider is asked.
   defp admission(%{eligibility: %{permitted?: false, reasons: reasons}}),

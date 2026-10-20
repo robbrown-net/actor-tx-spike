@@ -48,6 +48,18 @@ defmodule ActorTxSpike.PaymentTest do
 
   defp count(market, provider, op), do: Fake.effect_count(market[provider].fake, op)
 
+  test "a request that names its currencies says so in the story, and carries them" do
+    Events.subscribe()
+    id = submit(market(), [], request: %{source_currency: "USD", destination_currency: "EUR"})
+
+    assert_receive {:tx_event, %{tx_id: ^id, kind: :tx_received, message: message, data: data}},
+                   1_000
+
+    assert message =~ "(USD to EUR)"
+    assert data.request.source_currency == "USD"
+    assert {:ok, _} = ActorTxSpike.await(id)
+  end
+
   test "happy path: quote, accept, authorise, pay with the best provider" do
     m = market()
     id = submit(m)

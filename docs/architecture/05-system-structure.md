@@ -48,6 +48,8 @@ flowchart LR
     end
     DEMO["Demo world (providers, traffic, sentinel, operator controls)"]
     LAB["Demo.Lab (Design for Test: faults, crash, scenarios)"]
+    BULK["Demo.Bulk (sends batches of transactions)"]
+    BPLAN["Demo.Bulk.Plan (pure: validate, draw amounts and settings)"]
     POLL["Poll (wait for a condition; used by lab and tests)"]
 
     API --> TS --> PAY
@@ -61,6 +63,9 @@ flowchart LR
     GUA --> VAL
     ELIG --> EPAR --> VAL
     LAB --> DEMO
+    BULK --> BPLAN
+    BULK --> DEMO
+    EV -. "outcomes counted" .-> BULK
     LAB --> POLL
     LAB --> REC
     API --> PSET
@@ -167,7 +172,9 @@ flowchart TD
 | `Replay` (+ `Tx`, `Rules`, `WhatIf`, `Compare`, `Residency`, `Report`) | Load a verified day; state at a moment; rule verification; strategy what-if; comparison with another system; text reports | **yes** |
 | `Metrics` (+ `Stats`, `Rollup`, `VM`) | Resource and application metrics with bounded rollups | mostly |
 | `Events`, `Narrative` | Narrative stream and rendering | no |
-| `Panel`, `Demo` | Dashboard server and demo world | no |
+| `Panel`, `Demo` | Dashboard server (`/api/snapshot`, `/metrics`, `/lab`, `/bulk`, `/events`, `/control`) and demo world | no |
+| `Demo.Bulk` | Sends a batch of transactions through the demo at a set pace and counts how each ends (see [09](09-bulk-send.md)) | no |
+| `Demo.Bulk.Plan` | Validates a batch plan; draws each transaction's amount and (in random mode) settings from a seeded random state | **yes** |
 | `Demo.Lab` (+ `Scenarios`) | Design for Test: audit fault injection, crash watcher, plan/recover/resend, 17 scenarios with checks (see [08](08-test-lab.md)) | no |
 
 The decision-heavy logic (`Policy`, `Health`, `Selector.evaluate/3`, `Eligibility`, `Recovery.plan/1`) is deliberately pure so it can be tested exhaustively.
