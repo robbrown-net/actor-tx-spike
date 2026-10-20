@@ -106,6 +106,34 @@
   #perf { display:none; padding:12px; gap:12px; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
   body.perf #perf { display:grid; }
   body.perf main { display:none; }
+  /* ---- test lab ---- */
+  #lab { display:none; padding:12px; gap:12px; grid-template-columns:minmax(380px,1.35fr) minmax(320px,1fr); align-items:start; }
+  body.lab #lab { display:grid; }
+  body.lab main { display:none; }
+  @media (max-width:900px) { #lab { grid-template-columns:1fr; } }
+  #lab .col { display:flex; flex-direction:column; gap:12px; min-width:0; }
+  #lab .pad { padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  #lab .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  #lab label { color:var(--dim); font-size:11px; }
+  #lab input, #lab select { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:12px; }
+  #lab table { width:100%; border-collapse:collapse; font-size:12px; }
+  #lab td, #lab th { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  #lab th { color:var(--dim); font-weight:600; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .pill.pass { background:var(--ok); color:#04130a; } .pill.fail { background:var(--bad); color:#fff; }
+  .pill.skipped, .pill.not_run { background:var(--panel2); color:var(--dim); border:1px solid var(--line); }
+  .pill.running { background:var(--warn); color:#1a1200; }
+  .sc { border:1px solid var(--line); border-radius:8px; padding:8px 10px; display:flex; flex-direction:column; gap:4px; }
+  .sc.fail { border-color:var(--bad); } .sc.pass { border-color:color-mix(in srgb, var(--ok) 50%, var(--line)); }
+  .sc h4 { margin:0; font-size:13px; display:flex; gap:8px; align-items:center; }
+  .sc .about, .sc .expect { font-size:12px; color:var(--dim); }
+  .sc .expect b { color:var(--text); font-weight:600; }
+  .checks { list-style:none; margin:4px 0 0; padding:0; font-size:12px; display:flex; flex-direction:column; gap:2px; }
+  .checks li.ok::before { content:"✓ "; color:var(--ok); } .checks li.bad::before { content:"✗ "; color:var(--bad); }
+  .checks .d { color:var(--dim); font-size:11px; word-break:break-all; }
+  .txlink { color:#58a6ff; cursor:pointer; text-decoration:underline dotted; }
+  .out { background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:12px; white-space:pre-wrap; word-break:break-word; max-height:180px; overflow:auto; }
+  .kv { color:var(--dim); font-size:12px; } .kv b { color:var(--text); }
   .chart { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:150px; }
   .chart h3 { margin:0 0 4px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:600; display:flex; justify-content:space-between; }
   .chart svg { width:100%; height:92px; display:block; }
@@ -137,7 +165,7 @@
     <label>Type</label><select id="ctype"><option value="business">business</option><option value="retail">retail</option></select>
     <button class="primary" id="submit">Submit transaction</button>
     <button id="auto">Auto traffic: off</button></div>
-  <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button></div>
+  <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button><button id="viewLab">Test lab</button></div>
   <div class="grp"><label>Cut-off in</label><input type="number" id="cutoffSecs" value="20" min="1" style="width:60px"><label>s</label><button id="setCutoff">Set cut-off for region</button><button id="clearCutoff">Clear</button></div>
   <div class="grp"><button id="motion" title="Turn animation on or off">Motion: on</button></div>
   <div class="grp"><label>Pace <span id="paceVal">1.0×</span></label><input type="range" id="pace" min="0.1" max="2" step="0.1" value="1"></div>
@@ -177,6 +205,57 @@
   <div class="chart"><h3><span>Hottest processes</span><span></span></h3><table class="top" id="topTable"></table></div>
   <div class="chart"><h3><span>Economics: what it saves vs what it costs</span><span id="econNet"></span></h3><table class="top" id="econTable"><tr><td>no transactions yet</td></tr></table></div>
   <div class="chart"><h3><span>Guarantee ledger</span><span></span></h3><table class="top" id="ledgerTable"><tr><td>no guaranteed transactions yet</td></tr></table></div>
+</div>
+<div id="lab">
+  <div class="col">
+    <section>
+      <h2><span>Scenarios <span id="labSummary"></span></span><span class="row"><button class="primary" id="labRunAll">Run all</button><button id="labClear">Clear results</button></span></h2>
+      <div class="hint">Each scenario sets up known conditions, provokes one behaviour and checks what each provider actually did. Click a transaction id to follow its story on the Live tab.</div>
+      <div class="scroll" id="labScenarios"></div>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2><span>Audit log: the durable record</span><span id="labRouterState"></span></h2>
+      <div class="pad">
+        <div class="kv" id="labRouterInfo"></div>
+        <table id="labLogs"></table>
+        <div class="row"><label>Availability</label>
+          <button id="labAuditOk">Healthy</button><button id="labAuditDown">Down</button>
+          <button id="labAuditAfter">Fails after</button><input type="number" id="labAuditSteps" value="2" min="0" style="width:52px"><label>steps</label>
+          <span class="kv" id="labAuditNow"></span></div>
+        <div class="row"><button id="labKillRouter">Kill the router (supervisor restarts it)</button>
+          <button id="labVerify">Verify logs + residency</button></div>
+        <div class="out" id="labVerifyOut" style="display:none"></div>
+      </div>
+    </section>
+    <section>
+      <h2><span>Crash and recover</span><span id="labArmed"></span></h2>
+      <div class="pad">
+        <div class="row"><label>Kill the next transaction when</label>
+          <select id="labCrashKind"><option>step_started</option><option selected>step_succeeded</option><option>undo_started</option><option>provider_chosen</option><option>select_started</option></select>
+          <select id="labCrashOp"><option value="">(any)</option><option>accept_quote</option><option selected>authorise</option><option>pay</option><option>settle</option><option>cancel_accept</option></select>
+          <button id="labArm">Arm</button><button id="labDisarm">Disarm</button></div>
+        <div class="kv" id="labCrashes"></div>
+        <div class="row"><button id="labPlan">Plan recovery (dry run)</button><button class="primary" id="labRecover">Recover now</button></div>
+        <div class="out" id="labPlanOut" style="display:none"></div>
+      </div>
+    </section>
+    <section>
+      <h2><span>Idempotency</span></h2>
+      <div class="pad">
+        <div class="row"><label>Same id twice</label><input id="labDupId" value="dup-1" style="width:110px"><button id="labDup">Submit it twice</button></div>
+        <div class="row"><label>Re-send a step</label><input id="labResendTx" placeholder="transaction id" style="width:110px">
+          <select id="labResendOp"><option>accept_quote</option><option>authorise</option><option selected>pay</option><option>settle</option></select>
+          <button id="labResend">Send again, same key</button></div>
+        <div class="out" id="labIdemOut" style="display:none"></div>
+      </div>
+    </section>
+    <section>
+      <h2><span>What the providers actually did</span></h2>
+      <div class="pad"><table id="labEffects"></table></div>
+    </section>
+  </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>
@@ -539,13 +618,76 @@ setMotion(storedMotion !== 'off');
 $('motion').onclick = () => setMotion(document.documentElement.dataset.motion === 'off');
 
 
-function setView(perf) {
-  document.body.classList.toggle('perf', perf);
-  $('viewLive').classList.toggle('on', !perf); $('viewPerf').classList.toggle('on', perf);
-  if (perf) { fetchPerf(); }
+function setView(view) {
+  view = view === true ? 'perf' : (view === false ? 'live' : view);
+  document.body.classList.toggle('perf', view === 'perf');
+  document.body.classList.toggle('lab', view === 'lab');
+  $('viewLive').classList.toggle('on', view === 'live'); $('viewPerf').classList.toggle('on', view === 'perf'); $('viewLab').classList.toggle('on', view === 'lab');
+  if (view === 'perf') fetchPerf();
+  if (view === 'lab') labFetch();
 }
-$('viewLive').onclick = () => setView(false);
-$('viewPerf').onclick = () => setView(true);
+$('viewLive').onclick = () => setView('live');
+$('viewPerf').onclick = () => setView('perf');
+$('viewLab').onclick = () => setView('lab');
+
+/* ---------- test lab ---------- */
+const L = { data: null, open: new Set() };
+function labFetch() {
+  if (!document.body.classList.contains('lab')) return;
+  fetch('/api/lab').then(r => r.json()).then(d => { L.data = d; renderLab(); }).catch(() => {});
+}
+function labCmd(body) { return post(Object.assign({ action: 'lab' }, body)).then(j => { labFetch(); return j; }); }
+const pretty = v => JSON.stringify(v, null, 1);
+function showOut(id, v) { const o = $(id); o.style.display = 'block'; o.textContent = typeof v === 'string' ? v : pretty(v); }
+function jumpToTx(id) { setView('live'); if (S.txs.get(id)) { S.sel = id; S.dirty = true; } else toast('transaction ' + id + ' is not on the Live tab (it may be older than the buffer)', true); }
+function renderLab() {
+  const d = L.data; if (!d) return;
+  if (d.available === false) { $('labScenarios').innerHTML = '<div class="hint">The test lab is not running. Start the demo with <b>mix demo --lab</b>.</div>'; return; }
+  const r = d.router;
+  $('labRouterState').innerHTML = r.up ? '<span class="pill pass">router up' + (r.supervised ? ', supervised' : '') + '</span>' : '<span class="pill fail">no router</span>';
+  $('labRouterInfo').innerHTML = r.dir ? 'logs in <b>' + esc(r.dir) + '</b>' : 'No regional logs: start with <b>mix demo --lab</b> to enable the router, crash and residency tests.';
+  $('labLogs').innerHTML = r.logs.length ? '<tr><th>log</th><th>records</th><th>head</th></tr>' + r.logs.map(l => `<tr><td>${esc(l.name)}</td><td>${l.records}</td><td>${esc(l.head)}…</td></tr>`).join('') : '';
+  $('labAuditNow').innerHTML = 'now: <b style="color:' + (d.audit.mode_key === 'ok' ? 'var(--ok)' : 'var(--bad)') + '">' + esc(d.audit.mode) + '</b>';
+  $('labArmed').innerHTML = d.armed ? '<span class="pill running">armed: ' + esc(d.armed.kind) + (d.armed.op ? ' ' + esc(d.armed.op) : '') + '</span>' : '';
+  $('labCrashes').innerHTML = d.crashes.length ? 'killed so far: ' + d.crashes.map(c => `<span class="txlink" onclick="jumpToTx('${esc(c.tx)}')">${esc(c.tx)}</span> at ${esc(c.kind)}${c.op ? ' ' + esc(c.op) : ''}`).join(', ') : 'no crash injected yet';
+  const last = d.last || {};
+  if (last.plan) showOut('labPlanOut', last.plan.length ? last.plan.map(p => `${p.tx}  ${p.mode}${p.provider ? ' at ' + p.provider : ''}${p.op ? ', op ' + p.op : ''}  done [${(p.done || []).join(', ')}]${(p.undo || []).length ? '  undo [' + p.undo.join(', ') + ']' : ''}${p.running ? '  (still running)' : ''}`).join('\n') : 'nothing is open: every transaction in the logs has finished');
+  if (last.recovery) showOut('labPlanOut', last.recovery.length ? 'recovered:\n' + last.recovery.map(x => `${x.tx}: ${x.result}`).join('\n') : 'nothing to recover');
+  if (last.verify) showOut('labVerifyOut', last.verify.logs ? last.verify.logs.map(l => `${l.log}: ${l.records} records, ${l.transactions} tx, rules ${l.rules_ok ? 'held' : 'BROKEN ' + l.violations.join('; ')}`).join('\n') + '\nresidency: ' + (last.verify.residency.ok ? 'held' : 'BROKEN ' + last.verify.residency.violations.join('; ')) : last.verify);
+  else if (last.residency) showOut('labVerifyOut', 'residency: ' + (last.residency.ok ? 'held' : 'BROKEN ' + last.residency.violations.join('; ')) + ` (${last.residency.transactions} transactions)`);
+  if (last.resend) showOut('labIdemOut', last.resend); else if (last.duplicate) showOut('labIdemOut', last.duplicate);
+  const fx = d.effects;
+  const provs = [...new Set(fx.map(e => e.provider))], ops = [...new Set(fx.map(e => e.op))];
+  $('labEffects').innerHTML = fx.length ? '<tr><th></th>' + ops.map(o => `<th>${esc(o)}</th>`).join('') + '</tr>' + provs.map(p => `<tr><td>${esc(p)}</td>` + ops.map(o => `<td>${(fx.find(e => e.provider === p && e.op === o) || {}).count || ''}</td>`).join('') + '</tr>').join('') : '<tr><td>no provider has done anything yet</td></tr>';
+  const sc = d.scenarios, pass = sc.filter(s => s.status === 'pass').length, fail = sc.filter(s => s.status === 'fail').length;
+  $('labSummary').innerHTML = `<span class="kv">${pass} passed, ${fail} failed, ${sc.length - pass - fail} not run or skipped${d.running ? ' · running…' : ''}</span>`;
+  $('labScenarios').innerHTML = sc.map(s => {
+    const checks = (s.checks || []);
+    const show = s.status === 'fail' || L.open.has(s.id);
+    return `<div class="sc ${s.status}"><h4><span class="pill ${s.status}">${esc(s.status.replace('_', ' '))}</span>${esc(s.title)}<span style="flex:1"></span><button data-run="${esc(s.id)}">Run</button></h4>
+      <div class="about">${esc(s.about)}</div><div class="expect"><b>Expect:</b> ${esc(s.expect)}</div>
+      ${s.status !== 'not_run' ? `<div class="kv">${esc(s.summary || '')}${s.ms ? ' · ' + s.ms + ' ms' : ''} ${checks.length ? `<span class="txlink" data-toggle="${esc(s.id)}">${show ? 'hide' : 'show'} checks</span>` : ''} ${(s.tx || []).map(t => `<span class="txlink" onclick="jumpToTx('${esc(t)}')">${esc(t)}</span>`).join(' ')}</div>` : ''}
+      ${show ? '<ul class="checks">' + checks.map(c => `<li class="${c.ok ? 'ok' : 'bad'}">${esc(c.name)}${c.detail ? `<div class="d">${esc(c.detail)}</div>` : ''}</li>`).join('') + '</ul>' : ''}</div>`;
+  }).join('');
+}
+document.addEventListener('click', e => {
+  const run = e.target.closest('[data-run]'); if (run) labCmd({ do: 'run', id: run.dataset.run });
+  const tg = e.target.closest('[data-toggle]'); if (tg) { const id = tg.dataset.toggle; L.open.has(id) ? L.open.delete(id) : L.open.add(id); renderLab(); }
+});
+$('labRunAll').onclick = () => labCmd({ do: 'run', id: 'all' });
+$('labClear').onclick = () => labCmd({ do: 'clear_results' });
+$('labAuditOk').onclick = () => labCmd({ do: 'audit', mode: 'ok' });
+$('labAuditDown').onclick = () => labCmd({ do: 'audit', mode: 'down' });
+$('labAuditAfter').onclick = () => labCmd({ do: 'audit', mode: 'after', steps: +$('labAuditSteps').value });
+$('labKillRouter').onclick = () => labCmd({ do: 'kill_router' });
+$('labVerify').onclick = () => labCmd({ do: 'verify' });
+$('labArm').onclick = () => labCmd({ do: 'arm', kind: $('labCrashKind').value, op: $('labCrashOp').value });
+$('labDisarm').onclick = () => labCmd({ do: 'disarm' });
+$('labPlan').onclick = () => labCmd({ do: 'plan' });
+$('labRecover').onclick = () => labCmd({ do: 'recover' });
+$('labDup').onclick = () => labCmd({ do: 'duplicate', tx: $('labDupId').value });
+$('labResend').onclick = () => labCmd({ do: 'resend', tx: $('labResendTx').value, op: $('labResendOp').value });
+setInterval(labFetch, 1000);
 $('perfWindow').onchange = renderPerf;
 setInterval(fetchPerf, 1500);
 

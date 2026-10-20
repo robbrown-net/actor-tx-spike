@@ -11,6 +11,7 @@ defmodule ActorTxSpike.Demo do
   use GenServer
 
   alias ActorTxSpike.{Cutoff, Economics, Events, Guarantee, Journal, Ledger, Money, PolicySet}
+  alias ActorTxSpike.Demo.Lab
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
   @providers [
@@ -66,6 +67,7 @@ defmodule ActorTxSpike.Demo do
       policy_data: Map.delete(global, "min_validity_ms"),
       global: global,
       cutoffs: %{},
+      market: true,
       eligibility: eligibility(),
       guarantees: %{"acme" => acme_guarantee},
       auto: false,
@@ -109,6 +111,16 @@ defmodule ActorTxSpike.Demo do
     {:reply, results, %{state | counter: max(state.counter, highest_id(days, state.prefix))}}
   end
 
+  # What the test lab needs to drive and inspect the world.
+  def handle_call(:world, _from, state) do
+    {:reply,
+     %{
+       providers: Map.new(state.providers, fn {id, p} -> {id, Map.take(p, [:fake, :server])} end),
+       eligibility: state.eligibility,
+       prefix: state.prefix
+     }, state}
+  end
+
   def handle_call({:control, command}, _from, state) do
     Journal.record(nil, :control, "journal: operator action #{inspect(command)}", %{
       command: command
@@ -126,6 +138,12 @@ defmodule ActorTxSpike.Demo do
   end
 
   def handle_info(:auto_tick, state), do: {:noreply, state}
+
+  # the test lab pauses price drift so scenarios have a known best provider
+  def handle_info(:market, %{market: false} = state) do
+    Process.send_after(self(), :market, 2_000)
+    {:noreply, state}
+  end
 
   def handle_info(:market, state) do
     for {_id, p} <- state.providers do
@@ -150,6 +168,9 @@ defmodule ActorTxSpike.Demo do
     Process.send_after(self(), :sentinel, state.sentinel_interval_ms)
     {:noreply, state}
   end
+
+  @doc "The providers (fake and server), eligibility rules and id prefix, for the test lab."
+  def world(server \\ __MODULE__), do: GenServer.call(server, :world)
 
   @doc "Resume every open transaction found in the loaded logs (see `ActorTxSpike.Recovery`)."
   def recover(server \\ __MODULE__, days), do: GenServer.call(server, {:recover, days}, 30_000)
@@ -224,7 +245,11 @@ defmodule ActorTxSpike.Demo do
           into: %{},
           do: {field, value}
 
-    submit(state, amount, extras)
+    submit(state, amount, extras, cmd["id"])
+  end
+
+  defp do_control(%{"action" => "market", "on" => on}, state) when is_boolean(on) do
+    {{:ok, %{market: on}}, %{state | market: on}}
   end
 
   defp do_control(%{"action" => "auto", "on" => on}, state) do
@@ -302,9 +327,9 @@ defmodule ActorTxSpike.Demo do
 
   defp do_control(_other, state), do: {{:error, "unknown command"}, state}
 
-  defp submit(state, amount, extras \\ %{}) do
+  defp submit(state, amount, extras \\ %{}, given_id \\ nil) do
     n = state.counter + 1
-    id = "#{state.prefix}-#{n}"
+    id = if is_binary(given_id) and given_id != "", do: given_id, else: "#{state.prefix}-#{n}"
     providers = for {pid, p} <- state.providers, do: %{id: pid, server: p.server}
 
     result =
@@ -314,10 +339,18 @@ defmodule ActorTxSpike.Demo do
         cutoffs: state.cutoffs,
         guarantees: state.guarantees,
         eligibility: state.eligibility,
-        opts: state.payment_opts
+        opts: payment_opts(state, id)
       )
 
     {result, %{state | counter: n}}
+  end
+
+  # With the test lab running, each transaction's durable-log barrier goes through it,
+  # so the lab can simulate the log being down or failing after N steps.
+  defp payment_opts(state, id) do
+    if Process.whereis(Lab),
+      do: Keyword.put(state.payment_opts, :barrier, Lab.barrier_fun(id)),
+      else: state.payment_opts
   end
 
   defp find_provider(state, id) do
@@ -445,7 +478,23 @@ end
 
 defmodule ActorTxSpike.Demo.Handler do
   @moduledoc "Adapts `ActorTxSpike.Demo` to the `ActorTxSpike.Panel` handler contract."
+  alias ActorTxSpike.Demo.Lab
+
   def snapshot, do: ActorTxSpike.Demo.snapshot()
+
+  def control(%{"action" => "lab"} = command) do
+    if Process.whereis(Lab),
+      do: Lab.command(command),
+      else: {:error, "the test lab is not running: start with mix demo --lab"}
+  end
+
   def control(command), do: ActorTxSpike.Demo.control(command)
   def metrics, do: ActorTxSpike.Metrics.snapshot()
+
+  # The test lab exists only when started (mix demo --lab).
+  def lab do
+    if Process.whereis(Lab),
+      do: Lab.snapshot(),
+      else: %{available: false}
+  end
 end

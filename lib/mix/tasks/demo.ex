@@ -12,6 +12,8 @@ defmodule Mix.Tasks.Demo do
       mix demo --sentinel-ms 500   # probe interval
       mix demo --audit audit/demo.log   # also keep the tamper-evident audit log
       mix demo --audit-dir audit/       # one log per region (data residency): GLOBAL, IN, CN
+      mix demo --lab                    # the Test lab tab: supervised regional logs in a temp
+                                        # directory, fault injection, crash/recover, scenarios
   """
   use Mix.Task
 
@@ -30,7 +32,8 @@ defmodule Mix.Tasks.Demo do
           pace: :float,
           sentinel_ms: :integer,
           audit: :string,
-          audit_dir: :string
+          audit_dir: :string,
+          lab: :boolean
         ]
       )
 
@@ -38,12 +41,12 @@ defmodule Mix.Tasks.Demo do
 
     # logs left by a previous run: load them before this run starts appending
     previous = previous_days(opts)
-    if opts[:audit], do: start_audit(opts[:audit])
-    if opts[:audit_dir], do: start_regional_audit(opts[:audit_dir])
+    lab_dir = start_logs(opts)
 
     demo_opts = if opts[:sentinel_ms], do: [sentinel_interval_ms: opts[:sentinel_ms]], else: []
     {:ok, _} = ActorTxSpike.Demo.start_link(demo_opts)
     recover(previous)
+    if lab_dir, do: start_lab(lab_dir)
     if opts[:pace], do: ActorTxSpike.Demo.control(%{"action" => "pace", "factor" => opts[:pace]})
 
     {:ok, panel} =
@@ -92,6 +95,28 @@ defmodule Mix.Tasks.Demo do
           Mix.shell().info(
             "recovery: #{tx} #{if result == :ok, do: "resumed", else: inspect(result)}"
           )
+  end
+
+  defp start_logs(opts) do
+    if opts[:audit], do: start_audit(opts[:audit])
+    if opts[:audit_dir], do: start_regional_audit(opts[:audit_dir])
+    if opts[:lab], do: start_lab_logs()
+  end
+
+  # The lab's logs are supervised (so killing the router can be tested) and live in a
+  # temporary directory that is fresh every run.
+  defp start_lab_logs do
+    dir = Path.join(System.tmp_dir!(), "actor-tx-lab-#{System.system_time(:second)}")
+
+    {:ok, _} =
+      Supervisor.start_link([{Router, dir: dir, logs: Demo.log_names()}], strategy: :one_for_one)
+
+    dir
+  end
+
+  defp start_lab(dir) do
+    {:ok, _} = Demo.Lab.start_link(dir: dir, supervised: true)
+    Mix.shell().info("test lab: regional logs in #{dir}; open the Test lab tab")
   end
 
   defp start_regional_audit(dir) do

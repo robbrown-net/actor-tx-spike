@@ -47,7 +47,12 @@ defmodule ActorTxSpike.MixProject do
 
   # Tooling modules (demo world, dashboard server) are exercised by integration
   # tests but excluded from the strict unit gate. Keep this list short.
-  @tooling [ActorTxSpike.Demo, ActorTxSpike.Demo.Handler]
+  @tooling [
+    ActorTxSpike.Demo,
+    ActorTxSpike.Demo.Handler,
+    ActorTxSpike.Demo.Lab,
+    ActorTxSpike.Demo.Lab.Scenarios
+  ]
 
   defp ignored_modules do
     # Mix.Tasks.Demo, Mix.Tasks.Audit.Verify and Mix.Tasks.Replay are thin entry points and is never measured.

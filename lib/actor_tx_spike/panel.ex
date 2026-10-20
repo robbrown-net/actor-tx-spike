@@ -6,6 +6,7 @@ defmodule ActorTxSpike.Panel do
   * `GET /events`        Server-Sent Events: replays recent history, then streams live
   * `GET /api/snapshot`  JSON from `handler.snapshot()`
   * `GET /api/metrics`   JSON from `handler.metrics()` (resource and application metrics)
+  * `GET /api/lab`       JSON from `handler.lab()` if the handler offers one (the test lab)
   * `POST /api/control`  JSON body passed to `handler.control/1`
 
   Binds to loopback only by default. POSTs must be `application/json`, which a
@@ -130,6 +131,12 @@ defmodule ActorTxSpike.Panel do
 
   defp route(socket, :GET, "/api/metrics", _h, _b, cfg),
     do: respond_json(socket, 200, cfg.handler.metrics())
+
+  defp route(socket, :GET, "/api/lab", _h, _b, cfg) do
+    if Code.ensure_loaded?(cfg.handler) and function_exported?(cfg.handler, :lab, 0),
+      do: respond_json(socket, 200, cfg.handler.lab()),
+      else: respond_json(socket, 404, %{ok: false, error: "this handler has no test lab"})
+  end
 
   defp route(socket, :GET, "/events", _h, _b, cfg), do: stream_events(socket, cfg.keepalive_ms)
 

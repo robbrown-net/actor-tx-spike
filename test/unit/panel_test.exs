@@ -6,10 +6,17 @@ defmodule ActorTxSpike.PanelTest do
   defmodule Handler do
     def snapshot, do: %{providers: [%{id: :alpha, pid: self(), tup: {:a, 1}}]}
     def metrics, do: %{raw: [], latest: nil}
+    def lab, do: %{scenarios: [%{id: "x", status: :pass}]}
 
     def control(%{"action" => "ok"}), do: {:ok, %{done: true}}
     def control(%{"action" => "bad"}), do: {:error, "nope"}
     def control(_), do: :whatever
+  end
+
+  defmodule NoLabHandler do
+    def snapshot, do: %{}
+    def metrics, do: %{}
+    def control(_), do: :ok
   end
 
   setup do
@@ -100,6 +107,17 @@ defmodule ActorTxSpike.PanelTest do
   end
 
   @tag :regression
+
+  test "the test lab endpoint serves the handler's lab, or 404s when there is none", %{port: port} do
+    resp = request(port, "GET /api/lab HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert resp =~ "200 OK"
+    assert resp =~ ~s("scenarios")
+
+    {:ok, bare} = Panel.start_link(handler: NoLabHandler, port: 0, page: "x", keepalive_ms: 30)
+    resp = request(Panel.port(bare), "GET /api/lab HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert resp =~ "404"
+    assert resp =~ "no test lab"
+  end
 
   test "a client that vanishes mid-stream or mid-request is tolerated", %{port: port} do
     {:ok, s} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false])
