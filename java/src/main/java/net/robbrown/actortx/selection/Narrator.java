@@ -169,9 +169,9 @@ final class Narrator {
     Map<String, Object> data = new LinkedHashMap<>();
     if (selection.outcome() instanceof Selected selected) {
       data.put("provider", selected.best().providerId());
-      data.put("ranking", selection.ranked().stream().map(Narrator::ranking).toList());
+      data.put("ranking", selection.ranked().stream().map(c -> ranking(c)).toList());
     }
-    data.put("excluded", selection.excluded().stream().map(Narrator::excluded).toList());
+    data.put("excluded", selection.excluded().stream().map(e -> excluded(e)).toList());
     data.put("elapsed_ms", selection.elapsedMs());
     return data;
   }

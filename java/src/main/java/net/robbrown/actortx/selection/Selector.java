@@ -44,7 +44,7 @@ public final class Selector {
     List<Item> items = observations.stream().map(o -> judge(o, amount, policy)).toList();
     WithinBest within = policy.withinBest(accepted(items));
     List<Excluded> excluded =
-        Stream.concat(refusals(items), within.dropped().stream().map(Selector::tooDear)).toList();
+        Stream.concat(refusals(items), within.dropped().stream().map(d -> tooDear(d))).toList();
     return new Evaluation(items, rank(within.kept(), policy), excluded);
   }
 

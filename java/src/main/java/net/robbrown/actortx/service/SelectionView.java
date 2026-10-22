@@ -45,7 +45,7 @@ public record SelectionView(
         outcomeName(selection.outcome()),
         selection.outcome() instanceof Outcome.Selected s ? s.best().providerId() : null,
         selection.outcome() instanceof Outcome.Fallback f ? f.baseline() : null,
-        selection.ranked().stream().map(SelectionView::ranked).toList(),
+        selection.ranked().stream().map(c -> ranked(c)).toList(),
         selection.excluded().stream()
             .map(e -> new ExcludedView(e.providerId(), e.reason()))
             .toList(),
