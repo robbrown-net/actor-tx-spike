@@ -41,6 +41,29 @@ defmodule ActorTxSpike.Provider.ServerTest do
     def probe(_), do: :timeout
   end
 
+  defmodule BlockingAll do
+    @moduledoc "Every operation blocks until told to go."
+    @behaviour ActorTxSpike.Provider
+    defp block(notify) do
+      send(notify, {:blocked, self()})
+
+      receive do
+        :go -> {:error, :released}
+      end
+    end
+
+    def request_quote(notify, _), do: block(notify)
+    def accept_quote(notify, _, _), do: block(notify)
+    def authorise(notify, _, _), do: block(notify)
+    def pay(notify, _, _), do: block(notify)
+    def settle(notify, _), do: block(notify)
+    def cancel_accept(notify, _), do: block(notify)
+    def void_authorisation(notify, _), do: block(notify)
+    def refund(notify, _), do: block(notify)
+    def status(notify, _, _), do: block(notify)
+    def probe(notify), do: block(notify)
+  end
+
   defp start(opts \\ []) do
     {:ok, fake} = Fake.start_link(id: :p)
     opts = Keyword.merge([adapter: Fake, config: fake], opts)
@@ -142,6 +165,35 @@ defmodule ActorTxSpike.Provider.ServerTest do
 
     send(worker, :go)
     assert {:error, :released} = Task.await(task)
+    wait_until(fn -> Server.in_flight(server) == 0 end)
+  end
+
+  test "priority classes: quotes may use 60% of the slots, steps all of them, undo and status 150%" do
+    {:ok, server} = Server.start_link(adapter: BlockingAll, config: self(), max_in_flight: 10)
+
+    hold = fn op, args, n ->
+      for _ <- 1..n, do: Task.async(fn -> Server.invoke(server, op, args) end)
+    end
+
+    quotes = hold.(:request_quote, [%{id: "r"}], 6)
+    wait_until(fn -> Server.in_flight(server) == 6 end)
+    assert {:error, :overloaded} = Server.request_quote(server, %{id: "more"})
+
+    steps = hold.(:accept_quote, [:q, "k"], 4)
+    wait_until(fn -> Server.in_flight(server) == 10 end)
+    assert {:error, :overloaded} = Server.invoke(server, :pay, [:q, "k"])
+
+    undos = hold.(:cancel_accept, ["k"], 5)
+    wait_until(fn -> Server.in_flight(server) == 15 end)
+    assert {:error, :overloaded} = Server.invoke(server, :refund, ["k"])
+    assert {:error, :overloaded} = Server.status(server, :pay, "k")
+
+    for _ <- 1..15 do
+      assert_receive {:blocked, worker}
+      send(worker, :go)
+    end
+
+    for task <- quotes ++ steps ++ undos, do: Task.await(task)
     wait_until(fn -> Server.in_flight(server) == 0 end)
   end
 

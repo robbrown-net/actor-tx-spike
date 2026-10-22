@@ -8,6 +8,15 @@ defmodule ActorTxSpike.Provider.Server do
   call has an enforced timeout. The server only does admission
   (`checkout`), bookkeeping (`record`) and in-flight accounting, monitoring
   callers so a crashed caller cannot leak a slot.
+
+  The bulkhead has **priority classes**, so a burst of new work cannot starve the calls that
+  protect money already in motion. With `max_in_flight` = N (default 10):
+
+    * quote requests (new work, safe to retry) may use only the first 60% of the slots;
+    * accept, authorise, pay and settle (a transaction already under way) may use all N;
+    * undo operations, status lookups and the sentinel's probe may use up to 150% of N.
+
+  Options `:quote_share` (0.6) and `:reserve_share` (0.5) change the proportions.
   """
   use GenServer
 
@@ -64,21 +73,24 @@ defmodule ActorTxSpike.Provider.Server do
 
   @impl true
   def init(opts) do
+    max_in_flight = Keyword.get(opts, :max_in_flight, 10)
+
     {:ok,
      %{
        id: Keyword.get(opts, :id),
        adapter: Keyword.fetch!(opts, :adapter),
        config: Keyword.get(opts, :config),
        health: Health.new(Keyword.get(opts, :health, [])),
-       max_in_flight: Keyword.get(opts, :max_in_flight, 10),
+       max_in_flight: max_in_flight,
+       limits: limits(max_in_flight, opts),
        call_timeout: Keyword.get(opts, :call_timeout, 5_000),
        in_flight: MapSet.new()
      }}
   end
 
   @impl true
-  def handle_call(:checkout, {pid, _tag}, state) do
-    with false <- MapSet.size(state.in_flight) >= state.max_in_flight,
+  def handle_call({:checkout, op}, {pid, _tag}, state) do
+    with false <- MapSet.size(state.in_flight) >= Map.fetch!(state.limits, class(op)),
          {:ok, health} <- Health.checkout(state.health, now()) do
       ref = Process.monitor(pid)
 
@@ -136,7 +148,7 @@ defmodule ActorTxSpike.Provider.Server do
   end
 
   defp request(server, op, args, timeout) do
-    case GenServer.call(server, :checkout) do
+    case GenServer.call(server, {:checkout, op}) do
       {:ok, adapter, config, ref, default_timeout} ->
         timeout = if timeout == :default, do: default_timeout, else: timeout
         started = now()
@@ -147,6 +159,19 @@ defmodule ActorTxSpike.Provider.Server do
       {:error, _reason} = error ->
         error
     end
+  end
+
+  # Which slots an operation may use (see the moduledoc).
+  defp class(:request_quote), do: :quote
+  defp class(op) when op in [:accept_quote, :authorise, :pay, :settle], do: :step
+  defp class(_protective), do: :protect
+
+  defp limits(max, opts) do
+    %{
+      quote: ceil(max * Keyword.get(opts, :quote_share, 0.6)),
+      step: max,
+      protect: ceil(max * (1 + Keyword.get(opts, :reserve_share, 0.5)))
+    }
   end
 
   defp invoke_with_timeout(adapter, op, args, timeout) do

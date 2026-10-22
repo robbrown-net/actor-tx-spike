@@ -5,8 +5,8 @@ The narrative version of this plan, with risks and open questions, is in [ENGINE
 Gates (all enforced in CI; see [DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#3-quality-limits-and-how-they-are-enforced)):
 unit coverage 100%, integration coverage >85% (line coverage via `mix test --cover`), cyclomatic
 complexity at most 4, nesting at most 2, ABC size at most 40 and no duplicated block of mass 16
-(`mix credo --strict`), no warnings, `mix format` clean. Position on 2026-10-20: unit 100%,
-integration 86.7%, all code-shape limits met (ADR 0012), 380 non-system tests and 12 system tests.
+(`mix credo --strict`), no warnings, `mix format` clean. Position on 2026-10-22: unit 100%,
+integration 87.2%, all code-shape limits met (ADR 0012), 400 non-system tests and 13 system tests.
 Original baseline on 2026-10-15: 76.5% total.
 
 See ADR 0001 and Amendment 1 for the domain model.
@@ -100,6 +100,16 @@ Next: widen mutation testing to `Payment` and `Recovery`; make CI a required che
 - First load observation: 1,000 randomised transactions with no pause took about 12 s, with 29 ending in `needs_review`.
 Next: use it for a load/soak measurement (barrier cost, bulkhead limits); cap in-flight transactions or
 back off to a target rate; make currencies drive pricing and eligibility; record a batch's parameters in the log.
+
+## Phase 3e: Load and back-pressure - DONE (2026-10-22)
+- Traced the burst failures (R32) to three causes and fixed each (ADR 0013): admission control (a limit on transactions in flight,
+  refusing the excess as *overloaded* before anything starts), priority classes in the provider bulkhead (quotes 60%, steps 100%,
+  undo/status 150%), and waiting instead of failing (quotes ask a busy provider again until the deadline, steps ask again without using
+  an attempt). The Bulk sender backs off, can cap itself, and reports why transactions did not complete.
+- `mix load`: repeatable burst measurement per admission limit (docs/quality/LOAD_RESULTS.md). Result with the demo providers:
+  30% of a 2,000 burst completes with no limit, 99.8% with a limit of 100; production default 100 (`ACTOR_TX_MAX_IN_FLIGHT`).
+Next: measure with the audit log on (the write-ahead barrier's cost) and against real providers; a queue in front of the limit or
+automatic tuning from observed latency; per-merchant fairness; record refusals; alert on sustained refusal; a long soak run.
 
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).

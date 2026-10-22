@@ -10,6 +10,7 @@ flowchart LR
         MIX["mix demo"]
     end
     subgraph Core["Transaction core"]
+        ADM["Admission (limit on transactions in flight)"]
         TS["TransactionSupervisor (DynamicSupervisor)"]
         PAY["Payment (1 process per transaction)"]
         SEL["Selector (fan-out quoting, pure evaluate/3)"]
@@ -52,7 +53,10 @@ flowchart LR
     BPLAN["Demo.Bulk.Plan (pure: validate, draw amounts and settings)"]
     POLL["Poll (wait for a condition; used by lab and tests)"]
 
+    API --> ADM
+    ADM -. "admitted" .-> TS
     API --> TS --> PAY
+    PAY -. "ended: free the slot" .-> ADM
     PAY --> SEL
     SEL --> POL
     SEL --> NAR
@@ -121,6 +125,7 @@ flowchart TD
     APP --> ECON["Economics"]
     APP --> LED["Ledger"]
     APP --> REG["Registry (payment ids)"]
+    APP --> ADMN["Admission"]
     APP --> TSUP["TransactionSupervisor"]
     TSUP --> P1["Payment tx-1 (temporary)"]
     TSUP --> P2["Payment tx-2 (temporary)"]
@@ -146,15 +151,16 @@ flowchart TD
 | Module | Responsibility | Pure? |
 |---|---|---|
 | `ActorTxSpike` | Public API: submit / await / snapshot | no |
-| `Payment` | Lifecycle, retries, compensation, reconcile, escalation | no (process) |
-| `Selector` | Concurrent quoting within deadline; `evaluate/3` is the pure judgement shared with replay | `evaluate/3`: **yes** |
+| `Payment` | Lifecycle, retries (a busy provider is asked again without using an attempt), compensation, reconcile, escalation; frees its admission slot when it ends | no (process) |
+| `Selector` | Concurrent quoting within deadline (a busy provider is asked again until the deadline); `evaluate/3` is the pure judgement shared with replay | `evaluate/3`: **yes** |
+| `Admission` | Admission control: counts running transactions, refuses beyond the limit with a retry hint, frees slots on end or death (see [10](10-back-pressure.md)) | no (process) |
 | `Selector.Narrator` | The story of a selection: events people read and the journal records replay reads | no |
 | `Validation` | The shared shape of "plain data to validated struct": parse each field, collect every error | **yes** |
 | `Poll` | Wait for a condition by asking again (one place that sleeps-and-retries) | no |
 | `Policy` | Validated routing policy, constraints, scoring | **yes** |
 | `Provider` | Adapter behaviour and result vocabulary | n/a |
 | `Provider.Health` | Breaker, rolling stats, drift quarantine, recovery | **yes** |
-| `Provider.Server` | Admission, bulkhead, enforced timeouts, health events | no |
+| `Provider.Server` | Admission, bulkhead with priority classes (quotes 60%, steps 100%, undo/status 150%), enforced timeouts, health events | no |
 | `Provider.Fake` | Scriptable provider and its narration | no |
 | `PolicySet` | Cascading objectives with entitlement and validation | **yes** |
 | `Cutoff` | Regional cut-offs: fixed offset or date-aware offset function | **yes** |

@@ -22,10 +22,11 @@ flowchart LR
 
 | Panel | Controls | Effect |
 |---|---|---|
-| **Batch** | number of transactions (10, 100, 1,000, 10,000 or any 1 to 10,000), smallest and largest amount, pause between transactions in ms (0 to 60,000), optional seed | the shape of the batch; every transaction gets an amount drawn uniformly between the two (the same value if they are equal) |
+| **Batch** | number of transactions (10, 100, 1,000, 10,000 or any 1 to 10,000), smallest and largest amount, pause between transactions in ms (0 to 60,000), optional seed, and **sender waits at N in flight** (0 = no limit) | the shape of the batch; every transaction gets an amount drawn uniformly between the two (the same value if they are equal) |
 | **Send with the header settings** | *Send the batch* | every transaction uses the merchant, customer, region, instrument, customer type and currencies chosen in the header; only the amount varies |
 | **Randomise everything** | a tick box per setting (merchant, customer, origin region, destination region, instrument, customer type, from currency, to currency), *Randomise and send the batch*, *Shuffle the header settings* | each transaction draws each ticked setting at random; unticked ones stay as in the header. *Shuffle* sets the header controls to random values once so you can submit a single transaction by hand |
-| **Progress** | *Stop*, *Clear* | state (running, draining, finished, stopped), a progress bar, sent, in flight, completed, failed (including refused by jurisdiction), needs review, submit errors, elapsed, rate, and the latest transaction ids (click to open one's story) |
+| **Back-pressure: admission limit** | a limit and *Apply*, or *No limit* | the system-wide limit on transactions running at once ([10](10-back-pressure.md)); shows running, admitted, refused and peak |
+| **Progress** | *Stop*, *Clear* | state (running, draining, finished, stopped), a progress bar, sent, in flight, completed, failed (including refused by jurisdiction), needs review, **throttled** (refused as overloaded and retried), **sender waits**, submit errors, elapsed, rate, **why they did not complete** (grouped reasons), and the latest transaction ids (click to open one's story) |
 
 ## Behaviour
 
@@ -37,6 +38,10 @@ flowchart LR
 * **Randomised settings include impossible ones on purpose.** Forwards to IN and retail customers
   to CN are not permitted; those transactions are refused before any provider is asked and are
   counted as failed. A source currency is never the same as the destination currency.
+* **Back-off.** If the system answers a submission with *overloaded* (the admission limit is full), the same transaction is
+  held and sent again after the pause the system suggests; it counts as *throttled*, not as sent. With a sender cap the
+  sender also pauses while that many of its own transactions are running (*sender waits*).
+* **Why they did not complete.** Failure and review messages are grouped (numbers taken out) and counted, top eight.
 * **Seeds.** With a seed, a random batch repeats exactly (same amounts, same settings, in the same
   order). Without one it is different every time.
 * **Currencies** are carried on the request and shown in the story ("(USD to EUR)") and are
@@ -57,10 +62,9 @@ flowchart LR
 * Progress comes from the narrative stream, not from polling each transaction.
 * The server is started by `mix demo`; it is not under the application supervisor.
 
-## What it showed on first use
+## What it showed
 
-A batch of 1,000 randomised transactions with no pause took about 12 seconds on a laptop with the
-demo's fake providers: roughly 555 failed (mostly refusals by jurisdiction and breaker rejections),
-416 completed and 29 stopped in `needs_review` under the overload (provider bulkheads and timeouts).
-Nothing crashed and every transaction was accounted for. That `needs_review` figure is a first
-observation, not a benchmark: see the risk list in [ENGINEERING_STORY](../ENGINEERING_STORY.md).
+The first burst (1,000 randomised transactions, no pause) completed 416 and sent 29 to `needs_review`. Tracing the
+reasons led to [back-pressure](10-back-pressure.md): after it, the same burst completes more with none in review, and a
+limit of 100 completes every transaction. `mix load` repeats the measurement for any limit; results and method are in
+[LOAD_RESULTS](../quality/LOAD_RESULTS.md).

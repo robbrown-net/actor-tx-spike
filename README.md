@@ -14,6 +14,7 @@ A transaction asks several providers for FX quotes, scores them under a cascadin
 - applies **jurisdiction rules** (eligible providers, permitted instruments and customer types, where records may live) before scoring;
 - can **replay a day** from the log: the state at any moment, rule verification, what-if strategies, comparison with another system;
 - prices what each transaction **costs and saves**;
+- **protects itself under load**: an admission limit refuses the excess as "overloaded" before anything starts, provider slots are reserved for undo and in-flight work, and busy providers are waited for (`mix load` measures it);
 - **sends many transactions** at once (the Bulk send tab: 1 to 10,000, random amounts between a minimum and maximum, a pause in milliseconds, and an option to randomise every setting).
 
 See [docs/adr/0001-orchestrated-transactions.md](docs/adr/0001-orchestrated-transactions.md) for the reasoning and [docs/ROADMAP.md](docs/ROADMAP.md) for status. Documentation by audience ([full index](docs/README.md)): [user guide](docs/USER_GUIDE.md), [developer guide](docs/DEVELOPER_GUIDE.md), [testing guide](docs/TESTING.md), [requirements](docs/REQUIREMENTS.md), [architecture](docs/architecture/05-system-structure.md).
@@ -87,6 +88,13 @@ milliseconds. *Send the batch* uses the header's settings; *Randomise everything
 instrument, customer type and currencies afresh for every transaction (some combinations are refused on purpose, such
 as a forward to IN). An optional seed repeats a random batch exactly. Progress shows sent, in flight, completed, failed,
 needs review and rate. Details: [docs/architecture/09-bulk-send.md](docs/architecture/09-bulk-send.md).
+
+### Load and back-pressure
+
+`mix load --count 2000 --admission none,150,100` sends a burst into a fresh demo world once per admission limit and prints how many
+completed, failed or went to review (a 2,000 burst: 30% complete with no limit, 99.8% with a limit of 100). `mix demo --max-in-flight 100`
+(or the admission panel on the Bulk send tab) sets the limit; production reads `ACTOR_TX_MAX_IN_FLIGHT` (default 100). Design:
+[docs/architecture/10-back-pressure.md](docs/architecture/10-back-pressure.md); results: [docs/quality/LOAD_RESULTS.md](docs/quality/LOAD_RESULTS.md).
 
 ### The Test lab (design for test)
 

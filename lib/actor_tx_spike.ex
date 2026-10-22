@@ -10,7 +10,7 @@ defmodule ActorTxSpike do
   Transaction ids must not contain `:` (they prefix idempotency keys).
   """
 
-  alias ActorTxSpike.{Payment, PolicySet, TransactionSupervisor}
+  alias ActorTxSpike.{Admission, Payment, PolicySet, TransactionSupervisor}
 
   @doc """
   Submit a transaction. `request` needs `:amount`; `:id` is generated if absent.
@@ -25,23 +25,39 @@ defmodule ActorTxSpike do
   * `:eligibility` (`ActorTxSpike.Eligibility`): jurisdiction rules applied before scoring;
     the request may carry `:origin_region`, `:destination_region`, `:instrument`, `:customer_type`
   * `:opts` (see `ActorTxSpike.Payment` defaults).
+
+  Returns `{:error, {:overloaded, retry_after_ms}}` when `ActorTxSpike.Admission` is full:
+  nothing was started or recorded, and the caller should wait and try again.
   """
-  @spec submit(map(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  @spec submit(map(), keyword()) ::
+          {:ok, String.t()} | {:error, {:overloaded, pos_integer()} | term()}
   def submit(request, opts) when is_map(request) do
     id = request[:id] || generate_id()
     request = Map.put(request, :id, id)
 
     {policy, layers} = resolve_policy(opts, request)
 
-    args = payment_args(id, request, policy, layers, opts)
-
-    args |> TransactionSupervisor.start_payment() |> started(id)
+    with {:ok, admitted} <- Admission.admit(id) do
+      args = payment_args(id, request, policy, layers, opts)
+      args |> TransactionSupervisor.start_payment() |> started(id, admitted)
+    end
   end
 
   # Submitting an id that is already running is the same transaction, not an error.
-  defp started({:ok, _pid}, id), do: {:ok, id}
-  defp started({:error, {:already_started, _pid}}, id), do: {:ok, id}
-  defp started({:error, _reason} = error, _id), do: error
+  defp started({:ok, pid}, id, _admitted) do
+    Admission.started(id, pid)
+    {:ok, id}
+  end
+
+  defp started({:error, {:already_started, _pid}}, id, admitted) do
+    if admitted == :new, do: Admission.release(id)
+    {:ok, id}
+  end
+
+  defp started({:error, _reason} = error, id, _admitted) do
+    Admission.release(id)
+    error
+  end
 
   defp payment_args(id, request, policy, layers, opts) do
     [

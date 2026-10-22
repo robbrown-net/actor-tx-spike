@@ -198,3 +198,15 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Special requirements** | A transaction submitted by a batch is indistinguishable from one submitted by hand (same eligibility, journal, audit log and economics). |
 | **Status** | Implemented. See [09](09-bulk-send.md). Not built: a record of batch parameters in the audit log (batches are not replayable as batches, only as the transactions they made), a target rate with automatic back-off, and a cap on in-flight transactions. |
 
+## UC-14 Stay healthy under a burst ✅
+
+| | |
+|---|---|
+| **Primary actor** | Merchant system (the caller) and operator |
+| **Preconditions** | An admission limit is configured (production: 100). |
+| **Success guarantee** | When more transactions arrive than the providers can serve, the system completes what it admitted, refuses the excess cleanly before anything starts, and never starves the calls that protect money already moved. |
+| **Main scenario** | 1. A burst of submissions arrives. 2. System admits transactions until the limit is reached. 3. System refuses each further submission at once with *overloaded* and a suggested wait; nothing is started or recorded. 4. Caller waits and submits again. 5. As transactions end, slots free and refused callers get in. |
+| **Extensions** | 2a. No limit is configured: everything is admitted and providers' bulkheads shed the excess (many fail cleanly: see the load results). 3a. A provider is busy at the quote stage: it is asked again every few milliseconds until the deadline. 3b. A provider is busy at accept, authorise, pay or settle: ask again after the backoff, no attempt used, until the deadline. 3c. Undo, status and probe calls use reserved capacity and are not refused while quotes are. 5a. A transaction's process dies: its slot is freed. 6. Operator changes the limit at run time (admission panel, `mix demo --max-in-flight`, or the control API). |
+| **Special requirements** | A refusal is safe because nothing was done; a provider's *overloaded* answer is safe to retry because the call was never made. |
+| **Status** | Implemented. See [10](10-back-pressure.md) and [LOAD_RESULTS](../quality/LOAD_RESULTS.md). Not built: a queue in front of the limit, per-merchant fairness, automatic tuning. |
+

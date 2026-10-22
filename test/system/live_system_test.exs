@@ -225,6 +225,35 @@ defmodule ActorTxSpike.LiveSystemTest do
     control(port, %{"action" => "bulk", "do" => "clear"})
   end
 
+  test "back-pressure: with an admission limit the sender is told to wait, and every transaction still completes",
+       %{port: port} do
+    %{"ok" => true} = control(port, %{"action" => "admission", "max_in_flight" => 2})
+
+    %{"ok" => true} =
+      control(port, %{
+        "action" => "bulk",
+        "do" => "start",
+        "count" => 10,
+        "interval_ms" => 0,
+        "fixed" => %{"instrument" => "spot", "customer_type" => "business"}
+      })
+
+    wait_for(fn -> bulk(port)["status"] == "finished" end, 60_000)
+    done = bulk(port)
+    control(port, %{"action" => "admission", "max_in_flight" => "none"})
+    control(port, %{"action" => "bulk", "do" => "clear"})
+
+    assert done["submitted"] == 10 and done["completed"] == 10
+    assert done["throttled"] >= 1
+
+    {200, snapshot} = http(port, "GET", "/api/snapshot")
+
+    assert %{"admission" => %{"limit" => "infinity", "rejected" => rejected}} =
+             JSON.decode!(snapshot)
+
+    assert rejected >= 1
+  end
+
   test "UC-5 cascade and standing guarantee: merchant policy and margin are narrated and ledgered",
        %{port: port} do
     %{"ok" => true, "result" => id} =

@@ -12,6 +12,7 @@ defmodule Mix.Tasks.Demo do
       mix demo --sentinel-ms 500   # probe interval
       mix demo --audit audit/demo.log   # also keep the tamper-evident audit log
       mix demo --audit-dir audit/       # one log per region (data residency): GLOBAL, IN, CN
+      mix demo --max-in-flight 100      # back-pressure: refuse submissions beyond 100 running
       mix demo --lab                    # the Test lab tab: supervised regional logs in a temp
                                         # directory, fault injection, crash/recover, scenarios
   """
@@ -30,7 +31,8 @@ defmodule Mix.Tasks.Demo do
     sentinel_ms: :integer,
     audit: :string,
     audit_dir: :string,
-    lab: :boolean
+    lab: :boolean,
+    max_in_flight: :integer
   ]
 
   @impl true
@@ -63,7 +65,11 @@ defmodule Mix.Tasks.Demo do
     recover(previous)
     start_lab(lab_dir)
     set_pace(opts[:pace])
+    limit_in_flight(opts[:max_in_flight])
   end
+
+  defp limit_in_flight(nil), do: :ok
+  defp limit_in_flight(n), do: Demo.control(%{"action" => "admission", "max_in_flight" => n})
 
   defp sentinel_options(nil), do: []
   defp sentinel_options(ms), do: [sentinel_interval_ms: ms]

@@ -130,6 +130,16 @@ defmodule ActorTxSpike.Demo.Bulk.PlanTest do
     refute Enum.any?(cmds, &Map.has_key?(&1, "source_currency"))
   end
 
+  test "the sender's own in-flight cap is validated and described" do
+    assert {:ok, %{max_in_flight: 0}} = Plan.new(%{})
+    assert {:ok, %{max_in_flight: 50} = plan} = Plan.new(%{"max_in_flight" => 50})
+    assert Plan.describe(plan) =~ "at most 50 in flight"
+    refute Plan.describe(plan!(%{})) =~ "in flight"
+    assert {:error, [e]} = Plan.new(%{"max_in_flight" => -1})
+    assert e =~ "max_in_flight: must be a whole number from 0 (no limit) to 10000"
+    assert {:error, _} = Plan.new(%{"max_in_flight" => 10_001})
+  end
+
   test "a plan describes itself for the dashboard" do
     text = Plan.describe(plan!(%{"mode" => "random", "count" => 7, "seed" => 2}))
     assert text =~ "7 ×" and text =~ "random" and text =~ "seed 2"

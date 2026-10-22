@@ -60,6 +60,19 @@ defmodule ActorTxSpike.PaymentTest do
     assert {:ok, _} = ActorTxSpike.await(id)
   end
 
+  test "a busy provider is asked again without using up an attempt or failing over" do
+    m =
+      market(%{
+        best: [rate: 1.10, accept_quote_mode: List.duplicate({:error, :overloaded}, 4) ++ [:ok]]
+      })
+
+    id = submit(m, max_attempts: 2)
+
+    assert {:ok, %{provider: :best}} = ActorTxSpike.await(id, 5_000)
+    assert count(m, :second, :accept_quote) == 0
+    assert count(m, :best, :accept_quote) == 1
+  end
+
   test "happy path: quote, accept, authorise, pay with the best provider" do
     m = market()
     id = submit(m)

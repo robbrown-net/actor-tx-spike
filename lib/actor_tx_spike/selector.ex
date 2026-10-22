@@ -15,6 +15,9 @@ defmodule ActorTxSpike.Selector do
   `providers` is a list of `%{id: term, server: pid_or_name}` where `server` is
   an `ActorTxSpike.Provider.Server`.
 
+  A provider whose bulkhead is full is asked again every few milliseconds until the deadline,
+  rather than being given up on at once: under load a quote waits for a slot.
+
   Options: `:deadline_ms` (default 1000), `:baseline` (returned as
   `{:fallback, baseline}` when no usable quote arrives).
   """
@@ -26,6 +29,8 @@ defmodule ActorTxSpike.Selector do
 
   # Backstop in case a provider server itself hangs; the per-call deadline normally fires first.
   @grace_ms 100
+  # How long to wait before asking a busy provider again.
+  @busy_retry_ms 15
 
   @spec select(map(), [map()], Policy.t(), keyword()) :: Selection.t()
   def select(request, providers, %Policy{} = policy, opts \\ []) do
@@ -151,12 +156,35 @@ defmodule ActorTxSpike.Selector do
 
     result =
       try do
-        Server.request_quote(provider.server, request, deadline_ms)
+        ask(provider, request, deadline_ms, started)
       catch
         :exit, reason -> {:error, {:exit, reason}}
       end
 
     {result, now() - started}
+  end
+
+  # A provider that is busy (its bulkhead is full) has not been asked anything, so asking again
+  # shortly is safe: wait for a slot while the deadline allows, rather than give the provider up.
+  defp ask(provider, request, deadline_ms, started) do
+    remaining = max(deadline_ms - (now() - started), 1)
+
+    case Server.request_quote(provider.server, request, remaining) do
+      {:error, :overloaded} = busy ->
+        retry_when_busy(busy, provider, request, deadline_ms, started)
+
+      answer ->
+        answer
+    end
+  end
+
+  defp retry_when_busy(busy, provider, request, deadline_ms, started) do
+    if now() - started + @busy_retry_ms < deadline_ms do
+      Process.sleep(@busy_retry_ms)
+      ask(provider, request, deadline_ms, started)
+    else
+      busy
+    end
   end
 
   defp judge(%{result: {:ok, %Quote{} = quote}} = obs, request, policy) do

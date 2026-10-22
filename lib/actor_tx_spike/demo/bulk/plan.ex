@@ -14,7 +14,8 @@ defmodule ActorTxSpike.Demo.Bulk.Plan do
   Parameters (string keys, as decoded from JSON): `count` (1 to 10,000), `min_amount`,
   `max_amount` (major units, decimal), `interval_ms` (0..60_000, the pause between
   submissions), `mode` (`"fixed"` or `"random"`), `randomise` (list of setting names),
-  `fixed` (map of setting to value), `seed` (integer, optional).
+  `fixed` (map of setting to value), `seed` (integer, optional), `max_in_flight` (0 for no
+  limit: the sender waits while that many of its own transactions are still running).
   """
 
   alias ActorTxSpike.{Money, Validation}
@@ -42,6 +43,7 @@ defmodule ActorTxSpike.Demo.Bulk.Plan do
             min: 1_000,
             max: 100_000,
             interval_ms: 100,
+            max_in_flight: 0,
             mode: :fixed,
             randomise: @settings,
             fixed: %{},
@@ -94,8 +96,12 @@ defmodule ActorTxSpike.Demo.Bulk.Plan do
   @spec describe(t()) :: String.t()
   def describe(%__MODULE__{} = plan) do
     "#{plan.count} × #{Money.format(plan.min)} to #{Money.format(plan.max)}, " <>
-      "#{plan.interval_ms} ms apart, #{plan.mode}" <> seeded(plan.seed)
+      "#{plan.interval_ms} ms apart, #{plan.mode}" <>
+      capped(plan.max_in_flight) <> seeded(plan.seed)
   end
+
+  defp capped(0), do: ""
+  defp capped(n), do: ", at most #{n} in flight"
 
   defp seeded(nil), do: ""
   defp seeded(seed), do: ", seed #{seed}"
@@ -135,6 +141,7 @@ defmodule ActorTxSpike.Demo.Bulk.Plan do
       {:min, "min_amount", &amount/1},
       {:max, "max_amount", &amount/1},
       {:interval_ms, "interval_ms", &interval/1},
+      {:max_in_flight, "max_in_flight", &in_flight/1},
       {:mode, "mode", &mode/1},
       {:randomise, "randomise", &randomise/1},
       {:fixed, "fixed", &fixed/1},
@@ -144,6 +151,9 @@ defmodule ActorTxSpike.Demo.Bulk.Plan do
 
   defp count(n) when is_integer(n) and n in 1..@max_count, do: {:ok, n}
   defp count(_), do: {:error, "must be a whole number from 1 to #{@max_count}"}
+
+  defp in_flight(n) when is_integer(n) and n in 0..@max_count, do: {:ok, n}
+  defp in_flight(_), do: {:error, "must be a whole number from 0 (no limit) to #{@max_count}"}
 
   defp interval(n) when is_integer(n) and n in 0..@max_interval_ms, do: {:ok, n}
 

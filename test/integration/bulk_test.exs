@@ -8,7 +8,7 @@ defmodule ActorTxSpike.BulkIntegrationTest do
 
   alias ActorTxSpike.Wait
 
-  alias ActorTxSpike.Demo
+  alias ActorTxSpike.{Admission, Demo}
   alias ActorTxSpike.Demo.{Bulk, Handler}
 
   @fast [
@@ -24,7 +24,15 @@ defmodule ActorTxSpike.BulkIntegrationTest do
     {:ok, demo} = Demo.start_link(timers: false, payment_opts: @fast, prefix: prefix)
     {:ok, _} = Demo.control(%{"action" => "pace", "factor" => 0.05})
     {:ok, bulk} = Bulk.start_link()
-    on_exit(fn -> for pid <- [bulk, demo], do: stop_quietly(pid) end)
+    # transactions left running by an earlier test would count against this one's peak
+    Wait.until!(fn -> Admission.stats().in_flight == 0 end, tries: 600, every_ms: 50)
+    :ok = Admission.reset()
+
+    on_exit(fn ->
+      Admission.configure(:infinity)
+      for pid <- [bulk, demo], do: stop_quietly(pid)
+    end)
+
     :ok
   end
 
@@ -81,6 +89,12 @@ defmodule ActorTxSpike.BulkIntegrationTest do
     # some of the drawn combinations are not permitted (forward to IN, retail to CN)
     assert snap.failed >= 1
     assert snap.completed >= 1
+
+    # the reasons are grouped (numbers taken out) and add up to no more than what did not complete
+    assert [%{reason: reason, count: top} | _] = snap.reasons
+    assert is_binary(reason) and top >= 1
+    assert Enum.sum(Enum.map(snap.reasons, & &1.count)) <= snap.failed + snap.needs_review
+    refute Enum.any?(snap.reasons, &(&1.reason =~ ~r/\d/))
   end
 
   test "a seeded random batch repeats exactly: the same transactions are sent" do
@@ -95,6 +109,53 @@ defmodule ActorTxSpike.BulkIntegrationTest do
     amounts = fn snap -> Enum.map(snap.recent, & &1.amount) end
     assert amounts.(first) == amounts.(second)
     assert {first.completed, first.failed} == {second.completed, second.failed}
+  end
+
+  test "an admission limit makes the sender back off and try again; nothing is lost" do
+    assert {:ok, %{limit: 3}} = Demo.control(%{"action" => "admission", "max_in_flight" => 3})
+
+    start!(%{
+      "count" => 12,
+      "interval_ms" => 0,
+      "min_amount" => 10,
+      "max_amount" => 20,
+      "fixed" => %{"instrument" => "spot", "customer_type" => "business"}
+    })
+
+    snap = wait_status(:finished)
+    assert snap.submitted == 12 and ended(snap) == 12 and snap.in_flight == 0
+    assert snap.completed == 12
+    assert snap.throttled >= 1
+    assert Admission.stats().peak <= 3
+    assert Demo.snapshot().admission.limit == 3
+  end
+
+  test "the sender's own in-flight cap keeps it from ever exceeding that many at once" do
+    start!(%{
+      "count" => 20,
+      "interval_ms" => 0,
+      "max_in_flight" => 2,
+      "fixed" => %{"instrument" => "spot", "customer_type" => "business"}
+    })
+
+    snap = wait_status(:finished)
+    assert snap.submitted == 20 and ended(snap) == 20
+    assert snap.waited >= 1 and snap.throttled == 0
+    assert Admission.stats().peak <= 2
+    assert snap.plan =~ "at most 2 in flight"
+  end
+
+  test "the admission limit is a control: a number, or none, and nothing else" do
+    assert {:ok, %{limit: 5}} = Demo.control(%{"action" => "admission", "max_in_flight" => 5})
+    assert {:ok, %{limit: 7}} = Demo.control(%{"action" => "admission", "max_in_flight" => "7"})
+
+    assert {:ok, %{limit: :infinity}} =
+             Demo.control(%{"action" => "admission", "max_in_flight" => "none"})
+
+    assert {:ok, %{limit: :infinity}} = Demo.control(%{"action" => "admission"})
+    assert {:error, message} = Demo.control(%{"action" => "admission", "max_in_flight" => "lots"})
+    assert message =~ "positive whole number"
+    assert {:error, _} = Demo.control(%{"action" => "admission", "max_in_flight" => -2})
   end
 
   test "stopping ends the sending; what was already sent finishes normally" do

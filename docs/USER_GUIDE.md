@@ -34,6 +34,7 @@ Options (`mix demo ...`):
 | `--audit audit/day.log` | keep one audit log; open transactions in it resume at start |
 | `--audit-dir audit/` | one log per region (GLOBAL, IN, CN); resumes open transactions |
 | `--lab` | the Test lab tab, with regional logs in a fresh temporary directory |
+| `--max-in-flight 100` | back-pressure: refuse submissions beyond 100 running transactions |
 
 ## 3. The dashboard
 
@@ -95,8 +96,26 @@ The **Bulk send** tab sends many transactions for you. It works with a plain `mi
   rate. *Stop* ends the sending (transactions already sent finish normally); *Clear* forgets a finished batch.
   Click a latest transaction id to see its story on the Live tab.
 
-One batch runs at a time. Large batches with no pause load the demo heavily (1,000 with no pause took
-about 12 seconds); expect some transactions to end in `needs_review` under that load. Details: [architecture/09](architecture/09-bulk-send.md).
+* **Sender waits at N in flight:** the sender pauses while that many of its own transactions are still running (0 = no limit).
+* **Back-pressure: admission limit:** the most transactions the system will run at once. Beyond it a submission is refused
+  as *overloaded* before anything starts, and the sender waits and tries again (the *throttled* count). Type a number and
+  press *Apply*, or *No limit*. The panel shows how many are running, admitted, refused and the peak.
+* **Why they did not complete:** the progress panel groups the failure and review messages and counts them.
+
+One batch runs at a time. With **no limit**, a large burst with no pause overwhelms the demo providers: in a 2,000-transaction
+test only 30% completed (the rest failed cleanly). With a limit of 100 to 150, 99% or more completed. Try both and watch the
+numbers. Details: [architecture/09](architecture/09-bulk-send.md), [architecture/10](architecture/10-back-pressure.md) and the measurements in
+[quality/LOAD_RESULTS](quality/LOAD_RESULTS.md).
+
+### Measuring from the command line
+
+```sh
+mix load --count 2000 --admission none,200,150,100,50     # one run per limit, then a table
+mix load --count 2000 --admission 200 --sender-cap 120    # the sender holds itself to 120 in flight
+```
+
+Add `--pace 0.2` (provider speed), `--mode random --seed 7` (randomised settings), `--interval MS`. It prints sent, completed,
+failed, needs review, throttled, refused, peak, seconds and the reasons for each run.
 
 ## 5. The Test lab
 
@@ -149,6 +168,7 @@ The application refuses to start in production without an audit log. Set:
 |---|---|---|
 | `ACTOR_TX_AUDIT_DIR` | directory for the logs | `audit` |
 | `ACTOR_TX_AUDIT_LOGS` | comma-separated log names, covering every log the jurisdiction rules name | `GLOBAL` |
+| `ACTOR_TX_MAX_IN_FLIGHT` | most transactions running at once; more are refused as *overloaded* | `100` |
 
 Note the dashboard has no authentication or TLS: keep it on the loopback interface.
 
@@ -171,6 +191,8 @@ counsel: do not treat them as legal advice.
 | "no such log" / transaction refused for a region | the rules name a log that was not configured | add it to `--audit-dir` setup / `ACTOR_TX_AUDIT_LOGS` |
 | Provider shows `quarantined` | version drift was detected | *heal* it, or leave it out of routing |
 | Test lab tab says to enable the lab | started without `--lab` | restart with `mix demo --lab` |
+| A submission is refused as `overloaded` | the admission limit is full: the system is protecting itself | wait the suggested time and submit again (the Bulk sender does this for you), or raise the limit if the providers can take more |
+| Many transactions fail with "no provider could give a usable quote" | no admission limit and the providers are saturated | set a limit (try 100 to 150) |
 | "a batch is already running" | one batch runs at a time | press *Stop*, then *Clear* if you want a fresh one |
 | Many failed in a random batch | refusals by jurisdiction (forward to IN, retail to CN) and, at high speed, provider overload | untick *instrument*, *customer type* and the regions to avoid refusals; add a pause |
 | "not a currency code" | a currency must be three capital letters | use the lists in the header |

@@ -124,6 +124,7 @@ partitioning and a retention policy (e.g. full detail 30 days, summaries after).
 | Raw ring (15 min, 1 s) and 1-minute rollups (24 h) | ✅ bounded |
 | Performance view with charts and window selector | ✅ |
 | 1-hour rollups, durable tier, storage growth chart | 🔲 needs the Phase 3 store |
+| Admission counters (running, admitted, refused, peak) | ✅ in the dashboard snapshot (`admission`) and the Bulk send tab; not yet in the Performance charts |
 | Alerts into the narrative; SLO tracking | 🔲 |
 | Load generator / benchmark mode | 🔲 |
 | `:telemetry` conventions for external tools | 🔲 |

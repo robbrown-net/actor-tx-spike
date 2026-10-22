@@ -241,7 +241,15 @@
           <span class="kv">each transaction gets a random amount in this range</span></div>
         <div class="row"><label>Pause between transactions</label><input type="number" id="bulkInterval" value="100" min="0" max="60000" style="width:80px"><label>ms</label>
           <label>Seed</label><input type="number" id="bulkSeed" placeholder="optional" style="width:90px"><span class="kv">a seed repeats a random batch exactly</span></div>
+        <div class="row"><label>Sender waits at</label><input type="number" id="bulkCap" value="0" min="0" max="10000" style="width:80px"><label>in flight</label>
+          <span class="kv">0 = no limit; the sender pauses while this many of its own transactions are still running</span></div>
       </div>
+    </section>
+    <section>
+      <h2><span>Back-pressure: admission limit</span><span id="admState"></span></h2>
+      <div class="hint">The most transactions the system will run at once. Beyond it a submission is refused with "overloaded" before anything starts, and the sender waits and tries again (counted as <i>throttled</i>).</div>
+      <div class="pad"><div class="row"><label>Limit</label><input type="number" id="admLimit" value="100" min="1" style="width:80px">
+        <button id="admApply">Apply</button><button id="admNone">No limit</button><span class="kv" id="admNow"></span></div></div>
     </section>
     <section>
       <h2><span>Send with the header settings</span></h2>
@@ -265,6 +273,7 @@
         <div class="kv" id="bulkPlan">Nothing sent yet.</div>
         <div class="bar"><i id="bulkBar"></i></div>
         <div class="nums" id="bulkNums"></div>
+        <div class="kv" id="bulkWhy"></div>
         <div class="kv" id="bulkRecent"></div>
       </div>
     </section>
@@ -713,13 +722,15 @@ function headerSettings() {
 }
 function bulkParams() {
   const p = { action:'bulk', do:'start', count:+$('bulkCount').value, min_amount:$('bulkMin').value, max_amount:$('bulkMax').value,
-              interval_ms:+$('bulkInterval').value, fixed:headerSettings() };
+              interval_ms:+$('bulkInterval').value, max_in_flight:+$('bulkCap').value, fixed:headerSettings() };
   if ($('bulkSeed').value !== '') p.seed = +$('bulkSeed').value;
   return p;
 }
 function bulkSend(extra) { return post(Object.assign(bulkParams(), extra)).then(j => { if (j && j.ok) toast('batch started'); bulkFetch(); }); }
 $('bulkStart').onclick = () => bulkSend({ mode:'fixed' });
 $('bulkRandom').onclick = () => bulkSend({ mode:'random', randomise:[...document.querySelectorAll('.bulkField:checked')].map(c => c.value) });
+$('admApply').onclick = () => post({ action:'admission', max_in_flight:+$('admLimit').value }).then(refreshSnapshot);
+$('admNone').onclick = () => post({ action:'admission', max_in_flight:'none' }).then(refreshSnapshot);
 $('bulkStop').onclick = () => post({ action:'bulk', do:'stop' }).then(bulkFetch);
 $('bulkClear').onclick = () => post({ action:'bulk', do:'clear' }).then(bulkFetch);
 document.querySelectorAll('[data-count]').forEach(b => b.onclick = () => { $('bulkCount').value = b.dataset.count; });
@@ -731,17 +742,25 @@ $('bulkShuffle').onclick = () => {
   $('amount').value = (lo + Math.random() * Math.max(hi - lo, 0)).toFixed(2);
   toast('header settings shuffled: press Submit transaction to send one');
 };
+function renderAdmission() {
+  const a = S.snap && S.snap.admission; if (!a) return;
+  const unlimited = a.limit === 'infinity';
+  $('admState').innerHTML = `<span class="pill ${unlimited ? 'not_run' : 'running'}">${unlimited ? 'no limit' : 'limit ' + a.limit}</span>`;
+  $('admNow').innerHTML = `now <b>${a.in_flight}</b> running · admitted <b>${a.admitted}</b> · refused <b>${a.rejected}</b> · peak <b>${a.peak}</b>`;
+}
 function renderBulk() {
+  renderAdmission();
   const d = B.data; if (!d) return;
   if (d.available === false) { $('bulkPlan').textContent = 'Bulk sending is not running. Start the demo with mix demo.'; return; }
   const cls = { running:'running', draining:'running', finished:'pass', stopped:'skipped', idle:'not_run' }[d.status] || 'not_run';
   $('bulkState').innerHTML = `<span class="pill ${cls}">${esc(d.status)}</span>`;
-  if (d.status === 'idle') { $('bulkPlan').textContent = 'Nothing sent yet.'; $('bulkBar').style.width = '0'; $('bulkNums').innerHTML = ''; $('bulkRecent').innerHTML = ''; return; }
+  if (d.status === 'idle') { $('bulkPlan').textContent = 'Nothing sent yet.'; $('bulkBar').style.width = '0'; $('bulkNums').innerHTML = ''; $('bulkWhy').innerHTML = ''; $('bulkRecent').innerHTML = ''; return; }
   $('bulkPlan').textContent = d.plan;
   $('bulkBar').style.width = (100 * (d.completed + d.failed + d.needs_review) / d.count).toFixed(1) + '%';
   const cell = (l, v) => `<div>${l}<b>${v}</b></div>`;
   $('bulkNums').innerHTML = cell('sent', d.submitted + ' / ' + d.count) + cell('in flight', d.in_flight) + cell('completed', d.completed) + cell('failed (incl. refused)', d.failed)
-    + cell('needs review', d.needs_review) + cell('submit errors', d.errors) + cell('elapsed', (d.elapsed_ms / 1000).toFixed(1) + ' s') + cell('rate', d.per_second + ' / s');
+    + cell('needs review', d.needs_review) + cell('throttled (retried)', d.throttled) + cell('sender waits', d.waited) + cell('submit errors', d.errors) + cell('elapsed', (d.elapsed_ms / 1000).toFixed(1) + ' s') + cell('rate', d.per_second + ' / s');
+  $('bulkWhy').innerHTML = d.reasons.length ? '<b>why they did not complete:</b><br>' + d.reasons.map(r => `${r.count} × ${esc(r.reason)}`).join('<br>') : '';
   $('bulkRecent').innerHTML = 'latest: ' + d.recent.map(r => `<span class="txlink" onclick="jumpToTx('${esc(r.id)}')">${esc(r.id)}</span> (${r.amount})`).join(', ');
 }
 setInterval(bulkFetch, 500);

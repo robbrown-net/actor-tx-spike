@@ -37,6 +37,10 @@ Status: ✅ met and verified · 🟡 partly · 🔲 not built.
 | FR-23 | Send many transactions: a settable number (1 to 10,000), a minimum and maximum amount with a random amount between them, and a settable pause in milliseconds between submissions; one batch at a time; stop; progress counted from how each transaction ends | UC-13 | `unit/demo/bulk_plan_test.exs`, `integration/bulk_test.exs`, system test (bulk send) | ✅ |
 | FR-24 | Randomise every setting per transaction (merchant, customer, origin and destination region, instrument, customer type, source and destination currency), with a seed that repeats a batch exactly, and a control that shuffles the header settings once | UC-13 | same | ✅ |
 | FR-25 | Carry the source and destination currency on a request and show them in the story and the audit log | UC-13 | `payment_test.exs`, `integration/bulk_test.exs` | 🟡 (carried and recorded; not yet used for pricing, routing or eligibility) |
+| FR-26 | Admission control: at most a configured number of transactions run at once; a submission beyond it is refused at once with *overloaded* and a retry hint, before anything starts or is recorded; slots are freed when a payment ends or dies; the limit can be changed at run time | UC-14 | `unit/admission_test.exs`, `unit/application_test.exs`, `integration/bulk_test.exs`, system test (back-pressure) | ✅ |
+| FR-27 | Provider bulkheads protect money in motion: quotes may use 60% of the slots, steps 100%, undo, status and probe 150% | UC-14 | `unit/provider/server_test.exs` | ✅ |
+| FR-28 | Wait instead of failing: a busy provider is asked again for a quote until the deadline, and on a step without using an attempt | UC-14 | `unit/selector_test.exs`, `unit/payment_test.exs` | ✅ |
+| FR-29 | The sender backs off when refused as overloaded, can cap its own in-flight count, and reports why transactions did not complete | UC-13, UC-14 | `integration/bulk_test.exs` | ✅ |
 
 ## 2. Non-functional requirements
 
@@ -55,7 +59,8 @@ Status: ✅ met and verified · 🟡 partly · 🔲 not built.
 | NFR-11 | Single node first, without designing distribution out | architecture/05 | review | ✅ (multi-node not built) |
 | NFR-12 | Replayability: every decision re-derivable from the journal | `Selector.evaluate/3` shared with replay; replay tests break a day one way at a time | `replay_test.exs` | ✅ |
 | NFR-13 | Documentation current: diagrams, developer, testing, requirements and user guides | [docs/README](README.md) | review per change | ✅ (as of 2026-10-20) |
-| NFR-14 | Handle volume: a batch of up to 10,000 transactions can be sent without the sender or the system crashing, and every transaction is accounted for | `Demo.Bulk` counts each to completed, failed or needs review | `integration/bulk_test.exs`; manual 1,000-transaction run | 🟡 (no target throughput; behaviour under overload is observed, not specified) |
+| NFR-14 | Handle volume: a batch of up to 10,000 transactions can be sent without the sender or the system crashing, and every transaction is accounted for | `Demo.Bulk` counts each to completed, failed or needs review | `integration/bulk_test.exs`, `mix load` | ✅ |
+| NFR-15 | Under a burst with the production admission limit, nearly everything admitted completes and nothing is lost or half-done | with the limit at 100 against the demo providers: 99.8% of 2,000 complete, 0 lost ([LOAD_RESULTS](quality/LOAD_RESULTS.md)) | `mix load` (measurement, not a gate) | 🟡 (fake providers, no audit log in the measurement; re-measure with real ones) |
 
 ## 3. Traceability rules
 

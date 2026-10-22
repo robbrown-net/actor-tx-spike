@@ -58,9 +58,16 @@ defmodule ActorTxSpike.MixProject do
   ]
 
   defp ignored_modules do
-    # Mix.Tasks.Demo, Mix.Tasks.Audit.Verify and Mix.Tasks.Replay are thin entry points, and
+    # Mix.Tasks.* are thin entry points, and
     # ActorTxSpike.Wait (test/support) is a test helper: none of them is measured.
-    always = [Mix.Tasks.Demo, Mix.Tasks.Audit.Verify, Mix.Tasks.Replay, ActorTxSpike.Wait]
+    always = [
+      Mix.Tasks.Demo,
+      Mix.Tasks.Audit.Verify,
+      Mix.Tasks.Replay,
+      Mix.Tasks.Load,
+      ActorTxSpike.Wait
+    ]
+
     if System.get_env("COVERAGE_IGNORE_TOOLING") == "1", do: always ++ @tooling, else: always
   end
 

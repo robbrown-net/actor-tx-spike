@@ -121,6 +121,7 @@ These came from the owner and are standing rules.
 | Keep it local until the harness exists, then push on request | Commit and push only when asked |
 | 100% unit / > 85% integration coverage | Gates in `mix.exs`; tests first for new modules |
 | Branch-level coverage "later" | Deferred, tracked in the roadmap |
+| "Go for the load and backpressure" | Traced the burst failures, built admission control and priority bulkheads, measured per limit with `mix load` (ADR 0013, quality/LOAD_RESULTS.md) |
 | "Add a screen for sending many payments with a min and max size, a randomiser and a pause; and a way to randomise every UI setting" | Bulk send tab (`Demo.Bulk`, pure `Bulk.Plan`); same limits and docs standard as everything else |
 | "Lower complexity and duplication thresholds; nested ifs are better handled by design patterns, interfaces and abstractions; it matters for new people" | Cyclomatic complexity 4, nesting 2, ABC 40, duplicate mass 16 enforced by Credo in CI ([ADR 0012](adr/0012-code-shape-limits.md)); about 30 functions reshaped into clauses, small modules and tables |
 | "It's a black box, I want to see and feel it" | Observability became a requirement, not a nicety |
@@ -159,6 +160,7 @@ These came from the owner and are standing rules.
 | Supervised audit | Audit router under the application supervisor; production refuses to start without it |
 | Design for Test lab | `mix demo --lab`: fault injection, crash at an exact event, recover, 17 scenarios (architecture/08) |
 | Code-shape limits | Credo limits on complexity, nesting, size and duplication; refactor of ~30 functions; shared `Validation`, `Poll`, `Selector.Narrator`, `Eligibility.Parser` (ADR 0012) |
+| Load and back-pressure | Admission control, bulkhead priority classes, waiting instead of failing, a backing-off sender, `mix load`; 30% to 99.8% completion on a 2,000 burst (ADR 0013, LOAD_RESULTS) |
 | Bulk send | A tab that sends 1 to 10,000 transactions with random amounts, a settable pause, optional seed and a "randomise everything" mode; currencies carried on requests (architecture/09) |
 | Documentation pass | Developer, testing, requirements and user guides; diagrams and quality snapshot brought up to date |
 
@@ -211,7 +213,8 @@ These came from the owner and are standing rules.
 | R27 | Data residency: regional logs and a residency proof exist, but retention is not enforced, rules are unconfirmed by counsel, and a corridor touching a local-only region leaves the other side without a record | high | high | Retention and archival; counsel review; decide the corridor policy |
 | R28 | Recovery reconciles a pay it cannot prove was never sent as in doubt, so a crash in that window costs a human review; resumed work loses cost attribution and the policy label | certain | low | Accept; improve with provider-side status guarantees |
 | R29 | Two writers on one log would break the chain; guarded by a lock file that relies on the OS process table | low | high | Keep the lock; use a real distributed lock if the log moves off a local disk |
-| R32 | Under a sudden burst (1,000 transactions, no pause) some transactions end in `needs_review` (29 in the first run), presumably from provider bulkhead and timeout limits; there is no cap on in-flight transactions or back-off | medium | medium | Measure with Bulk send, then decide limits and back-pressure; keep `needs_review` as the safe outcome |
+| R32 | ~~A burst sent transactions to `needs_review` and failed most of them~~ **Addressed 2026-10-22**: traced to no limit on transactions in flight, undo/settle competing with new quotes for provider slots, and giving up on a busy provider. Admission control, bulkhead priority classes and waiting now exist (ADR 0013). Remaining: the limit (100) is tuned to fake providers and measured without the audit log | medium | medium | Re-measure with the audit log on and against real providers; alert on sustained refusal |
+| R33 | Admission refusals leave no record (by design) and recovery-resumed transactions bypass the limit | low | low | Record refusals as counters in the metrics; count resumed transactions when recovery is automatic |
 | R30 | A one-off cascade of failures from a failed global audit sink was seen twice in full `mix test` runs and never reproduced | low | medium | If it recurs keep the first failure's output; suspected shared global state between suites |
 | R31 | `selection_test` "mixed providers" compares latencies a millisecond apart and can flip under heavy parallel load | low | low | Re-run alone; make the fake's latencies explicit when next touched |
 
@@ -232,7 +235,7 @@ Status as of 2026-10-20. See also [ROADMAP.md](ROADMAP.md).
 | 5 | Distribution: single owner per transaction across nodes, partition convergence, provider discovery | 🔲 |
 | 6 | Production hardening: auth, TLS, money types, compliance, operations runbook | 🔲 |
 
-Near-term: make CI a required check, Dialyzer, load/soak mode, retention and rotation, forward deal lifecycle, sanctions/KYC gates, counsel review of the jurisdiction matrix, UC-4 review tooling, timezone data.
+Near-term: make CI a required check, Dialyzer, measure load with the audit log on and against real providers, retention and rotation, forward deal lifecycle, sanctions/KYC gates, counsel review of the jurisdiction matrix, UC-4 review tooling, timezone data.
 
 ## 11. Reading order for a newcomer
 

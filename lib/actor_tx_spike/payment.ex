@@ -414,6 +414,21 @@ defmodule ActorTxSpike.Payment do
     step_succeeded(state, op)
   end
 
+  # A provider that is busy was never asked: wait and ask again. This does not use up an
+  # attempt; the transaction's deadline bounds how long it can wait.
+  defp handle_result({:step, op}, {:error, :overloaded}, state) do
+    state =
+      note(
+        state,
+        :step_retry,
+        "#{state.current.provider_id} is busy (#{op} not sent); asking again shortly",
+        %{provider: state.current.provider_id, op: op}
+      )
+
+    Process.send_after(self(), {:retry_step, op}, state.opts.backoff_ms)
+    state
+  end
+
   defp handle_result({:step, op}, {:error, reason}, state) do
     if state.attempt < state.opts.max_attempts do
       state =
@@ -686,6 +701,7 @@ defmodule ActorTxSpike.Payment do
       note(%{state | phase: phase, result: result}, kind, message, %{result: inspect(result)})
 
     emit_economics(state, phase)
+    ActorTxSpike.Admission.release(state.id)
     Enum.each(state.waiters, &GenServer.reply(&1, result))
     Process.send_after(self(), :linger_over, state.opts.linger_ms)
     %{state | waiters: []}

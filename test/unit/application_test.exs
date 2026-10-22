@@ -1,6 +1,7 @@
 defmodule ActorTxSpike.ApplicationTest do
   use ExUnit.Case, async: true
 
+  alias ActorTxSpike.Admission
   alias ActorTxSpike.Application, as: App
   alias ActorTxSpike.Audit.Router
 
@@ -22,6 +23,23 @@ defmodule ActorTxSpike.ApplicationTest do
     assert opts == [dir: "audit", logs: ["GLOBAL", "IN"]]
     assert ActorTxSpike.TransactionSupervisor in rest
     assert length(with_audit) == length(plain) + 1
+  end
+
+  test "admission control is part of the tree and takes its limit from the configuration" do
+    assert {Admission, []} in App.children([])
+    assert {Admission, [max_in_flight: 50]} in App.children(admission: [max_in_flight: 50])
+
+    # admission must be up before transactions can be submitted
+    children = App.children([])
+
+    assert Enum.find_index(children, &match?({Admission, _}, &1)) <
+             Enum.find_index(children, &(&1 == ActorTxSpike.TransactionSupervisor))
+  end
+
+  test "production sets a back-pressure limit" do
+    {config, _} = Config.Reader.read_imports!("config/prod.exs", env: :prod)
+    admission = config |> Keyword.fetch!(:actor_tx_spike) |> Keyword.fetch!(:admission)
+    assert is_integer(admission[:max_in_flight]) and admission[:max_in_flight] > 0
   end
 
   test "the production configuration requires an audit log and names one" do

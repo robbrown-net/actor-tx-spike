@@ -204,6 +204,26 @@ sequenceDiagram
     end
 ```
 
+## SSD-11 · Submit during a burst (UC-14)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M as Merchant system
+    participant S as ":System"
+
+    M->>S: submit(amount, ...)
+    alt running transactions are below the admission limit
+        S-->>M: {:ok, transactionId}
+    else at the limit
+        S-->>M: {:error, {:overloaded, retry_after_ms}} (nothing started or recorded)
+        Note over M: wait the suggested time
+        M->>S: submit again (same request)
+    end
+    M->>S: await(transactionId)
+    S-->>M: completed, failed or needs review
+```
+
 ## SSD-8 · Submit within a jurisdiction (UC-11)
 
 ```mermaid

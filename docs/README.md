@@ -17,6 +17,8 @@
 | [architecture/06-data-model.md](architecture/06-data-model.md) | Entity-relationship model and invariants |
 | [architecture/07-observability-and-performance.md](architecture/07-observability-and-performance.md) | Metrics and monitoring design |
 | [compliance/COMPLIANCE_EVIDENCE.md](compliance/COMPLIANCE_EVIDENCE.md) | PCI DSS and Dodd-Frank: what evidence exists, what is missing |
+| [architecture/10-back-pressure.md](architecture/10-back-pressure.md) | Back-pressure: admission limit, bulkhead priority classes, waiting instead of failing |
+| [quality/LOAD_RESULTS.md](quality/LOAD_RESULTS.md) | Load results: completion rate of a burst per admission limit, method, caveats |
 | [architecture/09-bulk-send.md](architecture/09-bulk-send.md) | Bulk send: many transactions, random amounts, randomised settings, a pause, progress |
 | [architecture/08-test-lab.md](architecture/08-test-lab.md) | The Design for Test lab: provoking and judging restarts, idempotency, the router and audit-log downtime |
 | [quality/QUALITY_SNAPSHOT.md](quality/QUALITY_SNAPSHOT.md) | Coverage, SLOC, complexity, duplication, security |

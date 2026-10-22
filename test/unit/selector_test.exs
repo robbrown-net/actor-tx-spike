@@ -12,8 +12,8 @@ defmodule ActorTxSpike.SelectorTest do
     def start_link(mode), do: GenServer.start_link(__MODULE__, mode)
     def init(mode), do: {:ok, mode}
     def handle_call(:health, _from, mode), do: {:reply, Health.new(), mode}
-    def handle_call(:checkout, _from, :hang), do: {:noreply, :hang}
-    def handle_call(:checkout, _from, :crash), do: {:stop, :crashed, :crashed}
+    def handle_call({:checkout, _op}, _from, :hang), do: {:noreply, :hang}
+    def handle_call({:checkout, _op}, _from, :crash), do: {:stop, :crashed, :crashed}
   end
 
   @request %{id: "r1", amount: 10_000}
@@ -229,5 +229,56 @@ defmodule ActorTxSpike.SelectorTest do
     assert {:error, {:exit, {:crashed, _}}} = Keyword.fetch!(sel.excluded, :crashing)
     # well below the 5 s default GenServer.call timeout that a hung server would otherwise impose
     assert sel.elapsed_ms < 2_000
+  end
+
+  describe "a provider whose bulkhead is full" do
+    defp busy_provider do
+      {:ok, fake} = Fake.start_link(id: :busy, rate: 1.1)
+      {:ok, server} = Server.start_link(adapter: Fake, config: fake, id: :busy, max_in_flight: 1)
+      %{id: :busy, server: server}
+    end
+
+    # Holds the provider's only quote slot until told to stop (a caller that has checked out and not returned).
+    defp occupy(%{server: server}) do
+      holder =
+        spawn(fn ->
+          GenServer.call(server, {:checkout, :request_quote})
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      wait_until(fn -> Server.in_flight(server) == 1 end)
+      holder
+    end
+
+    test "is asked again until a slot frees, instead of being given up on" do
+      provider = busy_provider()
+      holder = occupy(provider)
+      Process.send_after(holder, :stop, 60)
+
+      sel =
+        Selector.select(@request, [provider], policy(%{"weights" => %{"cost" => 1}}),
+          deadline_ms: 500
+        )
+
+      assert {:selected, %{provider_id: :busy}} = sel.outcome
+      assert sel.elapsed_ms >= 40
+    end
+
+    test "is reported as overloaded when it stays busy to the deadline" do
+      provider = busy_provider()
+      holder = occupy(provider)
+
+      sel =
+        Selector.select(@request, [provider], policy(%{"weights" => %{"cost" => 1}}),
+          deadline_ms: 100
+        )
+
+      assert sel.outcome == :none
+      assert {:busy, {:error, :overloaded}} in sel.excluded
+      send(holder, :stop)
+    end
   end
 end

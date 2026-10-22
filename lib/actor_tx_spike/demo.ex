@@ -10,7 +10,18 @@ defmodule ActorTxSpike.Demo do
   """
   use GenServer
 
-  alias ActorTxSpike.{Cutoff, Economics, Events, Guarantee, Journal, Ledger, Money, PolicySet}
+  alias ActorTxSpike.{
+    Admission,
+    Cutoff,
+    Economics,
+    Events,
+    Guarantee,
+    Journal,
+    Ledger,
+    Money,
+    PolicySet
+  }
+
   alias ActorTxSpike.Demo.Lab
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
@@ -258,6 +269,24 @@ defmodule ActorTxSpike.Demo do
     {{:ok, %{pace: factor}}, %{state | pace: factor}}
   end
 
+  defp do_control(%{"action" => "admission"} = cmd, state) do
+    case Admission.configure(admission_limit(cmd["max_in_flight"])) do
+      :ok ->
+        Events.emit(
+          nil,
+          :operator,
+          :admission_changed,
+          "operator: admission limit #{inspect(cmd["max_in_flight"])}",
+          %{}
+        )
+
+        {{:ok, Admission.stats()}, state}
+
+      {:error, message} ->
+        {{:error, message}, state}
+    end
+  end
+
   defp do_control(%{"action" => "policy"} = cmd, state) do
     data = Map.take(cmd, ["weights", "max_bps_from_best", "min_validity_ms", "max_latency_ms"])
 
@@ -342,6 +371,19 @@ defmodule ActorTxSpike.Demo do
     [extras[:source_currency], extras[:destination_currency]]
     |> Enum.find(&(&1 && not String.match?(&1, ~r/^[A-Z]{3}$/)))
   end
+
+  # No limit is nothing, zero, "none" or empty; anything else must be a whole number.
+  defp admission_limit(value) when value in [nil, 0, "", "none"], do: :infinity
+  defp admission_limit(value) when is_integer(value), do: value
+
+  defp admission_limit(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {n, ""} -> admission_limit(n)
+      _ -> value
+    end
+  end
+
+  defp admission_limit(value), do: value
 
   # The providers as the orchestrator is given them.
   defp registry(state), do: for({pid, p} <- state.providers, do: %{id: pid, server: p.server})
@@ -457,6 +499,7 @@ defmodule ActorTxSpike.Demo do
         ),
       ledger: Ledger.all(),
       economics: Economics.summary(),
+      admission: Admission.stats(),
       auto: state.auto,
       pace: state.pace,
       submitted: state.counter

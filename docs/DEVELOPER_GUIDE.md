@@ -31,6 +31,7 @@ There are no runtime dependencies. `credo`, `sobelow` and `mix_audit` are dev/te
 | `mix credo --strict` | static analysis and the code-shape limits | no issues |
 | `mix compile --warnings-as-errors` | no warnings | clean |
 | `python3 scripts/mutate.py` | mutation testing of the pure core (slow, on demand) | all valid mutants killed |
+| `mix load --count 2000 --admission none,150,100` | burst measurement: one run per admission limit, prints a table | measurement |
 | `mix demo`, `mix demo --lab` | the live world and dashboard (see the [user guide](USER_GUIDE.md)) | n/a |
 | `mix audit.verify`, `mix replay ...` | verify and replay audit logs | n/a |
 
@@ -100,7 +101,8 @@ lib/actor_tx_spike/              core modules (see architecture/05 for the map)
   money.ex, costs.ex, economics.ex exact money; the cost and savings ledger
   metrics.ex, metrics/             sampler and rollups
   demo.ex, demo/                   the demo world, the Test lab and Bulk send (tooling)
-  demo/bulk.ex, demo/bulk/plan.ex  batch sender (server) and its pure plan/generator
+  demo/bulk.ex, demo/bulk/plan.ex  batch sender (server, backs off when refused) and its pure plan/generator
+  admission.ex                     admission control: the limit on transactions in flight (back-pressure)
   panel.ex                         HTTP + SSE dashboard server
 lib/mix/tasks/                   mix demo, audit.verify, replay
 priv/panel.html                  the dashboard (single file)
@@ -151,6 +153,10 @@ test `lab_test.exs` runs them all.
 `Demo.Bulk.Plan` (and to `@draw_order`, after any setting it depends on), map the JSON key to the request field in
 `Demo`'s `@submit_fields`, add a tick box in `BULK_FIELDS` in `priv/panel.html`, and extend `bulk_plan_test.exs`
 (every drawn value must be in the choices; a seeded plan must repeat).
+
+**Add a back-pressure signal.** A refusal must mean *nothing was done*: return `{:error, {:overloaded, retry_after_ms}}` (or a
+provider's `{:error, :overloaded}`) before any side effect or record, so callers can safely wait and retry. Never reuse
+`:overloaded` for an answer that may have reached the provider (that is `:timeout` / `:in_doubt`, and is reconciled, not retried).
 
 **Add a policy field.** Add it to `Policy` (`@keys`, struct, `fields/0`, a `parse_*` function), to
 `Tx.policy/2` so replay rebuilds it, and to `Journal` enrichment of `tx_received`. Unit-test the

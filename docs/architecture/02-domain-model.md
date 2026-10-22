@@ -193,6 +193,11 @@ classDiagram
 | **Breaker** | Per-provider circuit: `closed / open / half_open`. |
 | **Quarantine** | A provider whose version changed is not trusted until released. |
 | **Narrative** | The ordered stream of events describing everything the system does. |
+| **Admission control / admission limit** | The most transactions the system will run at once; a submission beyond it is refused as overloaded before anything starts. |
+| **Back-pressure** | Telling callers to slow down (refusal with a retry hint) instead of failing work already accepted. |
+| **Overloaded** | The answer when a limit is full (the admission limit or a provider's bulkhead). The call was not made, so asking again is safe. |
+| **Bulkhead class** | Which share of a provider's slots an operation may use: quotes 60%, steps 100%, undo/status/probe 150%. |
+| **Throttled** | A transaction the sender had refused as overloaded and sent again later. |
 | **Batch** | A run of many transactions sent by Bulk send: a count, an amount range, a pause, and fixed or randomised settings. |
 | **Plan** | The validated description of a batch; a seeded plan generates the same transactions every time. |
 | **Seed** | A whole number that makes a random batch repeatable. |

@@ -5,14 +5,15 @@ provoke the hard cases by hand, and what is not covered.
 
 ## 1. The layers
 
-| Layer | Where | Run with | Count (2026-10-21) | Gate | What it proves |
+| Layer | Where | Run with | Count (2026-10-22) | Gate | What it proves |
 |---|---|---|---|---|---|
-| Unit | `test/unit` | `mix test.unit` | 346 | 100% line coverage | each module in isolation, incl. every error clause |
-| Integration | `test/integration` | `mix test.integration` | 34 | above 85% line coverage | modules together: a real day recorded, replayed, recovered; jurisdiction; the lab's 17 scenarios |
-| System | `test/system` | `mix test.system` | 12 | scenarios pass | the real system as an OS process, driven only over HTTP/SSE |
+| Unit | `test/unit` | `mix test.unit` | 363 | 100% line coverage | each module in isolation, incl. every error clause |
+| Integration | `test/integration` | `mix test.integration` | 37 | above 85% line coverage | modules together: a real day recorded, replayed, recovered; jurisdiction; the lab's 17 scenarios |
+| System | `test/system` | `mix test.system` | 13 | scenarios pass | the real system as an OS process, driven only over HTTP/SSE |
 | Regression | tagged `:regression` | `mix test.regression` | 23 | pass | one test per defect found so far |
 | Mutation | `scripts/mutate.py` | on demand | sampled | all valid mutants killed | the tests would notice if the code were wrong (line coverage cannot say this) |
 | Static | `.credo.exs` | `mix credo --strict` | n/a | no issues | style, design and the [code-shape limits](DEVELOPER_GUIDE.md#3-quality-limits-and-how-they-are-enforced) |
+| Load | `mix load` | `mix load --admission none,200,100` | n/a | measurement, no gate | how many of a burst complete at each admission limit; see [LOAD_RESULTS](quality/LOAD_RESULTS.md) |
 | Lab | the Test lab tab | `mix demo --lab` | 17 scenarios | all pass | restarts, idempotency, router, audit-log downtime, by hand or by scenario |
 
 `mix quality` is the quick pre-commit check (format, Credo strict, unit gate). CI runs everything above
@@ -65,6 +66,7 @@ testing and for the invariant tests below.
 | Restarts | *Arm* a crash (e.g. `step_succeeded authorise`), submit, *Plan recovery (dry run)*, *Recover now* | the plan says where it stood; paid at most once; never failed over after doubt |
 | Audit-log downtime, by state | set the log *Down*, or *Fails after N steps*, and submit | nothing started: fails cleanly; money moved: stops in `needs_review`, never moves more |
 | Everything at once | *Run all* | 17 scenarios pass |
+| Back-pressure | Bulk send: set the admission limit (e.g. 3), send 12 with no pause | some are *throttled* (refused as overloaded and retried), all 12 complete, the limit panel's peak never exceeds 3 |
 | Volume and variety | Bulk send tab: 100 to 10,000 transactions, a pause in ms, *Randomise everything*, optionally a seed | every transaction ends completed, failed (refusals included) or needs review; none are lost; a seed repeats the batch |
 
 The scenario library is also `test/integration/lab_test.exs`, so a regression in any of this fails CI.
@@ -85,8 +87,8 @@ Note that randomised batches deliberately include combinations the rules refuse.
 * A fixed defect gets `@tag :regression` and a name that says what went wrong.
 * Prefer the real thing over a mock; the fake provider is the only fake.
 * State your arrange steps in the test. Repeating them is fine (duplicate detection is off in `test/`).
-* Anything that touches global state (the event server's sinks, the audit router) must be
-  `async: false`.
+* Anything that touches global state (the event server's sinks, the audit router, the admission limit) must be
+  `async: false`, and must put the global state back (`on_exit`).
 * A test must not depend on timing. If you need to wait, `Wait.until!/2`.
 * Keep each test function at cyclomatic complexity 4 or less: extract helpers instead of branching in a test.
 
@@ -96,6 +98,8 @@ Note that randomised batches deliberately include combinations the rules refuse.
 |---|---|---|
 | `selection_test.exs` "a world of mixed providers" | the speed-led selection compares latencies a millisecond apart, so a heavily loaded machine can reorder them | passes alone every time; it has been seen to fail once in a full parallel run. If it fails, re-run it alone before suspecting a defect. |
 | Bulk integration tests (`bulk_test.exs`) | they are `async: false` (named singletons) and run a few hundred real transactions | stable in repeated runs; if one times out, check machine load first |
+| `payment_test.exs` "a cut-off that passes after payment but before settlement is escalated" | the cut-off is 525 ms ahead and each provider step takes 150 ms, so a loaded machine can miss the window | passes alone every time; seen once in a full parallel run |
+| `provider_resilience_test.exs` "stalled provider is isolated" | its breaker cool-down is 25 ms, so on a loaded machine the breaker can half-open between two calls and the expected `circuit_open` becomes a timeout | re-run alone; it passes. Seen once in a full parallel run |
 | A one-off cascade of failures from a failed global audit sink | seen twice in full `mix test` runs (once after running `mix test.system` immediately before); never reproduced in 25+ attempts | recorded as unexplained in the engineering story (risk list); if it recurs, keep the first failure's output |
 
 ## 7. Not covered
