@@ -101,6 +101,7 @@ defmodule ActorTxSpike.Replay do
       guarantee: latest_data(upto, "tx_received", "guarantee"),
       config: latest_data(upto, "tx_received", "config"),
       controls: controls(upto),
+      batches: batches(upto),
       economics: economics(upto)
     }
   end
@@ -114,6 +115,29 @@ defmodule ActorTxSpike.Replay do
   defp controls(records) do
     for r <- records, r["kind"] == "control", do: %{at: r["at"], command: r["data"]["command"]}
   end
+
+  @doc """
+  The bulk batches recorded in a day, in order: each with its plan (count, amount range in
+  minor units, pause, mode, seed, fixed settings), when it started and ended, how it ended and
+  the counts. A batch with no end record was still running (or the node stopped).
+  """
+  @spec batches(Day.t() | [map()]) :: [map()]
+  def batches(%Day{records: records}), do: batches(records)
+
+  def batches(records) when is_list(records) do
+    records
+    |> Enum.filter(&(&1["kind"] in ~w(bulk_started bulk_finished)))
+    |> Enum.reduce([], &batch/2)
+    |> Enum.reverse()
+  end
+
+  defp batch(%{"kind" => "bulk_started"} = r, acc),
+    do: [%{started_at_ms: r["at"], plan: r["data"]["plan"], ended_at_ms: nil, result: nil} | acc]
+
+  defp batch(%{"kind" => "bulk_finished"} = r, [open | rest]),
+    do: [%{open | ended_at_ms: r["at"], result: r["data"]} | rest]
+
+  defp batch(_orphan_end, acc), do: acc
 
   @doc "Terminal event kinds."
   def terminal_kinds, do: @terminal

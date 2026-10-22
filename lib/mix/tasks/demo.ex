@@ -62,7 +62,9 @@ defmodule Mix.Tasks.Demo do
   defp start_world(opts, previous, lab_dir) do
     {:ok, _} = Demo.start_link(sentinel_options(opts[:sentinel_ms]))
     {:ok, _} = Demo.Bulk.start_link()
+    {:ok, _} = ActorTxSpike.Review.start_link(providers: &Demo.review_providers/0)
     recover(previous)
+    ActorTxSpike.Review.load(for day <- previous, record <- day.records, do: record)
     start_lab(lab_dir)
     set_pace(opts[:pace])
     limit_in_flight(opts[:max_in_flight])

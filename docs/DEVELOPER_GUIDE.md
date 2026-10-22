@@ -102,6 +102,7 @@ lib/actor_tx_spike/              core modules (see architecture/05 for the map)
   metrics.ex, metrics/             sampler and rollups
   demo.ex, demo/                   the demo world, the Test lab and Bulk send (tooling)
   demo/bulk.ex, demo/bulk/plan.ex  batch sender (server, backs off when refused) and its pure plan/generator
+  review.ex, review/queue.ex       the review workflow (server) and its pure queue
   admission.ex                     admission control: the limit on transactions in flight (back-pressure)
   panel.ex                         HTTP + SSE dashboard server
 lib/mix/tasks/                   mix demo, audit.verify, replay
@@ -153,6 +154,13 @@ test `lab_test.exs` runs them all.
 `Demo.Bulk.Plan` (and to `@draw_order`, after any setting it depends on), map the JSON key to the request field in
 `Demo`'s `@submit_fields`, add a tick box in `BULK_FIELDS` in `priv/panel.html`, and extend `bulk_plan_test.exs`
 (every drawn value must be in the choices; a seeded plan must repeat).
+
+**Add a review action.** Emit the intent as an event, `Events.barrier` it, only then act (`Review.durably/5`), record the result, and fold the new
+record kind in `Review.Queue.apply_record/2` so the queue rebuilds from the log. Make the audit router keep routing the transaction (it already does until
+`review_resolved`) and cover the rebuild in a test.
+
+**Add a currency or a carrying provider.** A currency: add its US-dollar value to the demo's price list (`Demo`'s `@usd_per_unit`) and to
+`Plan.choices/0`. A provider's currencies: its `currencies:` list in `Demo`'s `@providers`. A region's currencies: the rule's `currencies`.
 
 **Add a back-pressure signal.** A refusal must mean *nothing was done*: return `{:error, {:overloaded, retry_after_ms}}` (or a
 provider's `{:error, :overloaded}`) before any side effect or record, so callers can safely wait and retry. Never reuse

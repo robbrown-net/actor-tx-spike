@@ -6,7 +6,7 @@ Gates (all enforced in CI; see [DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#3-quality-li
 unit coverage 100%, integration coverage >85% (line coverage via `mix test --cover`), cyclomatic
 complexity at most 4, nesting at most 2, ABC size at most 40 and no duplicated block of mass 16
 (`mix credo --strict`), no warnings, `mix format` clean. Position on 2026-10-22: unit 100%,
-integration 87.2%, all code-shape limits met (ADR 0012), 400 non-system tests and 13 system tests.
+integration 87.2%, all code-shape limits met (ADR 0012), 441 non-system tests and 14 system tests.
 Original baseline on 2026-10-15: 76.5% total.
 
 See ADR 0001 and Amendment 1 for the domain model.
@@ -110,6 +110,15 @@ back off to a target rate; make currencies drive pricing and eligibility; record
   30% of a 2,000 burst completes with no limit, 99.8% with a limit of 100; production default 100 (`ACTOR_TX_MAX_IN_FLIGHT`).
 Next: measure with the audit log on (the write-ahead barrier's cost) and against real providers; a queue in front of the limit or
 automatic tuning from observed latency; per-merchant fairness; record refusals; alert on sustained refusal; a long soak run.
+
+## Phase 3f: Product depth - DONE (2026-10-23)
+- **Currencies price, route and permit** (ADR 0014): a pair is priced from the market through each provider's spread, only providers that carry
+  both currencies are asked, regions can restrict currencies (IN, CN in the demo).
+- **Review workflow (UC-4)**: queue of `needs_review`, check, retry a safe step under its original key, resolve with who and why; write-ahead,
+  in the transaction's own regional log, rebuilt from the logs, checked by the `review_recorded` replay rule; a Review tab.
+- **Recorded batches**: each bulk batch's plan and result are in the audit log; `mix replay batches`.
+Next: the re-execution replay engine (virtual clock, replay provider adapter); four-eyes approval, assignment and deadlines for reviews; minor-unit
+exponents per currency and fee schedules; forward deal lifecycle; sanctions and KYC gates.
 
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).

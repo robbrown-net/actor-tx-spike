@@ -148,4 +148,75 @@ defmodule ActorTxSpike.EligibilityTest do
     assert {:ok, _} = Eligibility.new(%{})
     assert {:ok, _} = Eligibility.new(%{default: %{retention_days: nil, providers: "all"}})
   end
+
+  describe "currencies" do
+    @currency_rules %{
+      "regions" => %{
+        "IN" => %{"currencies" => ["INR", "USD"]},
+        "CN" => %{"currencies" => ["CNY", "USD"]}
+      }
+    }
+
+    test "both currencies must be allowed in a region, and the reasons say which" do
+      e = build(@currency_rules)
+
+      ok =
+        Eligibility.decide(e, %{
+          destination_region: "IN",
+          source_currency: "USD",
+          destination_currency: "INR"
+        })
+
+      assert ok.permitted?
+      assert {ok.source_currency, ok.destination_currency} == {"USD", "INR"}
+
+      bad =
+        Eligibility.decide(e, %{
+          destination_region: "IN",
+          source_currency: "EUR",
+          destination_currency: "GBP"
+        })
+
+      refute bad.permitted?
+      assert bad.reasons == ["EUR cannot be used in IN", "GBP cannot be used in IN"]
+    end
+
+    test "in a corridor the strictest region wins" do
+      e = build(@currency_rules)
+
+      request = %{
+        origin_region: "IN",
+        destination_region: "CN",
+        source_currency: "INR",
+        destination_currency: "USD"
+      }
+
+      # INR is fine in IN but not in CN
+      assert Eligibility.decide(e, request).reasons == ["INR cannot be used in CN"]
+      assert Eligibility.decide(e, %{request | source_currency: "USD"}).permitted?
+    end
+
+    test "no currencies named, a region without a currency rule, or an open rule permits" do
+      e = build(@currency_rules)
+      assert Eligibility.decide(e, %{destination_region: "IN"}).permitted?
+
+      assert Eligibility.decide(e, %{
+               destination_region: "UK",
+               source_currency: "JPY",
+               destination_currency: "KRW"
+             }).permitted?
+
+      assert build(%{"default" => %{"currencies" => "all"}})
+             |> Eligibility.decide(%{source_currency: "JPY"})
+             |> Map.fetch!(:permitted?)
+    end
+
+    test "currency rules are validated" do
+      assert {:error, [e1]} = Eligibility.new(%{"default" => %{"currencies" => ["usd"]}})
+      assert e1 == "default.currencies: currency codes are three capital letters"
+      assert {:error, [e2]} = Eligibility.new(%{"default" => %{"currencies" => []}})
+      assert e2 =~ ~s(must be "all" or a non-empty list of currency codes)
+      assert {:error, _} = Eligibility.new(%{"default" => %{"currencies" => 5}})
+    end
+  end
 end

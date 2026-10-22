@@ -112,6 +112,14 @@ defmodule ActorTxSpike.Demo.Bulk do
     token = make_ref()
     send(self(), {:tick, token})
 
+    Events.emit(
+      nil,
+      :operator,
+      :bulk_started,
+      "operator: bulk batch started: #{Plan.describe(plan)}",
+      %{plan: Plan.to_map(plan)}
+    )
+
     %{
       idle(state.submit)
       | status: :running,
@@ -211,7 +219,32 @@ defmodule ActorTxSpike.Demo.Bulk do
 
   defp finish_if_done(state), do: state
 
-  defp finish(state, status), do: %{state | status: status, token: nil, ended_ms: now()}
+  defp finish(state, status) do
+    state = %{state | status: status, token: nil, ended_ms: now()}
+    announce_end(state)
+    state
+  end
+
+  # The batch's end goes in the log with what came of it, next to its start.
+  defp announce_end(state) do
+    view = view(state)
+
+    Events.emit(
+      nil,
+      :operator,
+      :bulk_finished,
+      "operator: bulk batch #{state.status}: #{view.submitted} sent",
+      %{
+        status: state.status,
+        submitted: view.submitted,
+        completed: view.completed,
+        failed: view.failed,
+        needs_review: view.needs_review,
+        throttled: view.throttled,
+        elapsed_ms: view.elapsed_ms
+      }
+    )
+  end
 
   defp now, do: System.monotonic_time(:millisecond)
 

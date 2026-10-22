@@ -32,15 +32,19 @@ Status: ✅ met and verified · 🟡 partly · 🔲 not built.
 | FR-18 | Show the system live and allow operator control: one narrative stream, dashboard, performance view, per-transaction stories, provider presets | UC-2, UC-6 | `panel_test.exs`, `metrics_test.exs`, `integration/demo_test.exs`, system tests | ✅ |
 | FR-19 | Provide a Design for Test lab: provoke restarts, idempotency, the router and audit-log downtime by state, and judge the outcomes | UC-12 | `integration/lab_test.exs` (17 scenarios) | ✅ |
 | FR-20 | Spot and forward instruments for business and retail customers in UK, EU, US, India, Mexico, Brazil, Turkey, Saudi Arabia, Japan, South Korea, China | UC-11 | eligibility rules for the demo corridors only | 🟡 (forward deal lifecycle, retail flows, most country rules not built) |
-| FR-21 | Resolve a transaction needing review (people decide, with the record in front of them) | UC-4 | none | 🔲 |
+| FR-21 | Resolve a transaction needing review: a queue, check with the provider, retry a safe step under its original key, resolve as paid / not paid / written off with who and why; write-ahead; rebuilt from the log | UC-4 | `unit/review_test.exs`, `integration/review_test.exs`, system test (UC-4), replay rule `review_recorded` | ✅ (no four-eyes, assignment or deadlines) |
 | FR-22 | Sanctions and KYC gates before accept; trade reporting for forwards | | none | 🔲 |
 | FR-23 | Send many transactions: a settable number (1 to 10,000), a minimum and maximum amount with a random amount between them, and a settable pause in milliseconds between submissions; one batch at a time; stop; progress counted from how each transaction ends | UC-13 | `unit/demo/bulk_plan_test.exs`, `integration/bulk_test.exs`, system test (bulk send) | ✅ |
 | FR-24 | Randomise every setting per transaction (merchant, customer, origin and destination region, instrument, customer type, source and destination currency), with a seed that repeats a batch exactly, and a control that shuffles the header settings once | UC-13 | same | ✅ |
-| FR-25 | Carry the source and destination currency on a request and show them in the story and the audit log | UC-13 | `payment_test.exs`, `integration/bulk_test.exs` | 🟡 (carried and recorded; not yet used for pricing, routing or eligibility) |
+| FR-25 | Carry the source and destination currency on a request and show them in the story and the audit log | UC-13 | `payment_test.exs`, `integration/bulk_test.exs` | ✅ |
 | FR-26 | Admission control: at most a configured number of transactions run at once; a submission beyond it is refused at once with *overloaded* and a retry hint, before anything starts or is recorded; slots are freed when a payment ends or dies; the limit can be changed at run time | UC-14 | `unit/admission_test.exs`, `unit/application_test.exs`, `integration/bulk_test.exs`, system test (back-pressure) | ✅ |
 | FR-27 | Provider bulkheads protect money in motion: quotes may use 60% of the slots, steps 100%, undo, status and probe 150% | UC-14 | `unit/provider/server_test.exs` | ✅ |
 | FR-28 | Wait instead of failing: a busy provider is asked again for a quote until the deadline, and on a step without using an attempt | UC-14 | `unit/selector_test.exs`, `unit/payment_test.exs` | ✅ |
 | FR-29 | The sender backs off when refused as overloaded, can cap its own in-flight count, and reports why transactions did not complete | UC-13, UC-14 | `integration/bulk_test.exs` | ✅ |
+| FR-30 | Price a payment from the market rate of its currency pair through each provider's own spread | UC-15 | `unit/provider/fake_test.exs`, `integration/currency_test.exs` | ✅ |
+| FR-31 | Ask only providers that carry both currencies, and say which were not asked | UC-15 | `unit/selector_test.exs`, `integration/currency_test.exs` | ✅ |
+| FR-32 | A region may restrict the currencies a corridor can use (strictest region wins) | UC-15 | `unit/eligibility_test.exs`, `integration/currency_test.exs` | ✅ (no minor-unit exponents per currency) |
+| FR-33 | Record each bulk batch's plan and result in the audit log and read them back | UC-13 | `integration/bulk_test.exs`, `unit/replay_test.exs` | ✅ |
 
 ## 2. Non-functional requirements
 

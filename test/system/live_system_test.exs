@@ -254,6 +254,68 @@ defmodule ActorTxSpike.LiveSystemTest do
     assert rejected >= 1
   end
 
+  test "UC-4: a refused settlement waits for a person, who checks, repairs, retries and resolves it",
+       %{port: port} do
+    for p <- @providers,
+        do: control(port, %{"action" => "provider", "id" => p, "do" => "settle_fails"})
+
+    id = submit(port, 500)
+    wait_for(fn -> Enum.any?(review(port)["entries"], &(&1["tx"] == id)) end, 30_000)
+
+    %{"provider" => provider, "status" => "open", "done" => done} =
+      Enum.find(review(port)["entries"], &(&1["tx"] == id))
+
+    assert done == ["accept_quote", "authorise", "pay"]
+
+    # a decision with no name or no reason is refused, and nothing changes
+    assert {422, _} =
+             post(port, %{
+               "action" => "review",
+               "do" => "resolve",
+               "tx" => id,
+               "outcome" => "paid",
+               "by" => "",
+               "note" => "x"
+             })
+
+    assert %{"ok" => true, "result" => answers} =
+             control(port, %{"action" => "review", "do" => "check", "tx" => id, "by" => "robin"})
+
+    assert length(answers) == 4
+
+    control(port, %{"action" => "provider", "id" => provider, "do" => "heal"})
+
+    assert %{"ok" => true, "result" => %{"result" => result}} =
+             control(port, %{
+               "action" => "review",
+               "do" => "retry",
+               "tx" => id,
+               "op" => "settle",
+               "by" => "robin"
+             })
+
+    assert result =~ ":ok"
+
+    assert %{"ok" => true} =
+             control(port, %{
+               "action" => "review",
+               "do" => "resolve",
+               "tx" => id,
+               "outcome" => "paid",
+               "by" => "robin",
+               "note" => "settled after repair"
+             })
+
+    resolved = Enum.find(review(port)["entries"], &(&1["tx"] == id))
+
+    assert %{"status" => "resolved", "resolution" => %{"outcome" => "paid", "by" => "robin"}} =
+             resolved
+
+    assert Enum.map(resolved["actions"], & &1["kind"]) == ~w(check retry result)
+
+    for p <- @providers, do: control(port, %{"action" => "provider", "id" => p, "do" => "heal"})
+  end
+
   test "UC-5 cascade and standing guarantee: merchant policy and margin are narrated and ledgered",
        %{port: port} do
     %{"ok" => true, "result" => id} =
@@ -398,6 +460,11 @@ defmodule ActorTxSpike.LiveSystemTest do
   defp submit(port, amount) do
     %{"ok" => true, "result" => id} = control(port, %{"action" => "submit", "amount" => amount})
     id
+  end
+
+  defp review(port) do
+    {200, body} = http(port, "GET", "/api/review")
+    JSON.decode!(body)
   end
 
   defp bulk(port) do

@@ -8,6 +8,7 @@ defmodule ActorTxSpike.PanelTest do
     def metrics, do: %{raw: [], latest: nil}
     def lab, do: %{scenarios: [%{id: "x", status: :pass}]}
     def bulk, do: %{status: :idle, submitted: 0}
+    def review, do: %{open: 1, entries: []}
 
     def control(%{"action" => "ok"}), do: {:ok, %{done: true}}
     def control(%{"action" => "bad"}), do: {:error, "nope"}
@@ -131,6 +132,17 @@ defmodule ActorTxSpike.PanelTest do
     resp = request(Panel.port(bare), "GET /api/bulk HTTP/1.1\r\nhost: x\r\n\r\n")
     assert resp =~ "404"
     assert resp =~ "no bulk sender"
+  end
+
+  test "the review endpoint serves the handler's queue, or 404s when there is none", %{port: port} do
+    resp = request(port, "GET /api/review HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert resp =~ "200 OK"
+    assert resp =~ ~s("open")
+
+    {:ok, bare} = Panel.start_link(handler: NoLabHandler, port: 0, page: "x", keepalive_ms: 30)
+    resp = request(Panel.port(bare), "GET /api/review HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert resp =~ "404"
+    assert resp =~ "no review queue"
   end
 
   test "a client that vanishes mid-stream or mid-request is tolerated", %{port: port} do

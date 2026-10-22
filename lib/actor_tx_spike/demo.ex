@@ -25,13 +25,44 @@ defmodule ActorTxSpike.Demo do
   alias ActorTxSpike.Demo.Lab
   alias ActorTxSpike.Provider.{Fake, Health, Server}
 
+  # Each provider carries some currencies, not all.
   @providers [
-    northwind: [rate: 1.0820, fee: 1.5, latency_ms: 700],
-    bluebird: [rate: 1.0790, fee: 0.5, latency_ms: 250],
-    cobalt: [rate: 1.0870, fee: 2.5, latency_ms: 450],
-    meridian: [rate: 1.0760, fee: 0.0, latency_ms: 500],
-    zenith: [rate: 1.0810, fee: 1.0, latency_ms: 900]
+    northwind: [
+      rate: 1.0820,
+      fee: 1.5,
+      latency_ms: 700,
+      currencies: ~w(USD EUR GBP INR)
+    ],
+    bluebird: [
+      rate: 1.0790,
+      fee: 0.5,
+      latency_ms: 250,
+      currencies: ~w(USD EUR GBP JPY KRW MXN BRL)
+    ],
+    cobalt: [
+      rate: 1.0870,
+      fee: 2.5,
+      latency_ms: 450,
+      currencies: ~w(USD EUR GBP INR SAR TRY MXN BRL)
+    ],
+    meridian: [rate: 1.0760, fee: 0.0, latency_ms: 500, currencies: ~w(CNY USD EUR JPY KRW)],
+    zenith: [rate: 1.0810, fee: 1.0, latency_ms: 900, currencies: ~w(USD EUR GBP CNY JPY)]
   ]
+
+  # Market (mid) value of one unit of each currency in US dollars: the demo's price list.
+  @usd_per_unit %{
+    "USD" => 1.0,
+    "EUR" => 1.08,
+    "GBP" => 1.27,
+    "INR" => 0.012,
+    "CNY" => 0.138,
+    "MXN" => 0.055,
+    "BRL" => 0.19,
+    "TRY" => 0.029,
+    "SAR" => 0.267,
+    "JPY" => 0.0067,
+    "KRW" => 0.00073
+  }
 
   @modes ~w(quote_mode accept_quote_mode authorise_mode pay_mode settle_mode cancel_accept_mode
             void_authorisation_mode refund_mode status_mode probe_mode)a
@@ -47,7 +78,8 @@ defmodule ActorTxSpike.Demo do
 
     providers =
       for {id, settings} <- @providers, into: %{} do
-        {:ok, fake} = Fake.start_link([id: id] ++ settings)
+        {currencies, quoting} = Keyword.pop(settings, :currencies)
+        {:ok, fake} = Fake.start_link([id: id, pair_mids: pair_mids()] ++ quoting)
 
         {:ok, server} =
           Server.start_link(
@@ -58,7 +90,14 @@ defmodule ActorTxSpike.Demo do
             call_timeout: 6_000
           )
 
-        {id, %{id: id, fake: fake, server: server, base: Fake.settings(fake)}}
+        {id,
+         %{
+           id: id,
+           fake: fake,
+           server: server,
+           currencies: currencies,
+           base: Fake.settings(fake)
+         }}
       end
 
     global = %{
@@ -212,6 +251,7 @@ defmodule ActorTxSpike.Demo do
           "EU" => %{"retention_days" => 2_555},
           "IN" => %{
             "instruments" => ["spot"],
+            "currencies" => ["INR", "USD", "EUR", "GBP"],
             "providers" => %{"allow" => ["northwind", "cobalt"]},
             "logs" => ["IN"],
             "local_only" => true,
@@ -220,6 +260,7 @@ defmodule ActorTxSpike.Demo do
           "CN" => %{
             "instruments" => ["spot"],
             "customer_types" => ["business"],
+            "currencies" => ["CNY", "USD", "EUR"],
             "providers" => %{"allow" => ["meridian"]},
             "logs" => ["CN"],
             "local_only" => true
@@ -229,6 +270,11 @@ defmodule ActorTxSpike.Demo do
 
     e
   end
+
+  @doc "The providers as the review queue finds them (id and server)."
+  @spec review_providers() :: [map()]
+  def review_providers,
+    do: for({id, p} <- world().providers, do: %{id: id, server: p.server})
 
   @doc "Names of every log the demo's rules can send records to."
   @spec log_names() :: [String.t()]
@@ -386,7 +432,16 @@ defmodule ActorTxSpike.Demo do
   defp admission_limit(value), do: value
 
   # The providers as the orchestrator is given them.
-  defp registry(state), do: for({pid, p} <- state.providers, do: %{id: pid, server: p.server})
+  defp registry(state),
+    do:
+      for({pid, p} <- state.providers, do: %{id: pid, server: p.server, currencies: p.currencies})
+
+  # The market rate of every currency pair, as scaled integers.
+  defp pair_mids do
+    for {from, a} <- @usd_per_unit, {to, b} <- @usd_per_unit, from != to, into: %{} do
+      {"#{from}/#{to}", Money.rate(Float.round(a / b, 8))}
+    end
+  end
 
   defp submit(state, amount, extras \\ %{}, given_id \\ nil) do
     n = state.counter + 1
@@ -456,30 +511,31 @@ defmodule ActorTxSpike.Demo do
 
   defp preset(other, _cmd, _p, _state), do: {:error, "unknown action #{inspect(other)}"}
 
-  defp build_snapshot(state) do
-    providers =
-      for {id, p} <- state.providers do
-        h = Server.health(p.server)
-        s = Fake.settings(p.fake)
-        stats = Health.stats(h)
+  defp provider_view({id, p}) do
+    h = Server.health(p.server)
+    s = Fake.settings(p.fake)
+    stats = Health.stats(h)
 
-        %{
-          id: id,
-          state: Health.state(h),
-          breaker: h.breaker,
-          error_rate: stats.error_rate,
-          p95_ms: stats.p95_ms,
-          samples: stats.samples,
-          in_flight: Server.in_flight(p.server),
-          version: h.version,
-          recovering: h.recovering,
-          rate: Money.rate_to_float(s.rate),
-          fee: Money.to_major(s.fee),
-          latency_ms: s.latency_ms,
-          faults: for(m <- @modes, s[m] != :ok, do: %{op: m, mode: inspect(s[m])})
-        }
-      end
-      |> Enum.sort_by(& &1.id)
+    %{
+      id: id,
+      state: Health.state(h),
+      breaker: h.breaker,
+      error_rate: stats.error_rate,
+      p95_ms: stats.p95_ms,
+      samples: stats.samples,
+      in_flight: Server.in_flight(p.server),
+      version: h.version,
+      recovering: h.recovering,
+      rate: Money.rate_to_float(s.rate),
+      fee: Money.to_major(s.fee),
+      latency_ms: s.latency_ms,
+      currencies: p.currencies,
+      faults: for(m <- @modes, s[m] != :ok, do: %{op: m, mode: inspect(s[m])})
+    }
+  end
+
+  defp build_snapshot(state) do
+    providers = state.providers |> Enum.map(&provider_view/1) |> Enum.sort_by(& &1.id)
 
     %{
       providers: providers,
@@ -541,6 +597,7 @@ end
 defmodule ActorTxSpike.Demo.Handler do
   @moduledoc "Adapts `ActorTxSpike.Demo` to the `ActorTxSpike.Panel` handler contract."
   alias ActorTxSpike.Demo.{Bulk, Lab}
+  alias ActorTxSpike.Review
 
   def snapshot, do: ActorTxSpike.Demo.snapshot()
 
@@ -548,6 +605,12 @@ defmodule ActorTxSpike.Demo.Handler do
     if Process.whereis(Lab),
       do: Lab.command(command),
       else: {:error, "the test lab is not running: start with mix demo --lab"}
+  end
+
+  def control(%{"action" => "review"} = command) do
+    if Process.whereis(Review),
+      do: Review.command(command),
+      else: {:error, "the review queue is not running"}
   end
 
   def control(%{"action" => "bulk"} = command) do
@@ -558,6 +621,12 @@ defmodule ActorTxSpike.Demo.Handler do
 
   def control(command), do: ActorTxSpike.Demo.control(command)
   def metrics, do: ActorTxSpike.Metrics.snapshot()
+
+  def review do
+    if Process.whereis(Review),
+      do: Review.snapshot(),
+      else: %{available: false}
+  end
 
   def bulk do
     if Process.whereis(Bulk),

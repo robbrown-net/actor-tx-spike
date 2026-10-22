@@ -11,6 +11,8 @@ flowchart LR
     end
     subgraph Core["Transaction core"]
         ADM["Admission (limit on transactions in flight)"]
+        REV["Review (queue of needs_review; check, retry, resolve)"]
+        RQ["Review.Queue (pure: entries from events or log records)"]
         TS["TransactionSupervisor (DynamicSupervisor)"]
         PAY["Payment (1 process per transaction)"]
         SEL["Selector (fan-out quoting, pure evaluate/3)"]
@@ -54,6 +56,11 @@ flowchart LR
     POLL["Poll (wait for a condition; used by lab and tests)"]
 
     API --> ADM
+    EV -. "needs_review" .-> REV
+    REV --> RQ
+    REV -. "write-ahead, before any action" .-> EV
+    REV -- "status, retry settle or undo" --> PSRV
+    FILE --> RQ
     ADM -. "admitted" .-> TS
     API --> TS --> PAY
     PAY -. "ended: free the slot" .-> ADM
@@ -152,7 +159,9 @@ flowchart TD
 |---|---|---|
 | `ActorTxSpike` | Public API: submit / await / snapshot | no |
 | `Payment` | Lifecycle, retries (a busy provider is asked again without using an attempt), compensation, reconcile, escalation; frees its admission slot when it ends | no (process) |
-| `Selector` | Concurrent quoting within deadline (a busy provider is asked again until the deadline); `evaluate/3` is the pure judgement shared with replay | `evaluate/3`: **yes** |
+| `Selector` | Concurrent quoting within deadline (a provider that does not carry the pair is not asked; a busy provider is asked again until the deadline); `evaluate/3` is the pure judgement shared with replay | `evaluate/3`: **yes** |
+| `Review` | The review workflow: queue of transactions in `needs_review`; check (read-only), retry (settle or an undo under the original key), resolve (paid, not_paid, written_off, with who and why); write-ahead; started by the host (see [11](11-review-workflow.md)) | no (process) |
+| `Review.Queue` | The queue as pure data: entries from a live transaction or from audit-log records; folding people's actions; the resolution check | **yes** |
 | `Admission` | Admission control: counts running transactions, refuses beyond the limit with a retry hint, frees slots on end or death (see [10](10-back-pressure.md)) | no (process) |
 | `Selector.Narrator` | The story of a selection: events people read and the journal records replay reads | no |
 | `Validation` | The shared shape of "plain data to validated struct": parse each field, collect every error | **yes** |
@@ -171,7 +180,7 @@ flowchart TD
 | `Economics` | Prices each finished transaction, keeps totals overall and per provider, announces `tx_costed` | no (process) |
 | `Audit` | Hash-chained append-only log, verification, card-number scrubbing | no (process) |
 | `Journal` | Records replay inputs (actor `:journal`, hidden from humans) | no |
-| `Eligibility` (+ `Rule`, `Parser`) | Jurisdiction rules: eligible providers, permitted instruments and customer types, logs, retention; strictest region wins | **yes** |
+| `Eligibility` (+ `Rule`, `Parser`) | Jurisdiction rules: eligible providers, permitted instruments, customer types and currencies, logs, retention; strictest region wins | **yes** |
 | `Audit.Router` | One hash-chained log per region; routes each transaction's events to the logs its decision names; fails closed | no (process) |
 | `Audit.Lock` | One writer per log (lock file naming the owner; stale locks taken over) | no |
 | `Recovery` | Pure plan of where an open transaction stood; recovery of every open transaction from the logs | plan: **yes** |

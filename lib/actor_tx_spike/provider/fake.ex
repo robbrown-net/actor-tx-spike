@@ -22,6 +22,15 @@ defmodule ActorTxSpike.Provider.Fake do
 
   Also scriptable: `:rate`, `:fee`, `:latency_ms`, `:version`, `:quote_ttl_ms`.
 
+  ## Currency pairs
+
+  `:pair_mids` is a map of `"USD/EUR"` to the market (mid) rate of that pair as a scaled
+  integer. When a request names `:source_currency` and `:destination_currency` and the pair is
+  known, the quoted rate is the mid rate carried through this provider's own spread:
+  `mid * rate / ref_rate` (`:ref_rate`, default 1.0820, is the rate at which the provider
+  quotes the mid exactly). Repricing, drift and healing change `:rate` and so move every pair.
+  A request without currencies, or an unknown pair, is quoted at `:rate`.
+
   ## Observability
 
   The fake narrates what a real service would: it announces receiving each
@@ -55,6 +64,8 @@ defmodule ActorTxSpike.Provider.Fake do
     latency_ms: 0,
     version: "1",
     quote_ttl_ms: 60_000,
+    pair_mids: %{},
+    ref_rate: 108_200_000,
     quote_mode: :ok,
     accept_quote_mode: :ok,
     authorise_mode: :ok,
@@ -90,6 +101,16 @@ defmodule ActorTxSpike.Provider.Fake do
       &if(Map.has_key?(&1, :fee), do: Map.update!(&1, :fee, fn f -> Money.minor(f) end), else: &1)
     )
   end
+
+  defp rate_for(settings, request) do
+    case Map.fetch(settings.pair_mids, pair(request)) do
+      {:ok, mid} -> Money.div_half_even(mid * settings.rate, settings.ref_rate)
+      :error -> settings.rate
+    end
+  end
+
+  defp pair(%{source_currency: from, destination_currency: to}), do: "#{from}/#{to}"
+  defp pair(_request), do: nil
 
   defp amount_text(nil), do: "an unspecified amount"
   defp amount_text(amount), do: Money.format(amount)
@@ -129,7 +150,7 @@ defmodule ActorTxSpike.Provider.Fake do
            %Quote{
              provider: s.id,
              request_id: request.id,
-             rate: s.rate,
+             rate: rate_for(s, request),
              fee: s.fee,
              expires_at_ms: System.system_time(:millisecond) + s.quote_ttl_ms
            }}

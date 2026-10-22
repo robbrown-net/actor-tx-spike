@@ -140,6 +140,26 @@
   #bulk .nums b { display:block; font-size:18px; color:var(--text); }
   #bulk .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:4px; }
   #bulk .fields label { display:flex; gap:6px; align-items:center; color:var(--text); font-size:12px; }
+
+  /* ---- review ---- */
+  #review { display:none; padding:12px; gap:12px; grid-template-columns:minmax(300px,1fr) minmax(420px,1.6fr); align-items:start; }
+  body.review #review { display:grid; }
+  body.review main { display:none; }
+  @media (max-width:900px) { #review { grid-template-columns:1fr; } }
+  #review .col { display:flex; flex-direction:column; gap:12px; min-width:0; }
+  #review .pad { padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  #review .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  #review label { color:var(--dim); font-size:11px; }
+  #review input, #review select { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:12px; }
+  #review table { width:100%; border-collapse:collapse; font-size:12px; }
+  #review td, #review th { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  #review th { color:var(--dim); font-weight:600; }
+  #review textarea { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:12px; width:100%; min-height:54px; }
+  #review .item { border:1px solid var(--line); border-radius:8px; padding:8px 10px; cursor:pointer; display:flex; flex-direction:column; gap:2px; }
+  #review .item.sel { border-color:var(--accent); } #review .item.resolved { opacity:.65; }
+  #review .item h4 { margin:0; font-size:13px; display:flex; gap:8px; align-items:center; }
+  #review .story { font-size:11px; color:var(--dim); max-height:150px; overflow:auto; border:1px solid var(--line); border-radius:6px; padding:6px 8px; background:var(--panel2); }
+  #review .trail li { font-size:12px; color:var(--dim); } #review .trail b { color:var(--text); }
   .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; }
   .pill.pass { background:var(--ok); color:#04130a; } .pill.fail { background:var(--bad); color:#fff; }
   .pill.skipped, .pill.not_run { background:var(--panel2); color:var(--dim); border:1px solid var(--line); }
@@ -188,7 +208,7 @@
     <label>To</label><select id="dstCur"><option value="">–</option><option>USD</option><option>EUR</option><option>GBP</option><option>INR</option><option>CNY</option><option>MXN</option><option>BRL</option><option>TRY</option><option>SAR</option><option>JPY</option><option>KRW</option></select>
     <button class="primary" id="submit">Submit transaction</button>
     <button id="auto">Auto traffic: off</button></div>
-  <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button><button id="viewBulk">Bulk send</button><button id="viewLab">Test lab</button></div>
+  <div class="views"><button id="viewLive" class="on">Live</button><button id="viewPerf">Performance</button><button id="viewBulk">Bulk send</button><button id="viewReview">Review <span id="reviewBadge"></span></button><button id="viewLab">Test lab</button></div>
   <div class="grp"><label>Cut-off in</label><input type="number" id="cutoffSecs" value="20" min="1" style="width:60px"><label>s</label><button id="setCutoff">Set cut-off for region</button><button id="clearCutoff">Clear</button></div>
   <div class="grp"><button id="motion" title="Turn animation on or off">Motion: on</button></div>
   <div class="grp"><label>Pace <span id="paceVal">1.0×</span></label><input type="range" id="pace" min="0.1" max="2" step="0.1" value="1"></div>
@@ -276,6 +296,21 @@
         <div class="kv" id="bulkWhy"></div>
         <div class="kv" id="bulkRecent"></div>
       </div>
+    </section>
+  </div>
+</div>
+<div id="review">
+  <div class="col">
+    <section>
+      <h2><span>Waiting for a person <span id="reviewCount"></span></span></h2>
+      <div class="hint">Transactions the system would not settle by guessing: a payment it could not confirm, a settlement or undo it could not complete, or the audit log failing after money moved. Open ones first.</div>
+      <div class="pad scroll" id="reviewList"></div>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2><span id="reviewTitle">Pick a transaction</span></h2>
+      <div class="pad" id="reviewDetail"><div class="hint">Choose one on the left. Everything you do here is written to the audit log, under your name, before it takes effect.</div></div>
     </section>
   </div>
 </div>
@@ -437,7 +472,7 @@ function createProvider(p) {
       <div><span>latency</span><b data-f="latency"></b></div><div><span>breaker</span><b data-f="breaker"></b></div>
       <div><span>p95</span><b data-f="p95"></b></div><div><span>errors</span><b data-f="errors"></b></div>
       <div><span>in-flight</span><b data-f="inflight"></b></div><div><span>version</span><b data-f="version"></b></div>
-    </div><div class="faults" data-f="faults"></div>
+    </div><div class="faults" data-f="faults"></div><div class="kv" data-f="currencies"></div>
     <div class="actions">${ACTIONS.map(([l, d]) => `<button data-p="${esc(p.id)}" data-do="${d}">${l}</button>`).join('')}</div>`;
   const f = {}; el.querySelectorAll('[data-f]').forEach(n => f[n.dataset.f] = n);
   return { el, f, state: null };
@@ -450,6 +485,7 @@ function updateProvider(e, p) {
   f.version.textContent = p.version || '–';
   const faults = p.faults.map(x => x.op.replace('_mode','') + '=' + x.mode).join(', ');
   f.faults.textContent = faults ? 'faults: ' + faults : ''; f.faults.style.display = faults ? '' : 'none';
+  f.currencies.textContent = p.currencies ? 'carries ' + p.currencies.join(' ') : '';
   f.pill.textContent = st + (p.recovering > 0 ? ' · recovering' : '');
   if (e.state !== st) {
     f.pill.className = 'pill ' + st;
@@ -696,17 +732,69 @@ function setView(view) {
   document.body.classList.toggle('perf', view === 'perf');
   document.body.classList.toggle('lab', view === 'lab');
   document.body.classList.toggle('bulk', view === 'bulk');
+  document.body.classList.toggle('review', view === 'review');
+  $('viewReview').classList.toggle('on', view === 'review');
   $('viewBulk').classList.toggle('on', view === 'bulk');
   $('viewLive').classList.toggle('on', view === 'live'); $('viewPerf').classList.toggle('on', view === 'perf'); $('viewLab').classList.toggle('on', view === 'lab');
   if (view === 'perf') fetchPerf();
   if (view === 'lab') labFetch();
   if (view === 'bulk') bulkFetch();
+  if (view === 'review') reviewFetch();
 }
 $('viewLive').onclick = () => setView('live');
 $('viewPerf').onclick = () => setView('perf');
 $('viewLab').onclick = () => setView('lab');
 $('viewBulk').onclick = () => setView('bulk');
 
+
+
+/* ---------- review ---------- */
+const R = { data: null, sel: null };
+function reviewFetch() {
+  fetch('/api/review').then(r => r.json()).then(d => { R.data = d; renderReview(); }).catch(() => {});
+}
+function reviewer() { try { return localStorage.getItem('actor-tx-reviewer') || ''; } catch (_) { return ''; } }
+function reviewCmd(body) {
+  const by = $('reviewBy') ? $('reviewBy').value.trim() : '';
+  try { localStorage.setItem('actor-tx-reviewer', by); } catch (_) {}
+  return post(Object.assign({ action:'review', tx:R.sel, by }, body)).then(j => { if (j && j.ok && j.result !== undefined) showOut('reviewOut', j.result); reviewFetch(); return j; });
+}
+function renderReview() {
+  const d = R.data; if (!d) return;
+  if (d.available === false) { $('reviewList').innerHTML = '<div class="hint">The review queue is not running. Start the demo with mix demo.</div>'; return; }
+  $('reviewBadge').textContent = d.open ? '(' + d.open + ')' : '';
+  $('reviewCount').innerHTML = `<span class="kv">${d.open} open, ${d.resolved} resolved</span>`;
+  $('reviewList').innerHTML = d.entries.length ? d.entries.map(e => `<div class="item ${e.status} ${e.tx === R.sel ? 'sel' : ''}" data-tx="${esc(e.tx)}">
+    <h4><span class="pill ${e.status === 'open' ? 'running' : 'pass'}">${esc(e.status)}</span>${esc(e.tx)}</h4>
+    <div class="kv">${esc(e.provider || 'no provider')} · ${esc(e.reason)}</div></div>`).join('') : '<div class="hint">Nothing is waiting. Break a provider (pay vanishes, settlement fails) and send a transaction.</div>';
+  document.querySelectorAll('#reviewList .item').forEach(i => i.onclick = () => { R.sel = i.dataset.tx; $('reviewOut') && ($('reviewOut').style.display = 'none'); renderReview(); });
+  const e = d.entries.find(x => x.tx === R.sel);
+  if (!e) return;
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#reviewDetail')) return; // do not rebuild under someone typing
+  $('reviewTitle').textContent = 'Review: ' + e.tx;
+  const trail = e.actions.map(a => `<li><b>${esc(a.by)}</b> ${esc(a.kind)}${a.op ? ' ' + esc(a.op) : ''}: ${esc(typeof a.detail === 'string' ? a.detail : JSON.stringify(a.detail))}</li>`).join('');
+  const open = e.status === 'open';
+  $('reviewDetail').innerHTML = `<div class="kv"><b>${esc(e.reason)}</b></div>
+    <div class="kv">provider <b>${esc(e.provider || 'none')}</b> · steps done <b>${esc((e.done || []).join(', ') || 'none')}</b>${e.request ? ' · amount <b>' + esc(e.request.amount) + '</b>' : ''}</div>
+    <div class="story">${(e.story || []).map(esc).join('<br>')}</div>
+    ${trail ? '<ul class="trail">' + trail + '</ul>' : ''}
+    ${e.resolution ? `<div class="kv">Resolved <b>${esc(e.resolution.outcome)}</b> by <b>${esc(e.resolution.by)}</b>: ${esc(e.resolution.note)}</div>` : ''}
+    ${open ? `<div class="row"><label>You are</label><input id="reviewBy" value="${esc(reviewer())}" placeholder="your name" style="width:140px"></div>
+      <div class="row"><button id="rvCheck">Check with the provider (read-only)</button></div>
+      <div class="row"><label>Send again</label><select id="rvOp"><option>settle</option><option>cancel_accept</option><option>void_authorisation</option><option>refund</option></select><button id="rvRetry">Send, same key</button>
+        <span class="kv">safe to repeat: the provider does nothing twice</span></div>
+      <div class="row"><label>Resolve as</label><select id="rvOutcome"><option value="paid">paid (money moved, it is whole)</option><option value="not_paid">not paid (nothing moved)</option><option value="written_off">written off (cannot tell; exposure accepted)</option></select></div>
+      <textarea id="rvNote" placeholder="Why? A decision without a reason cannot be audited."></textarea>
+      <div class="row"><button class="primary" id="rvResolve">Resolve</button></div>` : ''}
+    <div class="out" id="reviewOut" style="display:none"></div>`;
+  if (open) {
+    $('rvCheck').onclick = () => reviewCmd({ do:'check' });
+    $('rvRetry').onclick = () => reviewCmd({ do:'retry', op:$('rvOp').value });
+    $('rvResolve').onclick = () => reviewCmd({ do:'resolve', outcome:$('rvOutcome').value, note:$('rvNote').value });
+  }
+}
+$('viewReview').onclick = () => setView('review');
+setInterval(reviewFetch, 1500); // always: the tab's badge shows how many are waiting
 
 /* ---------- bulk send ---------- */
 const B = { data: null };

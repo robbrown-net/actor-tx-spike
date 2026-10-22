@@ -281,4 +281,51 @@ defmodule ActorTxSpike.SelectorTest do
       send(holder, :stop)
     end
   end
+
+  describe "currency pairs" do
+    @pair_request %{
+      id: "fx-2",
+      amount: 10_000,
+      source_currency: "USD",
+      destination_currency: "INR"
+    }
+
+    defp carrying(id, currencies, fake_opts \\ []),
+      do: id |> provider(fake_opts) |> Map.put(:currencies, currencies)
+
+    test "a provider that does not carry the pair is not asked, and is reported" do
+      Events.subscribe()
+      india = carrying(:india, ~w(USD INR), rate: 1.0)
+      europe = carrying(:europe, ~w(USD EUR), rate: 2.0)
+
+      sel =
+        Selector.select(@pair_request, [india, europe], policy(%{"weights" => %{"cost" => 1}}))
+
+      assert {:selected, %{provider_id: :india}} = sel.outcome
+      assert {:europe, {:unsupported, "USD/INR"}} in sel.excluded
+      assert Fake.calls(europe.fake) == %{}
+
+      assert_receive {:tx_event, %{kind: :provider_skipped, message: message, data: data}}
+
+      assert message == "not calling europe: it does not carry USD to INR"
+
+      assert data.provider == :europe
+    end
+
+    test "a provider that lists no currencies, or a request that names none, is unaffected" do
+      open = provider(:open, rate: 1.0)
+      narrow = carrying(:narrow, ~w(USD EUR), rate: 1.0)
+      policy = policy(%{"weights" => %{"cost" => 1}})
+
+      assert length(Selector.select(@pair_request, [open], policy).ranked) == 1
+      assert length(Selector.select(@request, [narrow], policy).ranked) == 1
+    end
+
+    test "when no provider carries the pair there is no quote" do
+      narrow = carrying(:narrow, ~w(USD EUR))
+      sel = Selector.select(@pair_request, [narrow], policy(%{"weights" => %{"cost" => 1}}))
+      assert sel.outcome == :none
+      assert {:narrow, {:unsupported, "USD/INR"}} in sel.excluded
+    end
+  end
 end

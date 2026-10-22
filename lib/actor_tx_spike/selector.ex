@@ -39,8 +39,7 @@ defmodule ActorTxSpike.Selector do
 
     Narrator.started(request, providers, deadline_ms)
 
-    {callable, skipped} = partition(providers, policy)
-    Enum.each(skipped, &Narrator.skipped(request, &1))
+    {callable, not_called} = screen(request, providers, policy)
 
     observations = observe(request, callable, deadline_ms)
     Enum.each(observations, &Narrator.observation(request, &1))
@@ -48,9 +47,18 @@ defmodule ActorTxSpike.Selector do
     evaluation = evaluate(request, observations, policy)
     Enum.each(evaluation.items, &Narrator.item(request, &1))
 
-    selection = build(evaluation, skipped, Keyword.get(opts, :baseline), now() - started)
+    selection = build(evaluation, not_called, Keyword.get(opts, :baseline), now() - started)
     Narrator.outcome(request, selection)
     selection
+  end
+
+  # Who is not asked at all, and why: no currency pair, or a health state the policy excludes.
+  defp screen(request, providers, policy) do
+    {capable, unsupported} = Enum.split_with(providers, &carries?(&1, request))
+    Enum.each(unsupported, &Narrator.unsupported(request, &1))
+    {callable, skipped} = partition(capable, policy)
+    Enum.each(skipped, &Narrator.skipped(request, &1))
+    {callable, not_called(request, unsupported, skipped)}
   end
 
   # Providers whose health state the policy excludes are not asked at all.
@@ -60,9 +68,22 @@ defmodule ActorTxSpike.Selector do
     |> Enum.split_with(fn {_provider, state} -> not Policy.exclude_state?(policy, state) end)
   end
 
-  defp build(evaluation, skipped, baseline, elapsed_ms) do
-    not_called = Enum.map(skipped, fn {p, state} -> {p.id, {:state, state}} end)
+  # A provider that does not carry the request's currency pair is not asked (when the provider
+  # lists its currencies and the request names both).
+  defp carries?(%{currencies: codes}, %{source_currency: from, destination_currency: to})
+       when is_list(codes),
+       do: from in codes and to in codes
 
+  defp carries?(_provider, _request), do: true
+
+  defp not_called(request, unsupported, skipped) do
+    pair = "#{request[:source_currency]}/#{request[:destination_currency]}"
+
+    Enum.map(unsupported, &{&1.id, {:unsupported, pair}}) ++
+      Enum.map(skipped, fn {p, state} -> {p.id, {:state, state}} end)
+  end
+
+  defp build(evaluation, not_called, baseline, elapsed_ms) do
     %Selection{
       outcome: outcome(evaluation.ranked, baseline),
       ranked: evaluation.ranked,

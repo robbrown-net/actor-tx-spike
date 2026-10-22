@@ -19,6 +19,21 @@ defmodule ActorTxSpike.Selector.Narrator do
     )
   end
 
+  @doc "A provider was not called because it does not carry the request's currency pair."
+  def unsupported(request, provider) do
+    pair = "#{request.source_currency} to #{request.destination_currency}"
+
+    announce(
+      request,
+      :provider_skipped,
+      "not calling #{provider.id}: it does not carry #{pair}",
+      %{
+        provider: provider.id,
+        reason: "unsupported_pair"
+      }
+    )
+  end
+
   @doc "A provider was not called because its health state is excluded."
   def skipped(request, {provider, state}) do
     announce(request, :provider_skipped, "not calling #{provider.id}: it is #{state}", %{

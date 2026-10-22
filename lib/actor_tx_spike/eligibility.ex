@@ -32,7 +32,9 @@ defmodule ActorTxSpike.Eligibility do
   which case they go only to the local-only regions' logs.
 
   Rule fields: `instruments`, `customer_types`, `providers` (`"all"`, or
-  `{"allow": [...]}`, or `{"deny": [...]}`), `logs` (default `["GLOBAL"]`),
+  `{"allow": [...]}`, or `{"deny": [...]}`), `currencies` (`"all"` or a list of codes such as
+  `["INR", "USD"]`; both the source and the destination currency of a transaction must be listed),
+  `logs` (default `["GLOBAL"]`),
   `local_only` (default false), `retention_days` (default none).
   """
 
@@ -69,7 +71,8 @@ defmodule ActorTxSpike.Eligibility do
     rules = rules_for(e, regions)
     instrument = to_atom(request[:instrument], :spot)
     customer = to_atom(request[:customer_type], :business)
-    reasons = violations(pairs(regions, rules), instrument, customer)
+    currencies = [request[:source_currency], request[:destination_currency]]
+    reasons = violations(pairs(regions, rules), instrument, customer, currencies)
 
     %{
       permitted?: reasons == [],
@@ -77,6 +80,8 @@ defmodule ActorTxSpike.Eligibility do
       regions: regions,
       instrument: instrument,
       customer_type: customer,
+      source_currency: request[:source_currency],
+      destination_currency: request[:destination_currency],
       provider_rules: for(r <- rules, r.providers != :all, do: provider_rule(r.providers)),
       logs: logs(rules),
       retention_days: longest_retention(rules)
@@ -113,7 +118,7 @@ defmodule ActorTxSpike.Eligibility do
 
   defp rule_for(e, region), do: Map.get(e.regions, region, e.default)
 
-  defp violations(pairs, instrument, customer) do
+  defp violations(pairs, instrument, customer, currencies) do
     Enum.flat_map(pairs, fn {region, rule} ->
       [
         forbidden(instrument, rule.instruments, "#{instrument} is not permitted in #{region}"),
@@ -122,10 +127,17 @@ defmodule ActorTxSpike.Eligibility do
           rule.customer_types,
           "#{customer} customers are not permitted in #{region}"
         )
+        | Enum.map(currencies, &currency_forbidden(&1, rule.currencies, region))
       ]
       |> Enum.reject(&is_nil/1)
     end)
   end
+
+  defp currency_forbidden(nil, _allowed, _region), do: nil
+  defp currency_forbidden(_currency, :all, _region), do: nil
+
+  defp currency_forbidden(currency, allowed, region),
+    do: forbidden(currency, allowed, "#{currency} cannot be used in #{region}")
 
   defp forbidden(value, allowed, message), do: if(value in allowed, do: nil, else: message)
 

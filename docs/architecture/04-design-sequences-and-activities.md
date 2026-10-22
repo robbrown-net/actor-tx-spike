@@ -372,6 +372,8 @@ stateDiagram-v2
     needs_review --> [*]
 ```
 
+A transaction in `needs_review` is not the end of the story: it waits in the review queue until a person resolves it ([11](11-review-workflow.md)).
+
 ## 4.7 State machine: provider health and breaker
 
 ```mermaid

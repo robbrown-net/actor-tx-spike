@@ -193,6 +193,10 @@ classDiagram
 | **Breaker** | Per-provider circuit: `closed / open / half_open`. |
 | **Quarantine** | A provider whose version changed is not trusted until released. |
 | **Narrative** | The ordered stream of events describing everything the system does. |
+| **Review queue** | The transactions that ended in `needs_review`, open until a person resolves them. |
+| **Resolution** | A person's closing decision on a review: `paid`, `not_paid` or `written_off`, with who and why. |
+| **Carried currency** | A currency a provider can quote; a provider is only asked for pairs it carries. |
+| **Mid rate** | The market rate of a currency pair before any provider's spread. |
 | **Admission control / admission limit** | The most transactions the system will run at once; a submission beyond it is refused as overloaded before anything starts. |
 | **Back-pressure** | Telling callers to slow down (refusal with a retry hint) instead of failing work already accepted. |
 | **Overloaded** | The answer when a limit is full (the admission limit or a provider's bulkhead). The call was not made, so asking again is safe. |

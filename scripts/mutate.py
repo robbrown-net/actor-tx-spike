@@ -27,6 +27,10 @@ TARGETS = {
     "lib/actor_tx_spike/poll.ex": ["test/unit/poll_test.exs"],
     "lib/actor_tx_spike/demo/bulk/plan.ex": ["test/unit/demo/bulk_plan_test.exs"],
     "lib/actor_tx_spike/admission.ex": ["test/unit/admission_test.exs"],
+    "lib/actor_tx_spike/review/queue.ex": ["test/unit/review_test.exs"],
+    "lib/actor_tx_spike/review.ex": ["test/unit/review_test.exs"],
+    "lib/actor_tx_spike/eligibility.ex": ["test/unit/eligibility_test.exs"],
+    "lib/actor_tx_spike/provider/fake.ex": ["test/unit/provider/fake_test.exs"],
     "lib/actor_tx_spike/provider/server.ex": ["test/unit/provider/server_test.exs"],
 }
 if "--only" in sys.argv:

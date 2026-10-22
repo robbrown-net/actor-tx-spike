@@ -28,6 +28,11 @@ defmodule ActorTxSpike.Provider.FakeTest do
     assert %{rate: 200_000_000} = Fake.settings(fake)
     Fake.configure(fake, rate: 130_000_000)
     assert %{rate: 130_000_000} = Fake.settings(fake)
+    # an integer from one million up is already a scaled rate; below it is a whole-number rate
+    Fake.configure(fake, rate: 1_000_000)
+    assert %{rate: 1_000_000} = Fake.settings(fake)
+    Fake.configure(fake, rate: 999_999)
+    assert %{rate: 99_999_900_000_000} = Fake.settings(fake)
   end
 
   test "a quote request that names an amount is narrated with it", %{fake: fake} do
@@ -165,5 +170,38 @@ defmodule ActorTxSpike.Provider.FakeTest do
     assert_receive {:tx_event, %{message: "request_quote -> rejected (no_liquidity)"}}
     assert_receive {:tx_event, %{message: "request_quote -> error (:boom)"}}
     assert_receive {:tx_event, %{message: "request_quote -> timeout"}}
+  end
+
+  describe "currency pairs" do
+    @pair %{id: "r1", source_currency: "USD", destination_currency: "EUR"}
+
+    test "a known pair is quoted at the market rate through the provider's own spread" do
+      # market USD/EUR 0.9259; this provider quotes the mid at ref_rate 1.08 and is at 1.08
+      {:ok, fake} =
+        Fake.start_link(
+          id: :p,
+          rate: 1.08,
+          ref_rate: 108_000_000,
+          pair_mids: %{"USD/EUR" => 92_590_000}
+        )
+
+      assert {:ok, %Quote{rate: 92_590_000}} = Fake.request_quote(fake, @pair)
+
+      # a provider that quotes 1% better than the reference gives 1% better on every pair
+      Fake.configure(fake, rate: 1.0908)
+      assert {:ok, %Quote{rate: 93_515_900}} = Fake.request_quote(fake, @pair)
+    end
+
+    test "an unknown pair, or a request without currencies, is quoted at the plain rate" do
+      {:ok, fake} = Fake.start_link(id: :p, rate: 1.1, pair_mids: %{"USD/EUR" => 92_590_000})
+      assert {:ok, %Quote{rate: 110_000_000}} = Fake.request_quote(fake, %{id: "r"})
+
+      assert {:ok, %Quote{rate: 110_000_000}} =
+               Fake.request_quote(fake, %{
+                 id: "r",
+                 source_currency: "USD",
+                 destination_currency: "JPY"
+               })
+    end
   end
 end

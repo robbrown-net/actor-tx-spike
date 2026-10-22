@@ -145,4 +145,30 @@ defmodule ActorTxSpike.Demo.Bulk.PlanTest do
     assert text =~ "7 ×" and text =~ "random" and text =~ "seed 2"
     refute Plan.describe(plan!(%{})) =~ "seed"
   end
+
+  test "a plan is recorded as plain data, in minor units" do
+    plan =
+      plan!(%{
+        "count" => 3,
+        "min_amount" => "1.50",
+        "max_amount" => 9,
+        "mode" => "random",
+        "seed" => 4,
+        "max_in_flight" => 2,
+        "fixed" => %{"region" => "UK"}
+      })
+
+    assert %{
+             count: 3,
+             min_minor: 150,
+             max_minor: 900,
+             mode: :random,
+             seed: 4,
+             max_in_flight: 2,
+             fixed: %{"region" => "UK"},
+             interval_ms: 100
+           } = Plan.to_map(plan)
+
+    assert Plan.to_map(plan).randomise == Plan.settings()
+  end
 end

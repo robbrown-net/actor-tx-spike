@@ -38,7 +38,7 @@ Options (`mix demo ...`):
 
 ## 3. The dashboard
 
-Four tabs: **Live**, **Performance**, **Bulk send** and **Test lab**.
+Five tabs: **Live**, **Performance**, **Bulk send**, **Review** and **Test lab**.
 
 **Live.** The five providers (price, speed, health state, circuit breaker), the transactions in
 flight and finished, the **Story** pane (what each component is doing, in plain words), and the
@@ -46,7 +46,7 @@ flight and finished, the **Story** pane (what each component is doing, in plain 
 Click a transaction to follow just its story; *show all* clears the filter.
 
 **Header controls.** Amount, merchant, customer, **region**, **instrument** (spot or forward), **customer
-type** (business or retail) and the **From** and **To** currencies, then *Submit transaction*. The currencies are shown in the story and recorded; they do not yet change pricing or routing. *Auto traffic* submits transactions for
+type** (business or retail) and the **From** and **To** currencies, then *Submit transaction*. The currencies now matter: a pair is priced from the market (USD to INR quotes near 83), only providers that **carry** both currencies are asked (each provider card says what it carries), and some regions restrict currencies (INR cannot be used in China). See [architecture/12](architecture/12-currencies.md). *Auto traffic* submits transactions for
 you. Region matters: *IN* sends records only to the India log and allows only India-eligible
 providers; *CN* likewise for China; forwards to IN and retail to CN are refused before any
 provider is asked.
@@ -117,7 +117,23 @@ mix load --count 2000 --admission 200 --sender-cap 120    # the sender holds its
 Add `--pace 0.2` (provider speed), `--mode random --seed 7` (randomised settings), `--interval MS`. It prints sent, completed,
 failed, needs review, throttled, refused, peak, seconds and the reasons for each run.
 
-## 5. The Test lab
+## 5. Review
+
+The **Review** tab (the number in brackets is how many are waiting) holds every transaction the system would not settle by guessing: a
+payment it could not confirm, a settlement or undo it could not complete, or the audit log failing after money moved. Break a provider
+(*pay vanishes*, *settlement fails*) and send a transaction to see one.
+
+Pick a transaction on the left. On the right you see why it stopped, the provider, the steps done, its story and what people have already done. Then:
+
+1. Type **your name** (it is remembered). Everything you do is recorded under it.
+2. **Check with the provider** asks what it holds for each step (read-only).
+3. **Send again**: settle, or an undo (cancel the accept, void the authorisation, refund). It is sent under its original key, so repeating it cannot repeat the effect. Repair the provider first (*heal*) if it was refusing.
+4. **Resolve** with an outcome and a reason: **paid** (the money moved and it is whole), **not paid** (nothing moved), or **written off** (it cannot be told, the exposure is accepted). A decision without a reason is refused.
+
+Each action is written to the audit log (in the transaction's own regional log) before it takes effect; if the log is unavailable nothing is
+sent. After a restart the queue is rebuilt from the logs. Read it from a log: `mix replay reviews audit/IN.log`. Details: [architecture/11](architecture/11-review-workflow.md).
+
+## 6. The Test lab
 
 `mix demo --lab`, tab **Test lab**. It lets you provoke the hard situations and see a verdict.
 
@@ -138,7 +154,7 @@ failed, needs review, throttled, refused, peak, seconds and the reasons for each
 
 Without `--lab` the tab explains how to turn it on. More detail: [architecture/08](architecture/08-test-lab.md).
 
-## 6. The audit log: verify, replay, recover
+## 7. The audit log: verify, replay, recover
 
 Run with a kept log (`mix demo --audit-dir audit/`), then:
 
@@ -150,6 +166,8 @@ mix replay at audit/GLOBAL.log --n 300           # the system as it stood at aud
 mix replay whatif audit/GLOBAL.log --set max_bps_from_best=25    # a different policy on a real day
 mix replay diff audit/GLOBAL.log other.log       # compare two systems' days
 mix replay residency audit/                      # is every transaction recorded only where it may be?
+mix replay reviews audit/IN.log                  # transactions that went to review: open, or who decided what and why
+mix replay batches audit/GLOBAL.log              # the bulk batches sent: plan and result
 ```
 
 * **Verify** shows whether anyone altered the record. **Replay** re-judges the day with the same
@@ -160,7 +178,7 @@ mix replay residency audit/                      # is every transaction recorded
   `needs_review`. Messages beginning `recovery:` appear in the terminal.
 * **A log that fails verification** is refused: the system will not append to a damaged record.
 
-## 7. Production settings
+## 8. Production settings
 
 The application refuses to start in production without an audit log. Set:
 
@@ -172,7 +190,7 @@ The application refuses to start in production without an audit log. Set:
 
 Note the dashboard has no authentication or TLS: keep it on the loopback interface.
 
-## 8. Jurisdictions
+## 9. Jurisdictions
 
 The eleven jurisdictions in scope are UK, EU, US, India, Mexico, Brazil, Turkey, Saudi Arabia, Japan,
 South Korea and China, for spot and forward, business and retail. The demo implements rules for
@@ -181,7 +199,7 @@ country-by-country picture, what evidence exists and what is missing, is in
 [compliance/COMPLIANCE_EVIDENCE](compliance/COMPLIANCE_EVIDENCE.md). The rules are unverified by
 counsel: do not treat them as legal advice.
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | You see | Likely cause | What to do |
 |---|---|---|
@@ -191,13 +209,16 @@ counsel: do not treat them as legal advice.
 | "no such log" / transaction refused for a region | the rules name a log that was not configured | add it to `--audit-dir` setup / `ACTOR_TX_AUDIT_LOGS` |
 | Provider shows `quarantined` | version drift was detected | *heal* it, or leave it out of routing |
 | Test lab tab says to enable the lab | started without `--lab` | restart with `mix demo --lab` |
+| "INR cannot be used in CN" (or similar) | the region's rules list the currencies it allows | use an allowed currency, or change the rule |
+| "no provider could give a usable quote" for a pair | no provider carries both currencies | check the provider cards; pick another pair |
+| A transaction is waiting in Review | the system would not guess | open the Review tab (see section 5) |
 | A submission is refused as `overloaded` | the admission limit is full: the system is protecting itself | wait the suggested time and submit again (the Bulk sender does this for you), or raise the limit if the providers can take more |
 | Many transactions fail with "no provider could give a usable quote" | no admission limit and the providers are saturated | set a limit (try 100 to 150) |
 | "a batch is already running" | one batch runs at a time | press *Stop*, then *Clear* if you want a fresh one |
 | Many failed in a random batch | refusals by jurisdiction (forward to IN, retail to CN) and, at high speed, provider overload | untick *instrument*, *customer type* and the regions to avoid refusals; add a pause |
 | "not a currency code" | a currency must be three capital letters | use the lists in the header |
 
-## 10. Words used
+## 11. Words used
 
 *Quote*: a provider's offered rate and fee. *Net*: what the customer ends up with (amount × rate − fee).
 *Failover*: moving to the next provider after a definite failure. *Doubt*: a call whose outcome is

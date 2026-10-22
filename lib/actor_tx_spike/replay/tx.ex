@@ -40,7 +40,8 @@ defmodule ActorTxSpike.Replay.Tx do
       provider: provider,
       steps: succeeded_ops(records, provider),
       net: net_of(records, provider),
-      margin: economics |> data() |> field("margin")
+      margin: economics |> data() |> field("margin"),
+      resolution: records |> all("review_resolved") |> List.last() |> data() |> field("outcome")
     }
   end
 

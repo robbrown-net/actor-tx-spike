@@ -7,6 +7,7 @@ defmodule ActorTxSpike.Panel do
   * `GET /api/snapshot`  JSON from `handler.snapshot()`
   * `GET /api/metrics`   JSON from `handler.metrics()` (resource and application metrics)
   * `GET /api/lab`       JSON from `handler.lab()` if the handler offers one (the test lab)
+  * `GET /api/review`    JSON from `handler.review()` if the handler offers one (the review queue)
   * `GET /api/bulk`      JSON from `handler.bulk()` if the handler offers one (bulk sending progress)
   * `POST /api/control`  JSON body passed to `handler.control/1`
 
@@ -141,6 +142,9 @@ defmodule ActorTxSpike.Panel do
 
   defp route(socket, :GET, "/api/lab", _h, _b, cfg),
     do: optional(socket, cfg.handler, :lab, "this handler has no test lab")
+
+  defp route(socket, :GET, "/api/review", _h, _b, cfg),
+    do: optional(socket, cfg.handler, :review, "this handler has no review queue")
 
   defp route(socket, :GET, "/api/bulk", _h, _b, cfg),
     do: optional(socket, cfg.handler, :bulk, "this handler has no bulk sender")

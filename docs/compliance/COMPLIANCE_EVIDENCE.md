@@ -90,6 +90,11 @@ kind, message, structured data, the previous record's hash and its own hash. Per
 the log also holds a `tx_economics` record (raw usage and price discovery) and a `tx_costed`
 record, so the cost and savings figures are reproducible from the raw facts.
 
+**Manual intervention evidence (added 2026-10-23).** When a person resolves a transaction the system would not settle, the log holds the check, any
+repeated step with its key and the provider's answer, and the resolution with who decided, the outcome and why, all chained after the transaction's own records
+and in its own regional log. `mix replay reviews LOG` lists them and the replay rule `review_recorded` fails a resolution without an outcome, name or reason.
+Not yet: four-eyes approval or segregation of duties between the person who retries and the person who resolves.
+
 **Procedure to close the truncation gap:** at intervals, record the output of
 `Audit.head/1` (`records`, `head`) somewhere independent of the host, such as a ticket or a
 separate system. A log that later verifies but is shorter than an anchored head has lost its tail.

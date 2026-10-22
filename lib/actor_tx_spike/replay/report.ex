@@ -21,7 +21,7 @@ defmodule ActorTxSpike.Replay.Report do
       "economics so far: saved #{Money.format(s.economics.saved_vs_median)}, margin #{Money.format(s.economics.margin)}, " <>
         "cost #{s.economics.cost_picos} pico-units over #{s.economics.transactions} transactions",
       "policy in force: #{inspect(s.policy)}",
-      "operator actions so far: #{length(s.controls)}"
+      "operator actions so far: #{length(s.controls)}; bulk batches: #{length(s.batches)}"
     ]
 
     Enum.join(lines ++ ["providers:" | Enum.map(s.providers, &provider_line/1)], "\n")
@@ -64,6 +64,26 @@ defmodule ActorTxSpike.Replay.Report do
 
     Enum.join([head | lines], "\n")
   end
+
+  @spec batches([map()]) :: String.t()
+  def batches([]), do: "no bulk batches recorded"
+
+  def batches(list), do: Enum.map_join(list, "\n", &batch_line/1)
+
+  defp batch_line(b) do
+    plan = b.plan
+    result = b.result
+
+    "at #{b.started_at_ms}: #{plan["count"]} x #{Money.format(plan["min_minor"])} to #{Money.format(plan["max_minor"])}, " <>
+      "#{plan["interval_ms"]} ms apart, #{plan["mode"]}, seed #{inspect(plan["seed"])} -> " <>
+      batch_result(result)
+  end
+
+  defp batch_result(nil), do: "no end recorded (still running, or the node stopped)"
+
+  defp batch_result(r),
+    do:
+      "#{r["status"]}: sent #{r["submitted"]}, completed #{r["completed"]}, failed #{r["failed"]}, needs review #{r["needs_review"]}"
 
   defp lost_note(0), do: ""
   defp lost_note(n), do: "; #{n} would have had no option at all"

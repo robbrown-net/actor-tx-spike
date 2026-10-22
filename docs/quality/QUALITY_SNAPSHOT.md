@@ -1,6 +1,6 @@
 # Quality snapshot
 
-Measured **2026-10-22** (back-pressure and load measurement added on top of Bulk send and the 2026-10-20 code-shape refactor) ([ADR 0012](../adr/0012-code-shape-limits.md)): stricter complexity, nesting, ABC and duplication limits, on top of exact money, the audit chain, economics, replay, recovery, jurisdiction and the Test lab.
+Measured **2026-10-23** (currencies, the review workflow and recorded batches added on top of back-pressure, Bulk send and the 2026-10-20 code-shape refactor) ([ADR 0012](../adr/0012-code-shape-limits.md)): stricter complexity, nesting, ABC and duplication limits, on top of exact money, the audit chain, economics, replay, recovery, jurisdiction and the Test lab.
 Everything here was produced by tools run against the repository; nothing is estimated
 unless marked.
 
@@ -9,12 +9,12 @@ unless marked.
 | Area | Result | Target | Verdict |
 |---|---|---|---|
 | Unit coverage (line) | **100.0%** (all measured modules) | 100% | ✅ |
-| Integration coverage (line) | **87.2%** | > 85% | ✅ thin headroom (~1.7 pt) |
-| System tests | **13 scenarios**, real process over HTTP/SSE, all pass | n/a | ✅ |
+| Integration coverage (line) | **86.5%** | > 85% | ✅ thin headroom (~1.7 pt) |
+| System tests | **14 scenarios**, real process over HTTP/SSE, all pass | n/a | ✅ |
 | Regression pack | **23 tests** tagged to defects found | n/a | ✅ |
-| Mutation score (sampled) | **100 of 103** valid mutants killed over the pure core and the new modules; 2 survivors are equivalent mutants and 1 is an unasserted log-message wording (section 4) | n/a | ✅ with caveat |
-| Tests | 400 non-system (363 unit, 37 integration) plus 13 system, 0 failures | n/a | ✅ |
-| Static analysis (Credo strict) | **0 issues**, 1,447 modules and functions, **at the new limits below** | 0 | ✅ |
+| Mutation score (sampled) | **124 of 128** valid mutants killed over the pure core and the new modules; 2 survivors are equivalent mutants and 1 is an unasserted log-message wording (section 4) | n/a | ✅ with caveat |
+| Tests | 441 non-system (394 unit, 47 integration) plus 14 system, 0 failures | n/a | ✅ |
+| Static analysis (Credo strict) | **0 issues**, 1,569 modules and functions, **at the new limits below** | 0 | ✅ |
 | Cyclomatic complexity per function | **max 4** (limit 4; was 9) | ≤ 4 | ✅ |
 | Nesting depth | **max 2** | ≤ 2 | ✅ |
 | ABC size per function (`lib/`) | **max 40** (limit 40; was unlimited) | ≤ 40 | ✅ |
@@ -44,11 +44,11 @@ Non-blank, non-`#`-comment lines (docstrings included), same counter as the 2026
 
 | Area | Files | Code |
 |---|---|---|
-| `lib/` (Elixir) | 54 | **7,168** |
-| `test/` (Elixir, incl. `test/support`) | 43 | **6,092** |
-| `priv/panel.html` | 1 | 786 (HTML/CSS/JS) |
+| `lib/` (Elixir) | 56 | **7,748** |
+| `test/` (Elixir, incl. `test/support`) | 46 | **6,973** |
+| `priv/panel.html` | 1 | 856 (HTML/CSS/JS) |
 | `scripts/mutate.py` | 1 | ~120 (Python) |
-| Documentation (Markdown) | 34 | |
+| Documentation (Markdown) | 38 | |
 
 Test-to-code ratio **0.85**. Largest modules: `Payment` 803, `Demo.Lab.Scenarios` 466, `Demo.Lab` 416, `Demo` 410, `Replay.Rules` 280.
 The refactor to the limits added 6 small modules (`Selector.Narrator`, `Eligibility.Parser`, `Validation`, `Poll`, test helper `Wait`, and the unit tests for them) and removed duplicated parsing, polling and quote-rebuilding code.
@@ -97,9 +97,9 @@ With the demo providers, a 2,000-transaction burst with no pause completes 30% w
 
 | Suite | Command | Count | Measures |
 |---|---|---|---|
-| Unit | `mix test.unit` | 363 | line coverage gate 100% |
-| Integration | `mix test.integration` | 37 | line coverage gate > 85% |
-| System | `mix test.system` | 13 | scenarios (below), no line coverage |
+| Unit | `mix test.unit` | 394 | line coverage gate 100% |
+| Integration | `mix test.integration` | 47 | line coverage gate > 85% |
+| System | `mix test.system` | 14 | scenarios (below), no line coverage |
 | Regression pack | `mix test.regression` | 23 | pass/fail |
 | Mutation (on demand) | `python3 scripts/mutate.py` | sampled | kill rate |
 | Test lab | `mix demo --lab` | 17 scenarios | also run as an integration test |
@@ -119,6 +119,7 @@ With the demo providers, a 2,000-transaction burst with no pause completes 30% w
 | UC-2 auto traffic | automatic traffic… |
 | UC-13 bulk send: seeded random batch over HTTP, fully accounted | bulk send… |
 | UC-14 back-pressure: admission limit, sender told to wait, all complete | back-pressure… |
+| UC-4 review: refused settlement, check, repair, retry, resolve | UC-4… |
 | Deadline: cut-off passes mid-transaction | deadline… |
 | **Not covered by a system test:** UC-4 review workflow (unbuilt), settlement refusal, performance view | |
 
@@ -165,6 +166,9 @@ Re-run 2026-10-20/21 after the refactor and the Bulk send plan, with the new mod
 | `money.ex` | 9 | 8 | first run left 2: a zero divisor is now pinned by a test; the other (`shift >= 0` vs `> 0`) is equivalent, both branches give the same result when the shift is 0 |
 | `poll.ex` (new) | 4 | 4 | |
 | `admission.ex` (new) | 9 | 9 | first run left 2 survivors (a refusal not counted; an error message unasserted); pinned by tests |
+| `review/queue.ex`, `review.ex` (new) | 1, 8 | 1, 8 | the review message wording was unasserted; pinned |
+| `eligibility.ex` (currencies) | 8 | 8 | |
+| `provider/fake.ex` (pair rates) | 8 | 7 | the survivor is `ms > 0` vs `>= 0` on a latency sleep (equivalent); a boundary on the scaled-rate threshold was pinned by a test |
 | `provider/server.ex` (priority classes) | 3 | 2 | the survivor is the wording of the health event (`==` vs `!=` when the state did not change), pre-existing and not part of the back-pressure code |
 | `demo/bulk/plan.ex` (new) | 13 | 13 | first run left 3 survivors (a zero amount accepted; two error messages unasserted); pinned by tests |
 

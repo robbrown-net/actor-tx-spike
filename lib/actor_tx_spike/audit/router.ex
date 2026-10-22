@@ -49,11 +49,14 @@ defmodule ActorTxSpike.Audit.Router do
 
     case start_logs(names, dir, Keyword.get(opts, :sync, true)) do
       {:ok, audits} ->
+        {tx_logs, reviewing} = open_transactions(dir, Map.keys(audits))
+
         {:ok,
          %{
            dir: dir,
            audits: audits,
-           tx_logs: open_transactions(dir, Map.keys(audits)),
+           tx_logs: tx_logs,
+           reviewing: reviewing,
            sink: subscribe(opts)
          }}
 
@@ -124,15 +127,28 @@ defmodule ActorTxSpike.Audit.Router do
     end
   end
 
-  # the last event of a transaction closes its routing entry
-  defp close(%{kind: :tx_costed, tx_id: tx}, state),
-    do: %{state | tx_logs: Map.delete(state.tx_logs, tx)}
+  # The last event of a transaction closes its routing entry: its costing, or, for one that
+  # went to review, the review's resolution (a person's later actions belong in the same logs).
+  defp close(%{kind: :tx_costed, tx_id: tx}, state) do
+    if MapSet.member?(state.reviewing, tx), do: state, else: release(state, tx)
+  end
 
+  defp close(%{kind: :review_resolved, tx_id: tx}, state), do: release(state, tx)
   defp close(_event, state), do: state
+
+  defp release(state, tx),
+    do: %{
+      state
+      | tx_logs: Map.delete(state.tx_logs, tx),
+        reviewing: MapSet.delete(state.reviewing, tx)
+    }
 
   defp learn(%{kind: kind, tx_id: tx, data: %{eligibility: %{logs: logs}}}, state)
        when kind in [:tx_received, :tx_resumed],
        do: %{state | tx_logs: Map.put(state.tx_logs, tx, logs)}
+
+  defp learn(%{kind: :needs_review, tx_id: tx}, state),
+    do: %{state | reviewing: MapSet.put(state.reviewing, tx)}
 
   defp learn(_event, state), do: state
 
@@ -142,26 +158,37 @@ defmodule ActorTxSpike.Audit.Router do
   # A restarted router must not forget where the open transactions belong, or the
   # rest of a local-only transaction would leak into the global log. Rebuild the
   # routing table from the logs: every transaction that has a decision and has not
-  # yet recorded its last event.
+  # yet recorded its last event (its costing, or its review's resolution if it went to review).
   defp open_transactions(dir, names) do
     for log <- names,
         path = Path.join(dir, log <> ".log"),
         File.exists?(path),
         record <- path |> File.stream!() |> Stream.map(&JSON.decode!/1),
-        reduce: %{} do
+        reduce: {%{}, MapSet.new()} do
       acc -> remember(acc, record)
     end
   end
 
-  defp remember(acc, %{
+  defp remember({logs, reviewing}, %{
          "kind" => kind,
          "tx" => tx,
-         "data" => %{"eligibility" => %{"logs" => logs}}
+         "data" => %{"eligibility" => %{"logs" => tx_logs}}
        })
        when kind in ["tx_received", "tx_resumed"],
-       do: Map.put(acc, tx, logs)
+       do: {Map.put(logs, tx, tx_logs), reviewing}
 
-  defp remember(acc, %{"kind" => "tx_costed", "tx" => tx}), do: Map.delete(acc, tx)
+  defp remember({logs, reviewing}, %{"kind" => "needs_review", "tx" => tx}),
+    do: {logs, MapSet.put(reviewing, tx)}
+
+  defp remember({logs, reviewing}, %{"kind" => "tx_costed", "tx" => tx}) do
+    if MapSet.member?(reviewing, tx),
+      do: {logs, reviewing},
+      else: {Map.delete(logs, tx), reviewing}
+  end
+
+  defp remember({logs, reviewing}, %{"kind" => "review_resolved", "tx" => tx}),
+    do: {Map.delete(logs, tx), MapSet.delete(reviewing, tx)}
+
   defp remember(acc, _record), do: acc
 
   defp start_logs(names, dir, sync) do

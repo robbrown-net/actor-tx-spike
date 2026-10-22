@@ -91,14 +91,17 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Main scenario** | 1. Every configured interval the sentinel probes each provider. 2. Result updates latency/error statistics. 3. A changed version quarantines the provider until reviewed. 4. A successful half-open probe begins gradual recovery. |
 | **Status** | Probing, drift quarantine and recovery are implemented and demonstrated; the *configurable, persistent, schema-fingerprinting* sentinel is roadmap Phase 3. |
 
-## UC-4 Resolve a transaction needing review 🔲
+## UC-4 Resolve a transaction needing review ✅
 
 | | |
 |---|---|
 | **Primary actor** | Finance / compliance reviewer |
-| **Success guarantee** | Every `needs_review` transaction is resolved to exactly one of: confirmed paid, confirmed unpaid and undone, or refunded, with an audit record. |
-| **Main scenario** | 1. Reviewer opens the queue. 2. Sees the story and provider evidence. 3. Re-queries provider status. 4. Chooses an action. 5. System executes with idempotency keys and records the decision. |
-| **Status** | Escalation exists (`needs_review` state and narrative); review tooling does not. |
+| **Preconditions** | A transaction ended in `needs_review` (a payment it could not confirm, a settlement or undo it could not complete, or the audit log failing after money moved). |
+| **Success guarantee** | Every `needs_review` transaction is closed by a person as `paid`, `not_paid` or `written_off`, with who decided and why, in the audit log, in the same regional logs as the transaction; nothing a person does takes effect before it is recorded. |
+| **Main scenario** | 1. Reviewer opens the Review tab and sees the queue (open first). 2. Picks a transaction and reads the reason, provider, steps done and story. 3. Asks the provider what it holds for each step (check, read-only). 4. If a step is safe to repeat (settle or an undo), sends it again under its original key. 5. Resolves with an outcome and a reason. 6. System records each action before it takes effect and closes the entry. |
+| **Extensions** | 1a. The system restarted: the queue is rebuilt from the audit logs. 3a. The provider is no longer available, or no provider was chosen: the action says so; the reviewer can still resolve. 4a. The audit log is unavailable: nothing is sent and nothing changes. 4b. The step needs a quote (accept, authorise, pay): it cannot be sent again here. 5a. No name, no reason or an unknown outcome: refused. 5b. Already resolved: no more actions. 6a. Auditor later runs `mix replay verify`: a resolution without outcome, name and reason is a violation of `review_recorded`. |
+| **Special requirements** | Every action is under a person's name; retries reuse the original idempotency key, so a repeat cannot repeat the effect. |
+| **Status** | Implemented (queue, check, retry, resolve, dashboard tab, rebuild from the log, replay rule). See [11](11-review-workflow.md). Not built: four-eyes approval, assignment, deadlines on open reviews, economics adjustments for a manual resolution, retrying steps that need a quote, notifications. |
 
 ## UC-5 Tune routing policy ✅
 
@@ -209,4 +212,14 @@ Status legend: ✅ implemented · 🟡 partly · 🔲 planned
 | **Extensions** | 2a. No limit is configured: everything is admitted and providers' bulkheads shed the excess (many fail cleanly: see the load results). 3a. A provider is busy at the quote stage: it is asked again every few milliseconds until the deadline. 3b. A provider is busy at accept, authorise, pay or settle: ask again after the backoff, no attempt used, until the deadline. 3c. Undo, status and probe calls use reserved capacity and are not refused while quotes are. 5a. A transaction's process dies: its slot is freed. 6. Operator changes the limit at run time (admission panel, `mix demo --max-in-flight`, or the control API). |
 | **Special requirements** | A refusal is safe because nothing was done; a provider's *overloaded* answer is safe to retry because the call was never made. |
 | **Status** | Implemented. See [10](10-back-pressure.md) and [LOAD_RESULTS](../quality/LOAD_RESULTS.md). Not built: a queue in front of the limit, per-merchant fairness, automatic tuning. |
+
+## UC-15 Price and route a payment by currency pair ✅
+
+| | |
+|---|---|
+| **Primary actor** | Merchant system |
+| **Success guarantee** | A payment from one currency to another is priced from the market rate of that pair, is sent only to providers that carry both currencies, and is refused if a region of its corridor does not permit either currency. |
+| **Main scenario** | 1. Request names the amount, the source and destination currency and the regions. 2. System checks that each currency is permitted in every region of the corridor. 3. System asks only providers that carry both currencies. 4. Each provider quotes the pair's market rate through its own spread. 5. System ranks and proceeds as in UC-1. |
+| **Extensions** | 2a. A currency is not permitted in a region (for example INR in China): fails before any provider is asked, naming the currency and region. 3a. No provider carries the pair: fails with "no usable quote". 3b. A provider does not carry the pair: not asked, and the story says so. 1a. No currencies given: quoted and routed as before. |
+| **Status** | Implemented for the demo's eleven currencies, five providers and the IN and CN rules. See [12](12-currencies.md). Not built: minor-unit exponents per currency, fee schedules by currency, balances. |
 

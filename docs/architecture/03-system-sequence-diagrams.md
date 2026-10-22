@@ -224,6 +224,56 @@ sequenceDiagram
     S-->>M: completed, failed or needs review
 ```
 
+## SSD-12 · Resolve a transaction in review (UC-4)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor R as Reviewer
+    participant S as ":System"
+
+    R->>S: open the queue
+    S-->>R: transactions waiting, with reason, provider, steps done, story
+    opt ask the provider
+        R->>S: check(tx)
+        S-->>R: what the provider holds for each step
+    end
+    opt repeat a safe step
+        R->>S: send again (settle or an undo), same key
+        alt the audit log is unavailable
+            S-->>R: refused, nothing sent
+        else
+            S-->>R: the provider's answer
+        end
+    end
+    R->>S: resolve(tx, paid or not_paid or written_off, name, reason)
+    alt name or reason missing
+        S-->>R: refused
+    else
+        S-->>R: resolved (recorded in the transaction's own log)
+    end
+```
+
+## SSD-13 · Submit a cross-currency payment (UC-15)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M as Merchant system
+    participant S as ":System"
+
+    M->>S: submit(amount, USD to INR, region IN)
+    alt a currency is not permitted in a region of the corridor
+        S-->>M: failed: not permitted, naming the currency and region
+    else no provider carries the pair
+        S-->>M: failed: no usable quote
+    else
+        S->>S: ask only providers that carry both currencies
+        S->>S: price from the pair's market rate through each provider's spread
+        S-->>M: completed (or escalated)
+    end
+```
+
 ## SSD-8 · Submit within a jurisdiction (UC-11)
 
 ```mermaid

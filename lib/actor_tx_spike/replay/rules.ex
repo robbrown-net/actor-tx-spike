@@ -21,6 +21,8 @@ defmodule ActorTxSpike.Replay.Rules do
 
     * `:selection_reproducible`: the recorded inputs, judged again under the
       recorded policy, give the recorded ranking
+    * `:review_recorded`: a person's resolution of a transaction in review names the
+      outcome, who decided and why (and only exists for a transaction that went to review)
     * `:quote_valid_at_accept`: the quote had not expired when accept was asked
     * `:deadline_respected`: no step began after the cut-off
     * `:margin_arithmetic` and `:economics_consistent`: guarantee margin and the
@@ -32,7 +34,7 @@ defmodule ActorTxSpike.Replay.Rules do
   the evidence can be pulled straight from the log.
   """
 
-  alias ActorTxSpike.{Money, Replay.Day, Replay.Tx}
+  alias ActorTxSpike.{Money, Replay.Day, Replay.Tx, Review.Queue}
 
   @expected_steps ~w(accept_quote authorise pay settle)
   @short %{
@@ -81,6 +83,7 @@ defmodule ActorTxSpike.Replay.Rules do
       no_failover_after_doubt(id, rs),
       idempotency_keys(id, rs),
       eligibility_respected(id, rs),
+      review_recorded(id, rs),
       selection_reproducible(id, rs),
       quote_valid_at_accept(id, rs),
       deadline_respected(id, rs, tolerance),
@@ -158,6 +161,25 @@ defmodule ActorTxSpike.Replay.Rules do
         for %{"kind" => k} = r <- Enum.drop(rs, i + 1), k in ~w(provider_chosen failover) do
           v(:no_failover_after_doubt, id, r, "#{k} after pay or settle was in doubt")
         end
+    end
+  end
+
+  # A person's decision on a transaction in review is only evidence if it says what, who and why.
+  defp review_recorded(id, rs) do
+    needed? = Tx.first(rs, "needs_review") != nil
+
+    for %{"kind" => "review_resolved", "data" => d} = r <- rs,
+        problem = unsound_resolution(d, needed?),
+        do: v(:review_recorded, id, r, problem)
+  end
+
+  defp unsound_resolution(_data, false),
+    do: "a review was resolved for a transaction that never went to review"
+
+  defp unsound_resolution(data, true) do
+    case Queue.check_resolution(data["outcome"], data["by"], data["note"]) do
+      :ok -> nil
+      {:error, message} -> "the recorded resolution is incomplete: #{message}"
     end
   end
 

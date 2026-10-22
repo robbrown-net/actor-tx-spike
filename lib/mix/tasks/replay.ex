@@ -9,6 +9,8 @@ defmodule Mix.Tasks.Replay do
       mix replay at      PATH --ms 1792273775122
       mix replay whatif  PATH --set max_bps_from_best=25 --set 'weights={"cost":1}'
       mix replay diff    PATH_A PATH_B        # compare two systems' days
+      mix replay reviews PATH                 # transactions that went to review: open, or who decided what and why
+      mix replay batches PATH                 # the bulk batches sent, with their plans and results
       mix replay residency DIR                # does every transaction sit in exactly the logs it must?
 
   The log's hash chain is verified before anything else; a log that fails is refused.
@@ -16,7 +18,7 @@ defmodule Mix.Tasks.Replay do
   """
   use Mix.Task
 
-  alias ActorTxSpike.Replay
+  alias ActorTxSpike.{Replay, Review}
   alias ActorTxSpike.Replay.Report
 
   @positions [n: :n, ms: :at_ms, seq: :seq]
@@ -38,6 +40,12 @@ defmodule Mix.Tasks.Replay do
 
   defp command(["residency", dir], _opts), do: residency(dir)
 
+  defp command(["reviews", path], _opts),
+    do: path |> load() |> reviews() |> Mix.shell().info()
+
+  defp command(["batches", path], _opts),
+    do: path |> load() |> Replay.batches() |> Report.batches() |> Mix.shell().info()
+
   defp command(["diff", a, b], _opts),
     do: Mix.shell().info(Report.diff(Replay.Compare.diff(load(a), load(b))))
 
@@ -52,6 +60,21 @@ defmodule Mix.Tasks.Replay do
       {:ok, day} -> day
       {:error, why} -> Mix.raise("cannot replay #{path}: #{inspect(why)}")
     end
+  end
+
+  # Every transaction that went to review, open or resolved, with who decided what and why.
+  defp reviews(day) do
+    case Review.Queue.from_records(day.records) do
+      [] -> "no transaction went to review"
+      entries -> Enum.map_join(entries, "\n", &review_line/1)
+    end
+  end
+
+  defp review_line(%{status: :open} = e), do: "OPEN     #{e.tx}  #{e.reason}"
+
+  defp review_line(e) do
+    r = e.resolution
+    "RESOLVED #{e.tx}  #{r.outcome} by #{r.by}: #{r.note}  (was: #{e.reason})"
   end
 
   defp residency(dir) do

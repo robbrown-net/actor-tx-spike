@@ -8,7 +8,7 @@ defmodule ActorTxSpike.Eligibility.Parser do
   alias ActorTxSpike.Validation
 
   @top_keys ~w(default regions)
-  @rule_keys ~w(instruments customer_types providers logs local_only retention_days)
+  @rule_keys ~w(instruments customer_types currencies providers logs local_only retention_days)
   @instruments [:spot, :forward]
   @customer_types [:business, :retail]
   @providers_help ~s(must be "all", {"allow": [...]} or {"deny": [...]})
@@ -49,6 +49,7 @@ defmodule ActorTxSpike.Eligibility.Parser do
     [
       {:instruments, "instruments", &enum_list(&1, @instruments)},
       {:customer_types, "customer_types", &enum_list(&1, @customer_types)},
+      {:currencies, "currencies", &currencies/1},
       {:providers, "providers", &providers/1},
       {:logs, "logs", &logs/1},
       {:local_only, "local_only", &boolean/1},
@@ -65,6 +66,16 @@ defmodule ActorTxSpike.Eligibility.Parser do
   end
 
   defp enum_list(_, _), do: {:error, "must be a non-empty list"}
+
+  defp currencies("all"), do: {:ok, :all}
+
+  defp currencies([_ | _] = list) do
+    if Enum.all?(list, &(is_binary(&1) and &1 =~ ~r/^[A-Z]{3}$/)),
+      do: {:ok, list},
+      else: {:error, "currency codes are three capital letters"}
+  end
+
+  defp currencies(_), do: {:error, ~s(must be "all" or a non-empty list of currency codes)}
 
   defp providers("all"), do: {:ok, :all}
   defp providers(%{} = map), do: map |> Validation.stringify() |> provider_list()

@@ -92,6 +92,22 @@ defmodule ActorTxSpike.Demo.Bulk.Plan do
     {Map.merge(settings, %{"action" => "submit", "amount" => amount}), rand}
   end
 
+  @doc "The plan as plain data, for the audit log."
+  @spec to_map(t()) :: map()
+  def to_map(%__MODULE__{} = plan) do
+    %{
+      count: plan.count,
+      min_minor: plan.min,
+      max_minor: plan.max,
+      interval_ms: plan.interval_ms,
+      max_in_flight: plan.max_in_flight,
+      mode: plan.mode,
+      randomise: plan.randomise,
+      fixed: plan.fixed,
+      seed: plan.seed
+    }
+  end
+
   @doc "A one-line description for the dashboard."
   @spec describe(t()) :: String.t()
   def describe(%__MODULE__{} = plan) do

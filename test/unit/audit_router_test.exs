@@ -238,4 +238,59 @@ defmodule ActorTxSpike.AuditRouterTest do
     GenServer.stop(name)
     assert :ok = ActorTxSpike.Events.barrier()
   end
+
+  test "a transaction in review keeps its routing until it is resolved, so a person's actions stay in its logs",
+       ctx do
+    router = start(ctx)
+
+    for e <- [
+          received(1, "rv-in", ["IN"]),
+          ev(2, "rv-in", :needs_review),
+          ev(3, "rv-in", :tx_costed),
+          # a person acts later: this must still go to IN, not GLOBAL
+          ev(4, "rv-in", :review_checked),
+          received(5, "plain", ["IN"]),
+          ev(6, "plain", :tx_costed)
+        ],
+        do: send(router, e)
+
+    :ok = GenServer.call(router, :flush)
+    state = :sys.get_state(router)
+    assert state.tx_logs == %{"rv-in" => ["IN"]} and state.reviewing == MapSet.new(["rv-in"])
+
+    assert Enum.map(load(ctx, "IN").by_tx["rv-in"], & &1["kind"]) ==
+             ~w(tx_received needs_review tx_costed review_checked)
+
+    refute Map.has_key?(load(ctx, "GLOBAL").by_tx, "rv-in")
+
+    # resolving closes the entry (the resolution itself is still recorded in IN)
+    send(router, ev(7, "rv-in", :review_resolved))
+    :ok = GenServer.call(router, :flush)
+    assert :sys.get_state(router).tx_logs == %{}
+    assert :sys.get_state(router).reviewing == MapSet.new()
+    assert List.last(load(ctx, "IN").by_tx["rv-in"])["kind"] == "review_resolved"
+  end
+
+  test "a restarted router rebuilds what is still in review from the logs", ctx do
+    first = start(ctx)
+
+    for e <- [
+          received(1, "rv-open", ["IN"]),
+          ev(2, "rv-open", :needs_review),
+          ev(3, "rv-open", :tx_costed),
+          received(4, "rv-done", ["US"]),
+          ev(5, "rv-done", :needs_review),
+          ev(6, "rv-done", :tx_costed),
+          ev(7, "rv-done", :review_resolved)
+        ],
+        do: send(first, e)
+
+    :ok = GenServer.call(first, :flush)
+    GenServer.stop(first)
+
+    second = start(ctx)
+    state = :sys.get_state(second)
+    assert state.tx_logs == %{"rv-open" => ["IN"]}
+    assert state.reviewing == MapSet.new(["rv-open"])
+  end
 end

@@ -268,6 +268,90 @@ defmodule ActorTxSpike.ReplayTest do
     assert Replay.state_at(day, {:at_ms, 35}).providers["p"].health["state"] == "healthy"
   end
 
+  describe "bulk batches" do
+    defp rec(n, kind, data),
+      do: %{
+        "n" => n,
+        "seq" => n,
+        "at" => n * 10,
+        "tx" => nil,
+        "actor" => "operator",
+        "kind" => kind,
+        "data" => data
+      }
+
+    @plan %{
+      "count" => 5,
+      "min_minor" => 100,
+      "max_minor" => 2_000,
+      "interval_ms" => 50,
+      "mode" => "random",
+      "seed" => 9
+    }
+
+    test "each batch is read back with its plan and how it ended" do
+      records = [
+        # an end with no start before it (the log began mid-batch) is ignored
+        rec(0, "bulk_finished", %{"status" => "stopped"}),
+        rec(1, "bulk_started", %{"plan" => @plan}),
+        rec(2, "bulk_finished", %{
+          "status" => "finished",
+          "submitted" => 5,
+          "completed" => 4,
+          "failed" => 1,
+          "needs_review" => 0
+        }),
+        rec(3, "bulk_started", %{"plan" => %{@plan | "count" => 8}}),
+        rec(4, "bulk_finished", %{
+          "status" => "stopped",
+          "submitted" => 2,
+          "completed" => 2,
+          "failed" => 0,
+          "needs_review" => 0
+        }),
+        rec(5, "bulk_finished", %{"status" => "stopped"})
+      ]
+
+      assert [first, second] = Replay.batches(records)
+      assert first.plan["count"] == 5 and first.started_at_ms == 10 and first.ended_at_ms == 20
+      assert first.result["completed"] == 4
+      assert second.plan["count"] == 8 and second.result["status"] == "stopped"
+
+      assert Replay.batches(Replay.from_records(records)) == [first, second]
+      assert Replay.batches([]) == []
+    end
+
+    test "a batch with no end is reported as unfinished; the state at a moment includes the batches so far" do
+      records = [
+        rec(1, "bulk_started", %{"plan" => @plan}),
+        rec(2, "bulk_finished", %{
+          "status" => "finished",
+          "submitted" => 5,
+          "completed" => 5,
+          "failed" => 0,
+          "needs_review" => 0
+        }),
+        rec(3, "bulk_started", %{"plan" => @plan})
+      ]
+
+      day = Replay.from_records(records)
+
+      assert [%{result: %{"status" => "finished"}}, %{result: nil, ended_at_ms: nil}] =
+               Replay.batches(day)
+
+      assert length(Replay.state_at(day, {:n, 1}).batches) == 1
+      assert Replay.state_at(day, {:n, 3}) |> Report.state() =~ "bulk batches: 2"
+
+      text = day |> Replay.batches() |> Report.batches()
+
+      assert text =~
+               "5 x 1.00 to 20.00, 50 ms apart, random, seed 9 -> finished: sent 5, completed 5"
+
+      assert text =~ "no end recorded"
+      assert Report.batches([]) == "no bulk batches recorded"
+    end
+  end
+
   # ---- loading -----------------------------------------------------------
 
   test "loading refuses a missing or tampered log, and can skip the check", %{fixture: f} do
@@ -524,6 +608,59 @@ defmodule ActorTxSpike.ReplayTest do
     assert length(excluded) == 3
     assert Journal.journal?(:journal) and Journal.journal?("journal")
     refute Journal.journal?(:payment)
+  end
+
+  describe "review_recorded" do
+    # a person's resolution recorded after the last record of a transaction
+    defp resolved_after(f, tx_suffix, data) do
+      mutate(f, fn rs ->
+        mine = Enum.filter(rs, &String.ends_with?(&1["tx"] || "", tx_suffix))
+        latest = rs |> Enum.map(& &1["at"]) |> Enum.max()
+
+        rs ++
+          [
+            mine
+            |> List.last()
+            |> Map.merge(%{
+              "kind" => "review_resolved",
+              "actor" => "review",
+              "at" => latest + 1,
+              "data" => data
+            })
+          ]
+      end)
+    end
+
+    test "a complete resolution of a transaction that went to review is fine", %{fixture: f} do
+      day =
+        resolved_after(f, "review", %{
+          "outcome" => "not_paid",
+          "by" => "robin",
+          "note" => "checked with the provider"
+        })
+
+      refute :review_recorded in rules(day)
+
+      assert [%{resolution: "not_paid"}] =
+               Enum.filter(Replay.transactions(day), &(&1.resolution != nil))
+    end
+
+    test "a resolution with no reason, no name or an unknown outcome is caught", %{fixture: f} do
+      for data <- [
+            %{"outcome" => "paid", "by" => "robin", "note" => ""},
+            %{"outcome" => "paid", "by" => nil, "note" => "x"},
+            %{"outcome" => "shrug", "by" => "robin", "note" => "x"}
+          ] do
+        assert :review_recorded in rules(resolved_after(f, "review", data)), inspect(data)
+      end
+    end
+
+    test "a resolution for a transaction that never went to review is caught", %{fixture: f} do
+      day =
+        resolved_after(f, "happy", %{"outcome" => "paid", "by" => "robin", "note" => "why not"})
+
+      assert :review_recorded in rules(day)
+    end
   end
 
   test "time_ordered: time running backwards is caught", %{fixture: f} do

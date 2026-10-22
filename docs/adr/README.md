@@ -15,3 +15,4 @@
 | [0009](0009-replay-the-day.md) | Journal in the audit log; replay: state at a moment, rule verification, comparison, what-if | accepted |
 | [0012](0012-code-shape-limits.md) | Code-shape limits: cyclomatic complexity 4, nesting 2, ABC 40, duplication mass 16 | accepted |
 | [0013](0013-back-pressure.md) | Back-pressure: admission control, priority bulkheads, waiting instead of failing | accepted |
+| [0014](0014-product-depth-currencies-review-and-batches.md) | Currencies price, route and permit; a review workflow for needs_review; recorded batches | accepted |

@@ -277,6 +277,8 @@ erDiagram
         list regions "origin and destination"
         string instrument "spot, forward"
         string customer_type "business, retail"
+        string source_currency "if the request names one"
+        string destination_currency "if the request names one"
         list allowed_providers
         list denied_providers "provider and reason"
         list logs "where records must live"
@@ -293,3 +295,27 @@ erDiagram
 
 Files per log directory: `<region>.log` (the hash chain) and `<region>.log.lock`
 (`"<os pid> <erlang pid>"`, present while a writer holds the log).
+
+## Review and batch records (added 2026-10-23)
+
+A transaction that went to review gains records after its costing, in the same regional logs; a bulk batch leaves a start and an end record
+(with no transaction).
+
+```mermaid
+erDiagram
+    TX_NEEDS_REVIEW ||--o{ REVIEW_CHECKED : "a person asked the provider"
+    TX_NEEDS_REVIEW ||--o{ REVIEW_RETRY : "intent, written before the call"
+    REVIEW_RETRY ||--|| REVIEW_RESULT : "the provider's answer"
+    TX_NEEDS_REVIEW ||--o| REVIEW_RESOLVED : "closes it"
+    REVIEW_CHECKED { string by "who" list answers "op, key, answer" }
+    REVIEW_RETRY { string by string op "settle, cancel_accept, void_authorisation, refund" string key }
+    REVIEW_RESULT { string by string op string key string result }
+    REVIEW_RESOLVED { string by string outcome "paid, not_paid, written_off" string note "why" }
+    BULK_STARTED ||--o| BULK_FINISHED : "ends"
+    BULK_STARTED { json plan "count, min and max in minor units, interval, mode, seed, fixed settings, randomised settings, sender cap" }
+    BULK_FINISHED { string status "finished, stopped" int submitted int completed int failed int needs_review int throttled int elapsed_ms }
+```
+
+`Replay.Tx.summarize` gains `resolution` (the last resolution's outcome, or none); `Replay.batches/1` reads the batch records; the review queue
+is rebuilt with `Review.Queue.from_records/1`. The request carries `source_currency` and `destination_currency` when given.
+

@@ -8,7 +8,7 @@ defmodule ActorTxSpike.BulkIntegrationTest do
 
   alias ActorTxSpike.Wait
 
-  alias ActorTxSpike.{Admission, Demo}
+  alias ActorTxSpike.{Admission, Demo, Events}
   alias ActorTxSpike.Demo.{Bulk, Handler}
 
   @fast [
@@ -72,6 +72,27 @@ defmodule ActorTxSpike.BulkIntegrationTest do
     assert length(snap.recent) == 12
     assert Enum.all?(snap.recent, &(&1.amount >= 10.0 and &1.amount <= 20.0))
     assert snap.plan =~ "12 ×"
+  end
+
+  test "a batch's plan and result are recorded in the narrative (and so the audit log)" do
+    Events.subscribe()
+
+    start!(%{
+      "count" => 4,
+      "interval_ms" => 0,
+      "seed" => 3,
+      "min_amount" => 10,
+      "max_amount" => 20
+    })
+
+    snap = wait_status(:finished)
+
+    assert_receive {:tx_event, %{kind: :bulk_started, data: %{plan: plan}}}, 2_000
+    assert %{count: 4, seed: 3, min_minor: 1000, max_minor: 2000, mode: :fixed} = plan
+
+    assert_receive {:tx_event, %{kind: :bulk_finished, data: result}}, 2_000
+    assert %{status: :finished, submitted: 4, completed: completed} = result
+    assert completed == snap.completed
   end
 
   test "the pause between submissions is honoured" do
