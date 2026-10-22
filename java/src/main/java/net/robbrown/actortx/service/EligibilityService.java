@@ -18,4 +18,9 @@ public class EligibilityService {
   public Decision decide(Map<String, Object> request) {
     return eligibility.decide(request);
   }
+
+  /** The rules themselves, for transactions that apply them. */
+  public Eligibility rules() {
+    return eligibility;
+  }
 }

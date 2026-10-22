@@ -1,6 +1,7 @@
 package net.robbrown.actortx.api;
 
 import java.util.List;
+import net.robbrown.actortx.service.BusyException;
 import net.robbrown.actortx.service.InvalidInputException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,14 @@ public class ApiExceptionHandler {
   public ResponseEntity<ApiError> invalid(InvalidInputException exception) {
     return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
         .body(new ApiError(false, exception.getMessage(), exception.errors()));
+  }
+
+  /** The system is at its admission limit. */
+  @ExceptionHandler(BusyException.class)
+  public ResponseEntity<ApiError> busy(BusyException exception) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .header("Retry-After", "1")
+        .body(new ApiError(false, exception.getMessage(), List.of(exception.getMessage())));
   }
 
   /** The body was not the JSON that was expected. */

@@ -18,8 +18,8 @@ cd java
 | Chunk | Capability, end to end | Status |
 |---|---|---|
 | 1 | **Quote and select** over HTTP: exact money, policy and cascade, jurisdiction rules, provider model (scriptable fake with currency pairs, health and circuit breaker, bulkhead with priority classes), concurrent selector, sentinel, operator control | done |
-| 2 | **Pay**: events, payment orchestrator, audit log and router with write-ahead, admission control, economics, guarantees and cut-offs, SSE | next |
-| 3 | **Operate**: recovery, replay, review, bulk send and load tool, the existing dashboard served by Spring, CLI tools | planned |
+| 2 | **Pay**: event bus, payment orchestrator (idempotent steps, retries, failover, compensation, doubt resolved by asking the provider), hash-chained audit log and regional router with write-ahead barrier, admission control (429 + `Retry-After`). Ported and unit/integration tested but **not yet wired into the demo**: economics ledger, guarantees, regional cut-offs | done (396 unit tests at 100% lines / 98% branches; 47 integration tests at 90% lines) |
+| 3 | **Operate**: wire economics/guarantees/cut-offs and SSE, recovery, replay, review, bulk send and load tool, the existing dashboard served by Spring, CLI tools | next |
 
 ### The HTTP API (JSON, snake_case, the same shapes the Elixir dashboard speaks)
 
@@ -29,9 +29,12 @@ cd java
 | `POST /api/select` | quote and select: `{amount, source_currency, destination_currency, merchant_id, customer_id, policy, deadline_ms, baseline}` returns the ranking, the exclusions with reasons and which policy layers applied |
 | `POST /api/eligibility` | what jurisdiction allows a request (`originRegion`, `destinationRegion`, `instrument`, `customerType`, currencies) |
 | `POST /api/control` | `{action: "provider", id, do}`: slow, stall, error, reject, authorise_fails, pay_answer_lost, pay_vanishes, settle_fails, settle_vanishes, drift, release, reprice, heal |
+| `POST /api/payments` | send a payment: `{amount, merchant_id, customer_id, origin_region, destination_region, instrument, customer_type, source_currency, destination_currency, baseline}`; 202 `{ok, id}`, 422 invalid, 429 busy |
+| `GET /api/payments/{id}` | the transaction as it stands: phase, provider, steps done, history, outcome |
+| `GET /api/payments/{id}/result?timeout_ms=` | wait for it to end (200, or 408) |
 | `GET /actuator/health` | liveness |
 
-Errors are `{ok: false, error, errors}` with 422 (invalid input) or 400 (not JSON).
+Errors are `{ok: false, error, errors}` with 422 (invalid input), 429 (at the admission limit) or 400 (not JSON). Set `actortx.audit.dir` to write the hash-chained audit logs (one per region plus `GLOBAL`); without it nothing is durable and the write-ahead barrier is trivially satisfied.
 
 ## The quality bars (the same as the Elixir side)
 
@@ -58,6 +61,10 @@ src/main/java/net/robbrown/actortx/
   eligibility/  jurisdiction rules: instruments, customer types, currencies, providers, logs, retention
   provider/     Answer vocabulary, ProviderAdapter, FakeProvider, Health (breaker), ProviderServer (bulkhead, timeouts), Limits
   selection/    Selector (pure judgement), QuoteSelector (fan-out, narration), Participant, Selection
+  payment/      Payment (one virtual thread per transaction), PaymentServices, Result, journal
+  events/       EventBus (ordered narrative, durable sinks, barrier), Event, DurableSink
+  audit/        AuditLog (hash chain), AuditRouter (regional logs, residency), one-writer lock, card scrubber
+  economics/    costs and the economics ledger     guarantee/  guarantees, ledger, regional cut-offs
   events/       EventSink seam (the narrative)
   service/      SelectionService, EligibilityService, Sentinel, ProviderCatalog/Control, PolicyResolver
   api/          REST controllers and error handling

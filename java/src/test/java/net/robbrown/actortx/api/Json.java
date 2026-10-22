@@ -42,4 +42,9 @@ final class Json {
   static List<Map<String, Object>> maps(Object value) {
     return (List<Map<String, Object>>) value;
   }
+
+  @SuppressWarnings("unchecked")
+  static Map<String, Object> map(Object value) {
+    return (Map<String, Object>) value;
+  }
 }

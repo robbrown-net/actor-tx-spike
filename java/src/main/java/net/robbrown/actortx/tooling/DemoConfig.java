@@ -4,13 +4,20 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
+import net.robbrown.actortx.audit.AuditRouter;
 import net.robbrown.actortx.eligibility.Eligibility;
-import net.robbrown.actortx.events.EventSink;
+import net.robbrown.actortx.events.EventBus;
+import net.robbrown.actortx.payment.PaymentOptions;
+import net.robbrown.actortx.payment.PaymentServices;
 import net.robbrown.actortx.policy.PolicySet;
 import net.robbrown.actortx.selection.QuoteSelector;
+import net.robbrown.actortx.service.Admission;
 import net.robbrown.actortx.service.EligibilityService;
+import net.robbrown.actortx.service.PaymentService;
 import net.robbrown.actortx.service.PolicyResolver;
 import net.robbrown.actortx.service.ProviderCatalog;
 import net.robbrown.actortx.service.SelectionService;
@@ -33,16 +40,42 @@ public class DemoConfig {
 
   private static final ObjectMapper JSON = new ObjectMapper();
 
+  /** The narrative: everything that happens, in order, and the durable sinks it is written to. */
+  @Bean(destroyMethod = "close")
+  public EventBus eventBus(
+      @Value("${actortx.audit.dir:}") String auditDir,
+      @Value("${actortx.audit.logs:IN,CN,US,UK,EU}") List<String> logs) {
+    EventBus bus = new EventBus();
+    if (!auditDir.isEmpty()) {
+      bus.registerSink("audit", AuditRouter.open(Path.of(auditDir), logs, true));
+    }
+    return bus;
+  }
+
   /** The demo's providers. */
   @Bean(destroyMethod = "close")
-  public DemoWorld demoWorld(@Value("${actortx.demo.pace:1.0}") double pace) {
-    return new DemoWorld(pace, EventSink.NONE);
+  public DemoWorld demoWorld(@Value("${actortx.demo.pace:1.0}") double pace, EventBus bus) {
+    return new DemoWorld(pace, bus);
   }
 
   /** Quote-and-select. */
   @Bean(destroyMethod = "close")
-  public QuoteSelector quoteSelector() {
-    return new QuoteSelector(EventSink.NONE);
+  public QuoteSelector quoteSelector(EventBus bus) {
+    return new QuoteSelector(bus);
+  }
+
+  /** Sending payments: at most {@code actortx.admission.max} at once. */
+  @Bean
+  public PaymentService paymentService(
+      ProviderCatalog catalog,
+      EligibilityService eligibility,
+      PolicyResolver resolver,
+      QuoteSelector selector,
+      EventBus bus,
+      @Value("${actortx.admission.max:500}") int max) {
+    PaymentServices services = PaymentServices.of(selector, bus).withBarrier(bus::barrier);
+    return new PaymentService(
+        catalog, eligibility, resolver, PaymentOptions.defaults(), services, new Admission(max));
   }
 
   /** The sentinel that probes the providers for drift. */
