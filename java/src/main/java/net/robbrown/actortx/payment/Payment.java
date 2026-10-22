@@ -12,6 +12,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.LockSupport;
 import net.robbrown.actortx.eligibility.Decision;
 import net.robbrown.actortx.eligibility.Eligibility;
 import net.robbrown.actortx.money.Money;
@@ -67,8 +68,7 @@ public final class Payment implements Runnable {
   private static final Map<Operation, Operation> UNDO =
       Map.of(
           Operation.ACCEPT_QUOTE, Operation.CANCEL_ACCEPT,
-          Operation.AUTHORISE, Operation.VOID_AUTHORISATION,
-          Operation.PAY, Operation.REFUND);
+          Operation.AUTHORISE, Operation.VOID_AUTHORISATION);
   private static final Map<Operation, String> KEY_STEP =
       Map.of(
           Operation.ACCEPT_QUOTE, "accept",
@@ -195,10 +195,8 @@ public final class Payment implements Runnable {
   public Optional<Result> await(Duration timeout) {
     try {
       return Optional.of(finished.get(timeout.toMillis(), TimeUnit.MILLISECONDS));
-    } catch (TimeoutException late) {
+    } catch (TimeoutException | ExecutionException late) {
       return Optional.empty();
-    } catch (ExecutionException failed) {
-      throw new IllegalStateException(failed.getCause());
     } catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt();
       return Optional.empty();
@@ -611,7 +609,9 @@ public final class Payment implements Runnable {
   private static List<Undo> undosOf(List<Operation> steps) {
     List<Undo> undos = new ArrayList<>();
     for (int i = steps.size() - 1; i >= 0; i--) {
-      undos.add(new Undo(UNDO.get(steps.get(i)), steps.get(i)));
+      if (UNDO.containsKey(steps.get(i))) {
+        undos.add(new Undo(UNDO.get(steps.get(i)), steps.get(i)));
+      }
     }
     return undos;
   }
@@ -675,8 +675,7 @@ public final class Payment implements Runnable {
       net.robbrown.actortx.provider.ProviderAdapter adapter, Operation undo, String key) {
     return switch (undo) {
       case CANCEL_ACCEPT -> adapter.cancelAccept(key);
-      case VOID_AUTHORISATION -> adapter.voidAuthorisation(key);
-      default -> adapter.refund(key);
+      default -> adapter.voidAuthorisation(key);
     };
   }
 
@@ -824,11 +823,7 @@ public final class Payment implements Runnable {
   }
 
   private void pause(long ms) {
-    try {
-      Thread.sleep(ms);
-    } catch (InterruptedException interrupted) {
-      Thread.currentThread().interrupt();
-    }
+    LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(ms));
   }
 
   // The journal: the raw answer to one provider call, as the orchestrator saw it.

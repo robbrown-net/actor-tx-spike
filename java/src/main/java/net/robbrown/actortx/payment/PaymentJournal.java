@@ -48,16 +48,8 @@ final class PaymentJournal {
     map.put("permitted", decision.permitted());
     map.put("reasons", decision.reasons());
     map.put("regions", decision.regions());
-    map.put(
-        "instrument",
-        decision.instrument() == null
-            ? null
-            : decision.instrument().name().toLowerCase(java.util.Locale.ROOT));
-    map.put(
-        "customer_type",
-        decision.customerType() == null
-            ? null
-            : decision.customerType().name().toLowerCase(java.util.Locale.ROOT));
+    map.put("instrument", decision.instrument().name().toLowerCase(java.util.Locale.ROOT));
+    map.put("customer_type", decision.customerType().name().toLowerCase(java.util.Locale.ROOT));
     map.put("source_currency", decision.sourceCurrency());
     map.put("destination_currency", decision.destinationCurrency());
     map.put("logs", decision.logs());
