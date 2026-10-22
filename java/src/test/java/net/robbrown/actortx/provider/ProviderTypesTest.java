@@ -30,4 +30,30 @@ class ProviderTypesTest {
     assertThat(candidate.withScore(0.75).score()).isEqualTo(0.75);
     assertThat(candidate.score()).isZero();
   }
+
+  @Test
+  void operationsHaveWireNamesAndABulkheadClass() {
+    assertThat(Operation.ACCEPT_QUOTE.wire()).isEqualTo("accept_quote");
+    assertThat(Operation.REQUEST_QUOTE.bulkheadClass()).isEqualTo(BulkheadClass.QUOTE);
+    assertThat(Operation.PAY.bulkheadClass()).isEqualTo(BulkheadClass.STEP);
+    assertThat(Operation.REFUND.bulkheadClass()).isEqualTo(BulkheadClass.PROTECT);
+    assertThat(Operation.PROBE.bulkheadClass()).isEqualTo(BulkheadClass.PROTECT);
+  }
+
+  @Test
+  void everyAnswerHasATagAndOnlyOkIsOk() {
+    assertThat(
+            java.util.List.of(
+                new Answer.Ok<>("v"),
+                new Answer.Rejected<String>("r"),
+                new Answer.Error<String>("e"),
+                new Answer.Timeout<String>(),
+                new Answer.InDoubt<String>(),
+                new Answer.NotFound<String>(),
+                new Answer.Unknown<String>()))
+        .extracting(Answer::tag)
+        .containsExactly("ok", "rejected", "error", "timeout", "in_doubt", "not_found", "unknown");
+    assertThat(new Answer.Ok<>("v").isOk()).isTrue();
+    assertThat(new Answer.Timeout<String>().isOk()).isFalse();
+  }
 }
