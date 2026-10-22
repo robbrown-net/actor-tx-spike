@@ -120,6 +120,12 @@ automatic tuning from observed latency; per-merchant fairness; record refusals; 
 Next: the re-execution replay engine (virtual clock, replay provider adapter); four-eyes approval, assignment and deadlines for reviews; minor-unit
 exponents per currency and fee schedules; forward deal lifecycle; sanctions and KYC gates.
 
+## Phase 4: Java and Spring port - IN PROGRESS (started 2026-10-23, ADR 0015)
+- Chunk 1 DONE: quote and select over HTTP (exact money, policy cascade, jurisdiction rules, provider model, concurrent selector, sentinel, operator control, demo world as data); 198 unit and 20 integration tests; same bars as Elixir plus branch coverage and PIT mutation testing.
+- Chunk 2 next: events, payment orchestrator, audit log and router (write-ahead, fail closed), admission, economics, guarantees and cut-offs, SSE.
+- Chunk 3: recovery, replay, review, bulk send and load, the existing dashboard served by Spring, CLI tools.
+- Find-and-fix list for the Elixir side: `PolicySet.resolve/2` crashes with a `MatchError` when merchant and customer layers are each valid but invalid combined.
+
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
 - Jurisdiction eligibility as a hard routing constraint (corridor, instrument, customer type).
 - Sanctions and KYC gates before accept, recorded in the journal.

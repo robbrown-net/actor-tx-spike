@@ -1,0 +1,22 @@
+{
+  "regions": {
+    "UK": {"retention_days": 2555},
+    "EU": {"retention_days": 2555},
+    "IN": {
+      "instruments": ["spot"],
+      "currencies": ["INR", "USD", "EUR", "GBP"],
+      "providers": {"allow": ["northwind", "cobalt"]},
+      "logs": ["IN"],
+      "local_only": true,
+      "retention_days": 3650
+    },
+    "CN": {
+      "instruments": ["spot"],
+      "customer_types": ["business"],
+      "currencies": ["CNY", "USD", "EUR"],
+      "providers": {"allow": ["meridian"]},
+      "logs": ["CN"],
+      "local_only": true
+    }
+  }
+}

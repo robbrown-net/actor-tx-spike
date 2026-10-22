@@ -160,6 +160,7 @@ These came from the owner and are standing rules.
 | Supervised audit | Audit router under the application supervisor; production refuses to start without it |
 | Design for Test lab | `mix demo --lab`: fault injection, crash at an exact event, recover, 17 scenarios (architecture/08) |
 | Code-shape limits | Credo limits on complexity, nesting, size and duplication; refactor of ~30 functions; shared `Validation`, `Poll`, `Selector.Narrator`, `Eligibility.Parser` (ADR 0012) |
+| Java port, chunk 1 | Java 21 / Spring Boot skeleton with the quality gates; money, policy, jurisdiction, provider model, concurrent selector, sentinel, operator control, REST API; four modules ported by smaller-model subagents in worktrees, reviewed and merged (ADR 0015) |
 | Product depth | Currencies price, route and permit; the review workflow (UC-4); recorded batches (ADR 0014); re-execution replay deferred |
 | Load and back-pressure | Admission control, bulkhead priority classes, waiting instead of failing, a backing-off sender, `mix load`; 30% to 99.8% completion on a 2,000 burst (ADR 0013, LOAD_RESULTS) |
 | Bulk send | A tab that sends 1 to 10,000 transactions with random amounts, a settable pause, optional seed and a "randomise everything" mode; currencies carried on requests (architecture/09) |

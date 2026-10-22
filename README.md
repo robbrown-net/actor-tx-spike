@@ -4,6 +4,8 @@ Elixir OTP spike for a real-time actor system: **stateful transactions** orchest
 
 Latency assumption: **soft real-time (milliseconds)**. That is why this spike is Elixir on the BEAM. If you later need sub-millisecond tails or heavy CPU work, the same shape ports to Rust. This is deliberate - when architecting in greenfield space, I follow I think Fred Brooks' advice: "Start with the highest level programming language that fits the requirement [because it is the most productive path], but ensure it has an escape route if you run into performance or other insurmountable problems." As a programming language of today that addresses complaints about popular programming languages of yesterday, Rust seems promising. Now to see what I can achieve in this POC!
 
+> **Java and Spring port (in progress):** [`java/`](java/README.md) holds a Java 21 / Spring Boot 3 conversion, built in end-to-end chunks and held to the same quality bars ([ADR 0015](docs/adr/0015-java-spring-port.md)). Chunk 1, quote and select over HTTP, is done: `cd java && ./jmvn verify`.
+
 ## What it demonstrates
 
 A transaction asks several providers for FX quotes, scores them under a cascading policy (global → merchant → customer), then accepts the best quote, authorises, pays and settles before a regional cut-off, failing over and compensating when providers misbehave, and accounting margin against any standing guarantee. Around that core it also:

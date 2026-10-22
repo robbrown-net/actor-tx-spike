@@ -1,0 +1,25 @@
+name: Java CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["java/**", ".github/workflows/java.yml"]
+  pull_request:
+    paths: ["java/**", ".github/workflows/java.yml"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: java
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # format, Checkstyle (complexity 4, nesting 2, size), PMD, copy-paste detection,
+      # unit tests with the 100% line / 90% branch gate, integration tests with the 85% gate
+      - run: mvn -B -ntp verify

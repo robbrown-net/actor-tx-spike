@@ -16,3 +16,4 @@
 | [0012](0012-code-shape-limits.md) | Code-shape limits: cyclomatic complexity 4, nesting 2, ABC 40, duplication mass 16 | accepted |
 | [0013](0013-back-pressure.md) | Back-pressure: admission control, priority bulkheads, waiting instead of failing | accepted |
 | [0014](0014-product-depth-currencies-review-and-batches.md) | Currencies price, route and permit; a review workflow for needs_review; recorded batches | accepted |
+| [0015](0015-java-spring-port.md) | Java 21 / Spring Boot port in chunks, held to the same bars | accepted |

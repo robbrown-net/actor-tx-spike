@@ -31,7 +31,7 @@ import net.robbrown.actortx.provider.Health.Refusal;
  * "overloaded"} (a bulkhead is full), {@code "circuit_open"} or {@code "quarantined"}. Such an
  * answer means nothing was sent, so asking again is safe.
  */
-public final class ProviderServer implements AutoCloseable {
+public final class ProviderServer implements QuoteSource, AutoCloseable {
 
   /** Stands in for the provider's call timeout when the caller gives none. */
   public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
@@ -116,7 +116,7 @@ public final class ProviderServer implements AutoCloseable {
     }
   }
 
-  /** Ask for a quote. */
+  @Override
   public Answer<Quote> requestQuote(QuoteRequest request, Duration timeout) {
     return invoke(Operation.REQUEST_QUOTE, a -> a.requestQuote(request), timeout);
   }
@@ -130,7 +130,7 @@ public final class ProviderServer implements AutoCloseable {
     return answer;
   }
 
-  /** Our current view of the provider's health. */
+  @Override
   public HealthState state() {
     synchronized (lock) {
       return health.state();

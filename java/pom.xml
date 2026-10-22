@@ -43,6 +43,47 @@
     </dependency>
   </dependencies>
 
+  <profiles>
+    <!-- Mutation testing of the pure core (the counterpart of scripts/mutate.py): ./jmvn -Pmutation test-compile org.pitest:pitest-maven:mutationCoverage -->
+    <profile>
+      <id>mutation</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>1.17.1</version>
+            <dependencies>
+              <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>1.2.1</version>
+              </dependency>
+            </dependencies>
+            <configuration>
+              <targetClasses>
+                <param>net.robbrown.actortx.money.*</param>
+                <param>net.robbrown.actortx.policy.*</param>
+                <param>net.robbrown.actortx.eligibility.*</param>
+                <param>net.robbrown.actortx.provider.Health</param>
+                <param>net.robbrown.actortx.provider.Limits</param>
+                <param>net.robbrown.actortx.selection.Selector</param>
+                <param>net.robbrown.actortx.validation.*</param>
+              </targetClasses>
+              <targetTests>
+                <param>net.robbrown.actortx.*Test</param>
+              </targetTests>
+              <mutators><mutator>DEFAULTS</mutator></mutators>
+              <outputFormats><outputFormat>XML</outputFormat><outputFormat>HTML</outputFormat></outputFormats>
+              <threads>4</threads>
+              <timestampedReports>false</timestampedReports>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
   <build>
     <plugins>
       <plugin>

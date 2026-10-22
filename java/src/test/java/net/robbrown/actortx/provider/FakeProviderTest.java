@@ -292,4 +292,14 @@ class FakeProviderTest {
   void callsStartEmpty() {
     assertThat(new FakeProvider("fresh").calls()).isEmpty();
   }
+
+  @Test
+  void resettingScriptsMakesEveryOperationBehaveAgain() {
+    fake.script(Operation.PAY, Mode.TIMEOUT).script(Operation.REQUEST_QUOTE, Mode.REJECT);
+
+    fake.resetScripts();
+
+    assertThat(fake.requestQuote(QuoteRequest.of("r", null))).isInstanceOf(Ok.class);
+    assertThat(fake.pay(quoted(), "t:k")).isInstanceOf(Ok.class);
+  }
 }

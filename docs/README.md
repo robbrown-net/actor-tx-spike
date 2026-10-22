@@ -2,6 +2,7 @@
 
 | Document | What it is |
 |---|---|
+| [../java/README.md](../java/README.md) | The Java 21 / Spring Boot port: what is converted, the API, the quality bars, the mapping from Elixir |
 | [USER_GUIDE.md](USER_GUIDE.md) | Running and watching the system: dashboard, breaking providers, the Test lab, the audit log, replay, recovery, production settings |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | Set-up, commands, **quality limits and how they are enforced**, layout, conventions, recipes |
 | [TESTING.md](TESTING.md) | Test layers, gates and thresholds, testing by hand in the lab, writing tests, known flaky tests, what is not covered |

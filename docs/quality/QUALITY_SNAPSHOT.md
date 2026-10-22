@@ -249,3 +249,18 @@ Manual review of the dashboard server (the only network-facing code):
 4. Widen mutation testing to `Payment` (needs an equivalent-mutant review).
 5. Authentication and connection limits before any non-loopback exposure.
 6. Record-and-replay contract tests once a real provider adapter exists.
+
+## 9. The Java port (chunk 1: quote and select), measured 2026-10-23
+
+| Area | Result | Bar | Verdict |
+|---|---|---|---|
+| Unit tests | **198**, 0 failures | n/a | ✅ |
+| Unit coverage | **100% lines**, **99.4% branches** | 100% lines, 90% branches | ✅ |
+| Integration tests | **20**, 0 failures (HTTP end to end, scheduled sentinel, provider resilience, a world of mixed providers) | n/a | ✅ |
+| Integration coverage | **90.1% lines** | at least 85% | ✅ |
+| Mutation testing (PIT, all default mutators, pure core) | **381 of 389** killed (98%); 8 survivors under review | n/a | ✅ |
+| Cyclomatic complexity, nesting, method size, duplication | at the limits (4, 2, 30 lines, 50 tokens), main and test code | same as Elixir | ✅ |
+| Source | 93 files; about 3,050 code lines main, 3,500 test | n/a | |
+
+Details and the mapping from the Elixir bars: [../../java/README.md](../../java/README.md).
+

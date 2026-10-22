@@ -134,6 +134,14 @@ public class FakeProvider implements ProviderAdapter {
     return this;
   }
 
+  /** Every operation behaves again: forget all scripts. */
+  public FakeProvider resetScripts() {
+    synchronized (lock) {
+      scripts.clear();
+    }
+    return this;
+  }
+
   /** The current rate, scaled by 10^8. */
   public long currentRate() {
     synchronized (lock) {

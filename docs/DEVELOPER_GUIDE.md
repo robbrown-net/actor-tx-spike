@@ -189,3 +189,20 @@ or removing one breaks `Replay`/`Recovery` for existing logs. Add a replay test 
 See [ROADMAP](ROADMAP.md) and the risk list in [ENGINEERING_STORY](ENGINEERING_STORY.md): retention
 is recorded not enforced; no forward deal lifecycle, sanctions/KYC gates or trade reporting; the
 jurisdiction matrix is unverified by counsel; the dashboard has no authentication (loopback only).
+
+## 9. The Java and Spring port
+
+A Java 21 / Spring Boot 3 port lives in [`java/`](../java/README.md) ([ADR 0015](adr/0015-java-spring-port.md)). It is converted in chunks that each add an end-to-end capability, and is held to the same bars as the Elixir code, enforced by `./jmvn verify` and CI:
+
+| Bar | Elixir | Java |
+|---|---|---|
+| Cyclomatic complexity per function | 4 (Credo) | 4 (Checkstyle) |
+| Nesting depth | 2 | 2 (`NestedIfDepth`, `NestedForDepth`) |
+| Size | ABC 40 | method length 30, NPath 16, boolean expression 3, cognitive complexity 6 (PMD) |
+| Duplication | mass 16 | PMD CPD, 50 tokens |
+| Unit coverage | 100% lines | 100% lines and 90% branches |
+| Integration coverage | above 85% | at least 85% lines |
+| Mutation testing | `scripts/mutate.py` (sampled) | PIT, all default mutators |
+
+Commands (from `java/`): `./jmvn verify` (everything), `./jmvn spotless:apply` (format), `./jmvn spring-boot:run` (serve on 127.0.0.1:4040), `./jmvn -Pmutation test-compile org.pitest:pitest-maven:mutationCoverage` (mutation testing). The toolchain (JDK 21, Maven 3.9) is vendored in `.tooling/` like the Elixir one. Unit tests are `*Test`, integration tests `*IT`; test code is held to the same limits.
+
