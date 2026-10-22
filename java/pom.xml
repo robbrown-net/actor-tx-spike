@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>net.robbrown</groupId>
+  <artifactId>actor-tx</artifactId>
+  <version>0.1.0</version>
+  <name>Actor TX (Java / Spring)</name>
+  <description>Orchestrated FX swap and payment across unreliable providers: the Java and Spring port of the Elixir spike.</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <checkstyle.version>10.18.2</checkstyle.version>
+    <jacoco.version>0.8.12</jacoco.version>
+    <!-- The gates (see docs/DEVELOPER_GUIDE.md and java/README.md): -->
+    <gate.unit.line>1.00</gate.unit.line>
+    <gate.unit.branch>0.90</gate.unit.branch>
+    <gate.integration.line>0.85</gate.integration.line>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <release>${java.version}</release>
+          <parameters>true</parameters>
+          <compilerArgs>
+            <arg>-Xlint:all,-processing</arg>
+            <arg>-Werror</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+
+      <!-- Formatting: google-java-format; `./jmvn spotless:apply` fixes it. -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>2.43.0</version>
+        <configuration>
+          <java>
+            <googleJavaFormat><version>1.24.0</version></googleJavaFormat>
+            <removeUnusedImports/>
+          </java>
+        </configuration>
+        <executions>
+          <execution><phase>validate</phase><goals><goal>check</goal></goals></execution>
+        </executions>
+      </plugin>
+
+      <!-- Static analysis: complexity, nesting, size (config/checkstyle.xml). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>3.5.0</version>
+        <dependencies>
+          <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>${checkstyle.version}</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <configLocation>config/checkstyle.xml</configLocation>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          <consoleOutput>true</consoleOutput>
+          <violationSeverity>warning</violationSeverity>
+          <failOnViolation>true</failOnViolation>
+        </configuration>
+        <executions>
+          <execution><id>checkstyle</id><phase>validate</phase><goals><goal>check</goal></goals></execution>
+        </executions>
+      </plugin>
+
+      <!-- PMD rules plus copy-paste detection (duplication). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-pmd-plugin</artifactId>
+        <version>3.25.0</version>
+        <configuration>
+          <rulesets><ruleset>config/pmd.xml</ruleset></rulesets>
+          <printFailingErrors>true</printFailingErrors>
+          <includeTests>true</includeTests>
+          <minimumTokens>50</minimumTokens>
+          <ignoreAnnotations>true</ignoreAnnotations>
+          <failOnViolation>true</failOnViolation>
+        </configuration>
+        <executions>
+          <execution><id>pmd</id><phase>validate</phase><goals><goal>check</goal></goals></execution>
+          <execution><id>cpd</id><phase>validate</phase><goals><goal>cpd-check</goal></goals>
+            <configuration><includeTests>false</includeTests></configuration></execution>
+        </executions>
+      </plugin>
+
+      <!-- Unit tests (*Test) run under surefire; integration tests (*IT) under failsafe. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>@{surefireArgLine} -XX:+EnableDynamicAgentLoading -Xshare:off</argLine>
+          <includes><include>**/*Test.java</include></includes>
+          <trimStackTrace>true</trimStackTrace>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <argLine>@{failsafeArgLine} -XX:+EnableDynamicAgentLoading -Xshare:off</argLine>
+          <includes><include>**/*IT.java</include></includes>
+          <trimStackTrace>true</trimStackTrace>
+        </configuration>
+        <executions>
+          <execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution>
+        </executions>
+      </plugin>
+
+      <!-- Coverage gates: unit 100% lines (90% branches), integration at least 85% lines. -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <configuration>
+          <excludes>
+            <!-- Entry points and tooling only: exercised by the integration and system tests. -->
+            <exclude>net/robbrown/actortx/ActorTxApplication*</exclude>
+            <exclude>net/robbrown/actortx/tooling/**</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution><id>agent-unit</id><goals><goal>prepare-agent</goal></goals>
+            <configuration><propertyName>surefireArgLine</propertyName><destFile>${project.build.directory}/jacoco-ut.exec</destFile></configuration></execution>
+          <execution><id>agent-it</id><goals><goal>prepare-agent-integration</goal></goals>
+            <configuration><propertyName>failsafeArgLine</propertyName><destFile>${project.build.directory}/jacoco-it.exec</destFile></configuration></execution>
+          <execution><id>report-unit</id><phase>test</phase><goals><goal>report</goal></goals>
+            <configuration><dataFile>${project.build.directory}/jacoco-ut.exec</dataFile><outputDirectory>${project.build.directory}/site/jacoco-unit</outputDirectory></configuration></execution>
+          <execution><id>check-unit</id><phase>test</phase><goals><goal>check</goal></goals>
+            <configuration>
+              <dataFile>${project.build.directory}/jacoco-ut.exec</dataFile>
+              <rules><rule><element>BUNDLE</element><limits>
+                <limit><counter>LINE</counter><value>COVEREDRATIO</value><minimum>${gate.unit.line}</minimum></limit>
+                <limit><counter>BRANCH</counter><value>COVEREDRATIO</value><minimum>${gate.unit.branch}</minimum></limit>
+              </limits></rule></rules>
+            </configuration></execution>
+          <execution><id>report-it</id><phase>post-integration-test</phase><goals><goal>report-integration</goal></goals>
+            <configuration><dataFile>${project.build.directory}/jacoco-it.exec</dataFile><outputDirectory>${project.build.directory}/site/jacoco-it</outputDirectory></configuration></execution>
+          <execution><id>check-it</id><phase>verify</phase><goals><goal>check</goal></goals>
+            <configuration>
+              <dataFile>${project.build.directory}/jacoco-it.exec</dataFile>
+              <rules><rule><element>BUNDLE</element><limits>
+                <limit><counter>LINE</counter><value>COVEREDRATIO</value><minimum>${gate.integration.line}</minimum></limit>
+              </limits></rule></rules>
+            </configuration></execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Maven with the vendored JDK 21 and Maven in .tooling (no installation needed).
+# Works from the main checkout and from git worktrees (the tooling lives in the main checkout).
+# Usage: ./jmvn verify
+HERE="$(cd "$(dirname "$0")" && pwd)"
+TOOLING="$HERE/../.tooling"
+[ -d "$TOOLING" ] || TOOLING="$(dirname "$(git -C "$HERE" rev-parse --path-format=absolute --git-common-dir)")/.tooling"
+JAVA_HOME="$(ls -d "$TOOLING"/java/jdk-21*/Contents/Home | head -1)"
+export JAVA_HOME
+export PATH="$JAVA_HOME/bin:$PATH"
+exec "$TOOLING"/maven/apache-maven-3.9.9/bin/mvn -B -ntp -f "$HERE/pom.xml" "$@"
