@@ -42,6 +42,27 @@ public record Policy(
     Double maxBpsFromBest,
     Set<HealthState> excludeStates) {
 
+  /**
+   * The policy as plain data, exactly as it would be given to {@link #fromMap} (for the audit log).
+   */
+  public Map<String, Object> toMap() {
+    Map<String, Object> map = new java.util.LinkedHashMap<>();
+    map.put(
+        "weights",
+        Map.of(
+            "cost",
+            weights.cost(),
+            "speed",
+            weights.speed(),
+            "reliability",
+            weights.reliability()));
+    map.put("min_validity_ms", minValidityMs);
+    map.put("max_latency_ms", maxLatencyMs);
+    map.put("max_bps_from_best", maxBpsFromBest);
+    map.put("exclude_states", excludeStates.stream().map(HealthState::wire).sorted().toList());
+    return map;
+  }
+
   /** Why {@link #check} excluded a candidate. */
   public enum Exclusion {
     /** The quote has less validity left than {@code minValidityMs}. */
