@@ -26,6 +26,11 @@ public sealed interface Answer<T> {
     public String tag() {
       return "ok";
     }
+
+    @Override
+    public Outcome outcome() {
+      return Outcome.SUCCESS;
+    }
   }
 
   /** Answered no. */
@@ -33,6 +38,11 @@ public sealed interface Answer<T> {
     @Override
     public String tag() {
       return "rejected";
+    }
+
+    @Override
+    public Outcome outcome() {
+      return Outcome.REJECTED;
     }
   }
 
@@ -42,6 +52,11 @@ public sealed interface Answer<T> {
     public String tag() {
       return "error";
     }
+
+    @Override
+    public Outcome outcome() {
+      return Outcome.ERROR;
+    }
   }
 
   /** No answer. */
@@ -49,6 +64,11 @@ public sealed interface Answer<T> {
     @Override
     public String tag() {
       return "timeout";
+    }
+
+    @Override
+    public Outcome outcome() {
+      return Outcome.TIMEOUT;
     }
   }
 
@@ -58,6 +78,11 @@ public sealed interface Answer<T> {
     public String tag() {
       return "in_doubt";
     }
+
+    @Override
+    public Outcome outcome() {
+      return Outcome.TIMEOUT;
+    }
   }
 
   /** Nothing is held for that key (yet). */
@@ -65,6 +90,11 @@ public sealed interface Answer<T> {
     @Override
     public String tag() {
       return "not_found";
+    }
+
+    @Override
+    public Outcome outcome() {
+      return Outcome.SUCCESS;
     }
   }
 
@@ -74,10 +104,21 @@ public sealed interface Answer<T> {
     public String tag() {
       return "unknown";
     }
+
+    @Override
+    public Outcome outcome() {
+      return Outcome.ERROR;
+    }
   }
 
   /** The short word for the narrative and the audit log: {@code "ok"}, {@code "timeout"}... */
   String tag();
+
+  /**
+   * How this answer counts in the health model: success, rejected (a business answer, not a fault),
+   * error or timeout. A not-found status lookup is a success; so is an answered "no".
+   */
+  Outcome outcome();
 
   /** Was it a success? */
   default boolean isOk() {

@@ -30,7 +30,7 @@ import net.robbrown.actortx.provider.Answer.Unknown;
  * effect, so tests can assert exactly what happened (for example, no double payment). All methods
  * are safe to call from many threads.
  */
-public final class FakeProvider implements ProviderAdapter {
+public class FakeProvider implements ProviderAdapter {
 
   private static final long DEFAULT_RATE = Money.RATE_SCALE;
   private static final long DEFAULT_REF_RATE = 108_200_000L;
