@@ -11,6 +11,7 @@ import java.util.OptionalInt;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import net.robbrown.actortx.money.Money;
+import net.robbrown.actortx.payment.Outcome;
 
 /**
  * Did the day follow the rules? Every check works from the recorded log alone.
@@ -58,11 +59,14 @@ public final class Rules {
    *
    * @param records how many records the day has
    * @param transactions how many transactions it has
-   * @param outcomes how many transactions ended in each outcome
+   * @param outcomes how many transactions ended in each outcome (empty key: still open)
    * @param violations every rule broken
    */
   public record Verdict(
-      int records, int transactions, Map<Outcome, Long> outcomes, List<Violation> violations) {
+      int records,
+      int transactions,
+      Map<Optional<Outcome>, Long> outcomes,
+      List<Violation> violations) {
 
     /**
      * Did every rule hold?
@@ -135,7 +139,7 @@ public final class Rules {
 
   private static List<Violation> completedIsWhole(Ctx c) {
     TxSummary s = c.summary();
-    if (s.outcome() != Outcome.COMPLETED) {
+    if (s.outcome().orElse(null) != Outcome.COMPLETED) {
       return List.of();
     }
     List<String> got = Tx.succeededOps(c.rs(), s.provider());
@@ -156,7 +160,7 @@ public final class Rules {
             .distinct()
             .toList();
     List<String> abandoned =
-        c.summary().outcome() == Outcome.FAILED
+        c.summary().outcome().orElse(null) == Outcome.FAILED
             ? unique
             : unique.subList(0, Math.max(0, unique.size() - 1));
     return abandoned.stream().map(p -> leftHolding(c, p)).flatMap(Optional::stream).toList();
@@ -486,7 +490,7 @@ public final class Rules {
   }
 
   private static List<Violation> economicsConsistent(Ctx c) {
-    if (c.summary().outcome() != Outcome.COMPLETED) {
+    if (c.summary().outcome().orElse(null) != Outcome.COMPLETED) {
       return List.of();
     }
     Map<String, Object> economics = Tx.first(c.rs(), "tx_economics");

@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import net.robbrown.actortx.payment.Outcome;
 import org.junit.jupiter.api.Test;
 
 /** The system as it stood at a moment, folded from the records up to it. */
@@ -31,7 +33,7 @@ class StateTest {
     Map<String, Object> selection = recordOf("selection_made", "happy");
     State early = Replay.stateAt(DAY, Position.n((Long) selection.get("n")));
     assertThat(early.inFlight()).containsExactly("happy");
-    assertThat(early.outcomes()).isEqualTo(Map.of(Outcome.OPEN, 1L));
+    assertThat(early.outcomes()).isEqualTo(Map.of(Optional.empty(), 1L));
     assertThat(early.policy()).containsEntry("max_bps_from_best", 1_000.0);
     assertThat(early.guarantee()).containsEntry("rate", 105_000_000L);
     assertThat(early.config()).containsKey("max_attempts");
@@ -45,13 +47,20 @@ class StateTest {
   void theStateAtAMomentAndAfterTheEndOfTheDay() {
     Map<String, Object> completed = recordOf("tx_completed", "happy");
     State mid = Replay.stateAt(DAY, Position.atMs((Long) completed.get("at")));
-    assertThat(mid.outcomes()).containsEntry(Outcome.COMPLETED, 1L);
+    assertThat(mid.outcomes()).containsEntry(Optional.of(Outcome.COMPLETED), 1L);
     assertThat(mid.asOf().lastAtMs()).isLessThanOrEqualTo((Long) completed.get("at"));
 
     State done = Replay.stateAt(DAY, Position.seq((Long) completed.get("seq") + 10_000));
     assertThat(done.inFlight()).isEmpty();
     assertThat(done.outcomes())
-        .isEqualTo(Map.of(Outcome.COMPLETED, 3L, Outcome.FAILED, 1L, Outcome.NEEDS_REVIEW, 1L));
+        .isEqualTo(
+            Map.of(
+                Optional.of(Outcome.COMPLETED),
+                3L,
+                Optional.of(Outcome.FAILED),
+                1L,
+                Optional.of(Outcome.NEEDS_REVIEW),
+                1L));
     assertThat(done.economics().transactions()).isEqualTo(1L);
     assertThat(done.economics().savedVsMedian()).isEqualTo(2_000L);
     assertThat(done.economics().costPicos()).isEqualTo(1_200L);

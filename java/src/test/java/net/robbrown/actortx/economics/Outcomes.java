@@ -1,5 +1,9 @@
 package net.robbrown.actortx.economics;
 
+import static net.robbrown.actortx.payment.Outcome.COMPLETED;
+import static net.robbrown.actortx.payment.Outcome.FAILED;
+import static net.robbrown.actortx.payment.Outcome.NEEDS_REVIEW;
+
 /**
  * Test helper: builds an {@link Outcome}. The default is a completed transaction with the usage of
  * a million reductions, six provider calls and ten state changes, with discovery of a median of
@@ -20,7 +24,7 @@ final class Outcomes {
     private final long net;
     private String txId = "tx";
     private String provider;
-    private Outcome.Status status = Outcome.Status.COMPLETED;
+    private net.robbrown.actortx.payment.Outcome status = COMPLETED;
     private boolean discovered = true;
     private long margin;
     private long fee = 150L;
@@ -41,12 +45,12 @@ final class Outcomes {
     }
 
     Builder failed() {
-      status = Outcome.Status.FAILED;
+      status = FAILED;
       return this;
     }
 
     Builder needsReview() {
-      status = Outcome.Status.NEEDS_REVIEW;
+      status = NEEDS_REVIEW;
       return this;
     }
 

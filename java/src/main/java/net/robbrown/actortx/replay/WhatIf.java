@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.policy.Policy;
 import net.robbrown.actortx.selection.Candidate;
 import net.robbrown.actortx.selection.Evaluation;
@@ -29,7 +30,7 @@ public final class WhatIf {
    * One transaction under both policies.
    *
    * @param tx the transaction
-   * @param outcome how it actually ended
+   * @param outcome how it actually ended, or empty while it was open
    * @param actual the provider it actually ended with
    * @param actualNet the net it actually achieved
    * @param base the provider the live policy would pick first, or null
@@ -42,7 +43,7 @@ public final class WhatIf {
    */
   public record Row(
       String tx,
-      Outcome outcome,
+      Optional<Outcome> outcome,
       String actual,
       Long actualNet,
       String base,

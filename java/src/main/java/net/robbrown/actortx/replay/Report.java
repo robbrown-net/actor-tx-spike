@@ -5,9 +5,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import net.robbrown.actortx.money.Money;
+import net.robbrown.actortx.payment.Outcome;
 
 /** Plain-text renderings of replay results, for the terminal and for evidence. */
 public final class Report {
@@ -231,10 +233,11 @@ public final class Report {
         + v.detail();
   }
 
-  private static String outcomes(Map<Outcome, Long> outcomes) {
+  private static String outcomes(Map<Optional<Outcome>, Long> outcomes) {
     return outcomes.entrySet().stream()
-        .sorted(Comparator.comparing((Map.Entry<Outcome, Long> e) -> e.getKey().wire()))
-        .map(e -> e.getValue() + " " + e.getKey().wire())
+        .sorted(
+            Comparator.comparing((Map.Entry<Optional<Outcome>, Long> e) -> Tx.label(e.getKey())))
+        .map(e -> e.getValue() + " " + Tx.label(e.getKey()))
         .collect(Collectors.joining(", "));
   }
 

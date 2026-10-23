@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.robbrown.actortx.money.Money;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.policy.Policy;
 import net.robbrown.actortx.policy.Weights;
 import net.robbrown.actortx.provider.Answer;
@@ -33,6 +34,20 @@ final class Tx {
   private static final Map<String, String> UNDO =
       Map.of("accept_quote", "cancel_accept", "authorise", "void_authorisation", "pay", "refund");
 
+  /** How an open transaction reads in the text reports. */
+  static final String OPEN = "open";
+
+  private static final String COMPLETED_KIND = "tx_completed";
+  private static final String FAILED_KIND = "tx_failed";
+  private static final String NEEDS_REVIEW_KIND = "needs_review";
+  private static final List<String> TERMINAL_KINDS =
+      List.of(COMPLETED_KIND, FAILED_KIND, NEEDS_REVIEW_KIND);
+  private static final Map<String, Outcome> ENDINGS =
+      Map.of(
+          COMPLETED_KIND, Outcome.COMPLETED,
+          FAILED_KIND, Outcome.FAILED,
+          NEEDS_REVIEW_KIND, Outcome.NEEDS_REVIEW);
+
   private Tx() {}
 
   /** One selection round: the quotes observed after a select_started, and the selection made. */
@@ -51,7 +66,7 @@ final class Tx {
     Map<String, Object> received = first(records, "tx_received");
     Map<String, Object> terminal =
         records.stream()
-            .filter(r -> Outcome.isTerminal(r.get("kind")))
+            .filter(r -> outcomeOf(r.get("kind")).isPresent())
             .findFirst()
             .orElse(Map.of());
     Map<String, Object> economics = first(records, "tx_economics");
@@ -63,7 +78,7 @@ final class Tx {
         Fields.lng(request.get("amount")),
         Fields.lng(received.get("at")),
         Fields.lng(terminal.get("at")),
-        Outcome.forTerminal(terminal.get("kind")),
+        outcomeOf(terminal.get("kind")),
         phase(records),
         provider,
         succeededOps(records, provider),
@@ -244,10 +259,35 @@ final class Tx {
     };
   }
 
-  /** How many of each outcome, for a set of transactions. */
-  static Map<Outcome, Long> frequencies(Collection<TxSummary> summaries) {
+  /** How many of each outcome, for a set of transactions; an empty key counts the open ones. */
+  static Map<Optional<Outcome>, Long> frequencies(Collection<TxSummary> summaries) {
     return summaries.stream()
         .collect(Collectors.groupingBy(TxSummary::outcome, Collectors.counting()));
+  }
+
+  /**
+   * The outcome a terminal record kind gives. Any other kind, or none, ends nothing.
+   *
+   * @param kind a record kind, or null
+   * @return the outcome, or empty for a transaction that is still open
+   */
+  static Optional<Outcome> outcomeOf(Object kind) {
+    return kind == null ? Optional.empty() : Optional.ofNullable(ENDINGS.get(kind));
+  }
+
+  /** The record kinds that end a transaction, in order. */
+  static List<String> terminalKinds() {
+    return TERMINAL_KINDS;
+  }
+
+  /**
+   * How an outcome reads in the text reports: its wire name, or {@code open} when there is none.
+   *
+   * @param outcome the outcome, or empty while open
+   * @return the label
+   */
+  static String label(Optional<Outcome> outcome) {
+    return outcome.map(Outcome::wire).orElse(OPEN);
   }
 
   /** The amount being converted, from the received record (zero if absent). */

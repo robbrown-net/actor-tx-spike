@@ -7,12 +7,13 @@ import static org.awaitility.Awaitility.await;
 
 import java.util.List;
 import java.util.SplittableRandom;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.service.PaymentCommand;
 import org.junit.jupiter.api.Test;
 
 class SenderTest {
 
-  private static final Ending DONE = new Ending(Ending.Status.COMPLETED, null);
+  private static final Ending DONE = new Ending(Outcome.COMPLETED, null);
 
   private final ManualClock clock = new ManualClock(0);
   private final Pauses pauses = new Pauses(clock);
@@ -86,9 +87,9 @@ class SenderTest {
 
     Thread.ofVirtual().start(sender::run);
     await().until(() -> tally.snapshot().waited() > 0 && tally.snapshot().submitted() == 1);
-    submitter.endAll(Ending.Status.COMPLETED);
+    submitter.endAll(Outcome.COMPLETED);
     await().until(() -> tally.sendingDone());
-    submitter.endAll(Ending.Status.COMPLETED);
+    submitter.endAll(Outcome.COMPLETED);
 
     assertThat(tally.snapshot().submitted()).isEqualTo(2);
     assertThat(tally.snapshot().waited()).isPositive();

@@ -6,13 +6,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import java.util.SplittableRandom;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.service.InvalidInputException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class BulkRunnerTest {
 
-  private static final Ending DONE = new Ending(Ending.Status.COMPLETED, null);
+  private static final Ending DONE = new Ending(Outcome.COMPLETED, null);
 
   private ManualClock clock;
   private Pauses pauses;
@@ -90,7 +91,7 @@ class BulkRunnerTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("a batch is already running: stop it first");
 
-    submitter.endAll(Ending.Status.COMPLETED);
+    submitter.endAll(Outcome.COMPLETED);
     await().until(() -> runner.snapshot().status() == Progress.Status.FINISHED);
   }
 
@@ -104,7 +105,7 @@ class BulkRunnerTest {
         .hasMessage("stop the batch first");
 
     assertThat(runner.stop()).isTrue();
-    submitter.endAll(Ending.Status.COMPLETED);
+    submitter.endAll(Outcome.COMPLETED);
     await().until(() -> runner.snapshot().inFlight() == 0);
     runner.clear();
     assertThat(runner.snapshot().status()).isEqualTo(Progress.Status.IDLE);
@@ -122,7 +123,7 @@ class BulkRunnerTest {
     assertThat(slow.snapshot().status()).isEqualTo(Progress.Status.STOPPED);
     assertThat(slow.snapshot().submitted()).isEqualTo(1);
 
-    submitter.endAll(Ending.Status.COMPLETED);
+    submitter.endAll(Outcome.COMPLETED);
     await().until(() -> slow.snapshot().inFlight() == 0);
     assertThat(slow.snapshot().status()).isEqualTo(Progress.Status.STOPPED);
     assertThat(slow.snapshot().completed()).isEqualTo(1);

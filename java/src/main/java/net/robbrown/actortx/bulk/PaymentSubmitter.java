@@ -2,6 +2,7 @@ package net.robbrown.actortx.bulk;
 
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.service.BusyException;
 import net.robbrown.actortx.service.InvalidInputException;
 import net.robbrown.actortx.service.PaymentCommand;
@@ -42,15 +43,14 @@ public final class PaymentSubmitter implements Submitter {
                 ending.complete(
                     payments
                         .await(id, PATIENCE)
-                        .map(PaymentSubmitter::endingOf)
-                        .orElseGet(() -> new Ending(Ending.Status.FAILED, "still_running"))));
+                        .map(view -> endingOf(view))
+                        .orElseGet(() -> new Ending(Outcome.FAILED, "still_running"))));
     return ending;
   }
 
+  // The wire name is one Result.outcome() wrote, so it always names an outcome.
   private static Ending endingOf(PaymentView view) {
     PaymentView.Outcome outcome = view.outcome();
-    return new Ending(
-        Ending.Status.valueOf(outcome.status().toUpperCase(java.util.Locale.ROOT)),
-        outcome.reason());
+    return new Ending(Outcome.fromWire(outcome.status()).orElseThrow(), outcome.reason());
   }
 }

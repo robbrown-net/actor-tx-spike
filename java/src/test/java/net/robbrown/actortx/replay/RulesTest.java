@@ -14,6 +14,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.replay.Rules.Violation;
 import org.junit.jupiter.api.Test;
 
@@ -40,27 +42,38 @@ class RulesTest {
     assertThat(verdict.violations()).isEmpty();
     assertThat(verdict.transactions()).isEqualTo(5);
     assertThat(verdict.outcomes())
-        .isEqualTo(Map.of(Outcome.COMPLETED, 3L, Outcome.FAILED, 1L, Outcome.NEEDS_REVIEW, 1L));
-    List<TxSummary> txs = day.transactions();
+        .isEqualTo(
+            Map.of(
+                Optional.of(Outcome.COMPLETED),
+                3L,
+                Optional.of(Outcome.FAILED),
+                1L,
+                Optional.of(Outcome.NEEDS_REVIEW),
+                1L));
+    assertThat(day.tx("no-such-tx")).isEmpty();
+    assertThat(day.tx("happy").orElseThrow().id()).isEqualTo("happy");
+    assertThat(Replay.terminalKinds()).containsExactly("tx_completed", "tx_failed", "needs_review");
+  }
+
+  @Test
+  void eachTransactionReadBackWithItsProviderAndEnding() {
+    List<TxSummary> txs = Replay.fromRecords(goodDay()).transactions();
     assertThat(txs.stream().map(TxSummary::id).toList())
         .containsExactly("happy", "failover", "review", "failed", "mixed");
     TxSummary happy = txs.get(0);
-    assertThat(happy.outcome()).isEqualTo(Outcome.COMPLETED);
+    assertThat(happy.outcome()).isEqualTo(Optional.of(Outcome.COMPLETED));
     assertThat(happy.provider()).isEqualTo("best");
     assertThat(happy.steps()).containsExactly("accept_quote", "authorise", "pay", "settle");
     assertThat(happy.net()).isEqualTo(110_000L);
     assertThat(happy.margin()).isEqualTo(5_000L);
     assertThat(txs.get(1).provider()).isEqualTo("second");
-    assertThat(txs.get(1).outcome()).isEqualTo(Outcome.COMPLETED);
-    assertThat(txs.get(2).outcome()).isEqualTo(Outcome.NEEDS_REVIEW);
+    assertThat(txs.get(1).outcome()).isEqualTo(Optional.of(Outcome.COMPLETED));
+    assertThat(txs.get(2).outcome()).isEqualTo(Optional.of(Outcome.NEEDS_REVIEW));
     assertThat(txs.get(2).provider()).isEqualTo("best");
-    assertThat(txs.get(3).outcome()).isEqualTo(Outcome.FAILED);
+    assertThat(txs.get(3).outcome()).isEqualTo(Optional.of(Outcome.FAILED));
     assertThat(txs.get(3).steps()).isEmpty();
-    assertThat(txs.get(4).outcome()).isEqualTo(Outcome.COMPLETED);
+    assertThat(txs.get(4).outcome()).isEqualTo(Optional.of(Outcome.COMPLETED));
     assertThat(txs.get(4).provider()).isEqualTo("a");
-    assertThat(day.tx("no-such-tx")).isEmpty();
-    assertThat(day.tx("happy").orElseThrow().id()).isEqualTo("happy");
-    assertThat(Replay.terminalKinds()).containsExactly("tx_completed", "tx_failed", "needs_review");
   }
 
   @Test
@@ -271,7 +284,7 @@ class RulesTest {
                 List.of("tx_completed", "tx_economics", "tx_costed").contains(r.get("kind"))
                     && "happy".equals(r.get("tx")));
     Rules.Verdict verdict = Rules.verify(Replay.fromRecords(records));
-    assertThat(verdict.outcomes()).containsEntry(Outcome.OPEN, 1L);
+    assertThat(verdict.outcomes()).containsEntry(Optional.empty(), 1L);
     assertThat(rules(records)).doesNotContain(Rule.SINGLE_PAY);
   }
 

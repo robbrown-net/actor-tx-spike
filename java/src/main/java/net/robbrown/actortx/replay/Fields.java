@@ -5,7 +5,9 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
+import net.robbrown.actortx.payment.Outcome;
 
 /**
  * Tolerant reads of decoded audit records. A record is a plain map as the JSON decodes it; a
@@ -145,6 +147,14 @@ final class Fields {
     }
     if (value instanceof String text) {
       return "\"" + text + "\"";
+    }
+    return atom(value);
+  }
+
+  // An outcome is an atom; an absent one (a transaction still open) is the atom :open.
+  private static String atom(Object value) {
+    if (value instanceof Optional<?> optional) {
+      return optional.map(Fields::scalar).orElse(":" + Tx.OPEN);
     }
     if (value instanceof Outcome outcome) {
       return ":" + outcome.wire();

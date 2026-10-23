@@ -8,6 +8,8 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.policy.Policy;
 import net.robbrown.actortx.provider.Answer;
 import net.robbrown.actortx.provider.HealthState;
@@ -43,7 +45,7 @@ class TxTest {
     assertThat(s.amount()).isEqualTo(100_000L);
     assertThat(s.startedAtMs()).isEqualTo(1_010L);
     assertThat(s.endedAtMs()).isNotNull();
-    assertThat(s.outcome()).isEqualTo(Outcome.COMPLETED);
+    assertThat(s.outcome()).isEqualTo(Optional.of(Outcome.COMPLETED));
     assertThat(s.phase()).isNull();
     assertThat(s.resolution()).isNull();
     assertThat(s.request()).containsEntry("merchant_id", "acme");
@@ -53,7 +55,7 @@ class TxTest {
   void aSummaryOfNothingIsOpenAndEmpty() {
     TxSummary s = Tx.summarize(List.of());
     assertThat(s.id()).isNull();
-    assertThat(s.outcome()).isEqualTo(Outcome.OPEN);
+    assertThat(s.outcome()).isEqualTo(Optional.empty());
     assertThat(s.provider()).isNull();
     assertThat(s.steps()).isEmpty();
     assertThat(s.net()).isNull();
@@ -266,7 +268,7 @@ class TxTest {
   @Test
   void frequenciesCountEachOutcome() {
     List<TxSummary> summaries = Replay.fromRecords(goodDay()).transactions();
-    assertThat(Tx.frequencies(summaries)).containsEntry(Outcome.COMPLETED, 3L);
+    assertThat(Tx.frequencies(summaries)).containsEntry(Optional.of(Outcome.COMPLETED), 3L);
   }
 
   @Test

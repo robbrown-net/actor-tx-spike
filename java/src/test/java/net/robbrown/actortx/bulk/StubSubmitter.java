@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.service.PaymentCommand;
 
 /**
@@ -55,7 +56,7 @@ final class StubSubmitter implements Submitter {
   }
 
   /** End every payment still open with this outcome. */
-  void endAll(Ending.Status status) {
+  void endAll(Outcome status) {
     endings.values().forEach(ending -> ending.complete(new Ending(status, "failed for a reason")));
   }
 

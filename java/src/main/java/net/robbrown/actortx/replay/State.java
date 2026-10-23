@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import net.robbrown.actortx.payment.Outcome;
 
 /**
  * The system as it stood at a moment, folded from the records up to that point.
@@ -15,7 +16,7 @@ import java.util.TreeSet;
  * @param asOf the position asked for, and the last record it reached
  * @param transactions every transaction started by then, summarised as of then
  * @param inFlight the open transactions, sorted
- * @param outcomes how many transactions ended in each outcome
+ * @param outcomes how many transactions ended in each outcome (empty key: still open)
  * @param providers the last health and last observed quote of every provider
  * @param policy the policy recorded with the latest transaction (empty if none)
  * @param guarantee the guarantee recorded with the latest transaction (empty if none)
@@ -28,7 +29,7 @@ public record State(
     AsOf asOf,
     Map<String, TxSummary> transactions,
     List<String> inFlight,
-    Map<Outcome, Long> outcomes,
+    Map<Optional<Outcome>, Long> outcomes,
     Map<String, ProviderView> providers,
     Map<String, Object> policy,
     Map<String, Object> guarantee,
@@ -127,7 +128,7 @@ public record State(
 
   private static List<String> inFlight(Map<String, TxSummary> txs) {
     return txs.values().stream()
-        .filter(s -> s.outcome() == Outcome.OPEN)
+        .filter(s -> s.outcome().isEmpty())
         .map(TxSummary::id)
         .sorted()
         .toList();

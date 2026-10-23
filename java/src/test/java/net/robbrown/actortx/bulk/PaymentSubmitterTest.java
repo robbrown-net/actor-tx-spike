@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import net.robbrown.actortx.bulk.Ending.Status;
 import net.robbrown.actortx.eligibility.Eligibility;
 import net.robbrown.actortx.events.EventSink;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.payment.PaymentOptions;
 import net.robbrown.actortx.payment.PaymentServices;
 import net.robbrown.actortx.policy.PolicySet;
@@ -66,7 +66,7 @@ class PaymentSubmitterTest {
 
     Ending ending = ((Submission.Accepted) result).ending().get(10, TimeUnit.SECONDS);
 
-    assertThat(ending.status()).isEqualTo(Status.COMPLETED);
+    assertThat(ending.status()).isEqualTo(Outcome.COMPLETED);
   }
 
   @Test
@@ -78,7 +78,7 @@ class PaymentSubmitterTest {
             .ending()
             .get(10, TimeUnit.SECONDS);
 
-    assertThat(ending.status()).isEqualTo(Status.NEEDS_REVIEW);
+    assertThat(ending.status()).isEqualTo(Outcome.NEEDS_REVIEW);
     assertThat(ending.reason()).startsWith("settlement_failed");
   }
 

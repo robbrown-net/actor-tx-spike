@@ -14,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.service.PaymentCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -207,8 +208,8 @@ class BulkIT {
 
     private static Ending outcome(PaymentCommand command) {
       return "forward".equals(command.instrument())
-          ? new Ending(Ending.Status.FAILED, "quote " + command.amount() + " expired")
-          : new Ending(Ending.Status.COMPLETED, null);
+          ? new Ending(Outcome.FAILED, "quote " + command.amount() + " expired")
+          : new Ending(Outcome.COMPLETED, null);
     }
 
     List<PaymentCommand> commands() {

@@ -53,7 +53,7 @@ public final class ReplayService {
     log.put("records", verdict.records());
     log.put("transactions", verdict.transactions());
     log.put("ok", verdict.ok());
-    log.put("violations", verdict.violations().stream().map(ReplayService::violation).toList());
+    log.put("violations", verdict.violations().stream().map(v -> violation(v)).toList());
     return log;
   }
 

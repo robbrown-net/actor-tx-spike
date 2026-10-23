@@ -1,5 +1,7 @@
 package net.robbrown.actortx.economics;
 
+import net.robbrown.actortx.payment.Outcome;
+
 /**
  * Running totals of finished transactions: how many, how each ended, what they earned and what they
  * cost. Immutable: a sum yields a new value.
@@ -18,12 +20,12 @@ public record Totals(
   public static final Totals BLANK = new Totals(0L, 0L, 0L, 0L, Value.ZERO, Cost.ZERO);
 
   /** The totals of a single transaction that ended with {@code status}. */
-  public static Totals of(Outcome.Status status, Value value, Cost cost) {
+  public static Totals of(Outcome status, Value value, Cost cost) {
     return new Totals(
         1L,
-        count(status, Outcome.Status.COMPLETED),
-        count(status, Outcome.Status.FAILED),
-        count(status, Outcome.Status.NEEDS_REVIEW),
+        count(status, Outcome.COMPLETED),
+        count(status, Outcome.FAILED),
+        count(status, Outcome.NEEDS_REVIEW),
         value,
         cost);
   }
@@ -39,7 +41,7 @@ public record Totals(
         cost.plus(other.cost));
   }
 
-  private static long count(Outcome.Status status, Outcome.Status target) {
+  private static long count(Outcome status, Outcome target) {
     return status == target ? 1L : 0L;
   }
 }
