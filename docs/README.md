@@ -2,7 +2,8 @@
 
 | Document | What it is |
 |---|---|
-| [../java/README.md](../java/README.md) | The Java 21 / Spring Boot port: what is converted, the API, the quality bars, the mapping from Elixir |
+| [../java/README.md](../java/README.md) | The Java 21 / Spring Boot build: how to run it, what is converted, the API, the quality bars, layout |
+| [architecture/13-java-architecture.md](architecture/13-java-architecture.md) | **Java build structure**: packages, the step/workflow engine, state machine, sequence, extension points, compatibility with Elixir, mapping |
 | [USER_GUIDE.md](USER_GUIDE.md) | Running and watching the system: dashboard, breaking providers, the Test lab, the audit log, replay, recovery, production settings |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | Set-up, commands, **quality limits and how they are enforced**, layout, conventions, recipes |
 | [TESTING.md](TESTING.md) | Test layers, gates and thresholds, testing by hand in the lab, writing tests, known flaky tests, what is not covered |
@@ -18,6 +19,7 @@
 | [architecture/06-data-model.md](architecture/06-data-model.md) | Entity-relationship model and invariants |
 | [architecture/07-observability-and-performance.md](architecture/07-observability-and-performance.md) | Metrics and monitoring design |
 | [compliance/COMPLIANCE_EVIDENCE.md](compliance/COMPLIANCE_EVIDENCE.md) | PCI DSS and Dodd-Frank: what evidence exists, what is missing |
+| [adr/0016-extensible-domain-model.md](adr/0016-extensible-domain-model.md) | Steps, workflows, capabilities and criteria are values, not enum members |
 | [architecture/11-review-workflow.md](architecture/11-review-workflow.md) | Review workflow: queue, check, retry, resolve, write-ahead, rebuilt from the log |
 | [architecture/12-currencies.md](architecture/12-currencies.md) | Currencies: pricing by pair, provider capability, regional currency rules |
 | [architecture/10-back-pressure.md](architecture/10-back-pressure.md) | Back-pressure: admission limit, bulkhead priority classes, waiting instead of failing |

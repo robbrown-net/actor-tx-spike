@@ -138,6 +138,7 @@ These came from the owner and are standing rules.
 * **Two-leg lifecycle**: quote, accept, authorise, pay, then settlement phases with regional cut-offs (e.g. 18:00 UK local).
 * **A sentinel** that checks provider version, up-state and response time on a configurable cadence.
 * **Gradual recovery** rather than snap-back.
+* **"Enums are an anti-pattern for object-oriented design"** (2026-10-23, during the Java conversion). Asked where design change will come from and how often, the answer was: plan for more steps, per-corridor workflows, asynchronous settlement and new routing criteria. Result: steps, workflows, operations, phases, provider capabilities and routing criteria became values and objects, the duplicated outcome enums became one, and the remaining closed enums are to be reviewed again whenever the domain changes (ADR 0016). The enum that drove behaviour (`Operation`) had been written by the assistant; the owner's challenge, and the evidence (four parallel lookup maps and three business-rule conditionals in the engine) is what changed it.
 
 ## 7. What was built, in order
 
@@ -165,6 +166,11 @@ These came from the owner and are standing rules.
 | Load and back-pressure | Admission control, bulkhead priority classes, waiting instead of failing, a backing-off sender, `mix load`; 30% to 99.8% completion on a 2,000 burst (ADR 0013, LOAD_RESULTS) |
 | Bulk send | A tab that sends 1 to 10,000 transactions with random amounts, a settable pause, optional seed and a "randomise everything" mode; currencies carried on requests (architecture/09) |
 | Documentation pass | Developer, testing, requirements and user guides; diagrams and quality snapshot brought up to date |
+| Java port, chunk 2 | Pay over HTTP: event bus, the payment engine, hash-chained audit log and router with the write-ahead barrier, admission control; four more modules ported by smaller-model subagents in worktrees (event bus, audit, economics, guarantees and cut-offs), reviewed, merged and wired |
+| Java port, chunk 3 | Replay, review workflow, bulk send and load runner, metrics, the existing dashboard served by Spring (four more subagent ports); the replay check found a journal key the Java side had written differently from the Elixir side |
+| Extensible domain model | Steps, workflows, provider capabilities, asynchronous step completion, pluggable routing criteria, one shared outcome vocabulary, named event kinds and a `tx_received` schema version (ADR 0016); two subagents did the criteria and outcome refactors |
+| Java run-time fixes | The dashboard drew nothing because the Java API lacked a provider field the page maps over; the Performance tab was rebuilt for JVM figures; a server started with `spring-boot:run` broke when a build replaced its classes, so `./java/run` runs a jar (architecture/13) |
+| Documentation pass (Java) | Architecture 13, developer, testing, requirements and user guides, quality snapshot, roadmap and ADRs brought up to date for the Java build |
 
 ## 8. Open questions
 
@@ -180,6 +186,7 @@ These came from the owner and are standing rules.
 | Q8 | How should provider quote and call costs be accounted (rate limits, fees to us)? | Hedging is not free |
 | Q9 | What are the real latency/throughput targets? | Decides the performance work and when Rust might matter |
 | Q11 | Which strategy changes will be tried against a real day, and what counts as "better" (net, latency, failure rate, exposure)? | Decides which metrics `WhatIf` must report and which inputs must be journalled |
+| Q12 | Which of the closed enums will really stay closed (instrument, customer type, outcome, breaker)? | Each is a bet; wrong ones are costly once logs and tools depend on their names |
 | Q10 | Who resolves `needs_review`, how fast, with what tools? | UC-4 is unbuilt |
 
 ## 9. Risks
@@ -219,6 +226,10 @@ These came from the owner and are standing rules.
 | R34 | The review workflow has no four-eyes approval, assignment or deadlines, and a manual resolution does not adjust the economics ledger | medium | medium | Add approval and deadlines when real reviewers exist; book manual outcomes in the ledger |
 | R35 | Currencies share one two-decimal model (JPY and KRW have no minor units) and the price list is fixed data | certain | low | Per-currency exponents and a rate feed before any real pricing |
 | R33 | Admission refusals leave no record (by design) and recovery-resumed transactions bypass the limit | low | low | Record refusals as counters in the metrics; count resumed transactions when recovery is automatic |
+| R36 | The dashboard page reads many JSON fields on every frame and has no automated test: a missing field stopped it drawing (seen 2026-10-23) | medium | high for the demo | A test pins the provider fields; add a headless-browser smoke test |
+| R37 | Audit logs written by Java and by Elixir are not cross-verified (canonical JSON of floats and escapes could differ) | medium | high | Verify each side's logs with the other's verifier before relying on mixed logs |
+| R38 | Closed enums (`Outcome`, `Breaker`, `HealthState`, `Instrument`, `CustomerType`, `BulkheadClass`, review status, `Mode.Kind`) are bets that the sets are closed | medium | medium | Review them whenever the domain changes (ROADMAP) |
+| R39 | The review service lists the standard steps itself, and replay rebuilds only three routing weights: a new step or criterion is not fully reflected in review and replay | certain once used | medium | Derive both from the recorded workflow and policy (ROADMAP follow-ups) |
 | R30 | A one-off cascade of failures from a failed global audit sink was seen twice in full `mix test` runs and never reproduced | low | medium | If it recurs keep the first failure's output; suspected shared global state between suites |
 | R31 | `selection_test` "mixed providers" compares latencies a millisecond apart and can flip under heavy parallel load | low | low | Re-run alone; make the fake's latencies explicit when next touched |
 

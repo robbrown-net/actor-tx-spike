@@ -225,3 +225,29 @@ counsel: do not treat them as legal advice.
 unknown. *Compensation*: undoing what was done at a provider. *Guarantee*: a merchant's promised rate for
 a period. *Cut-off*: the regional deadline for settlement. *Residency*: records stay in the regions they
 must. *Batch*: a run of many transactions sent from the Bulk send tab. *Seed*: a number that makes a random batch repeat exactly. Full glossary: [architecture/02](architecture/02-domain-model.md).
+
+## 12. Running the Java build
+
+The Java 21 / Spring Boot build serves the same dashboard.
+
+```sh
+./java/run --actortx.audit.dir=/tmp/actortx-audit --actortx.demo.pace=0.3
+```
+
+Open http://127.0.0.1:4040 (loopback only; there is no authentication). `./java/run` builds a jar and runs it, so you can build or test in another terminal without breaking the server. `--actortx.audit.dir` writes the hash-chained audit logs (one per region plus `GLOBAL`); without it nothing is written to disk and replay has nothing to read. `--actortx.demo.pace` sets provider speed (1.0 is slow enough to watch, 0.05 is fast). Stop it with Ctrl-C.
+
+**What works the same:** sending a payment, the story, breaking providers (slow, stall, error, reject, authorise fails, pay answer lost, pay vanishes, settlement fails, version drift), cut-offs, the admission limit, the Review tab (check, retry, resolve), Bulk send (including "randomise everything"), the Performance tab (JVM figures: heap, non-heap, CPU, GC, threads, in place of the BEAM's), the Economics and Guarantee panels.
+
+**What is not there yet:** the **Auto**, **Pace** and **Policy** controls and the **Test lab** answer "not available in the Java port yet". State is in memory: restarting forgets transactions in flight (recovery after restart is not ported); the audit logs on disk remain.
+
+**From the command line:**
+
+| Request | Returns |
+|---|---|
+| `POST /api/payments` `{amount, merchant_id, customer_id, origin_region, destination_region, instrument, customer_type, source_currency, destination_currency}` | `202 {id}`; `422` if invalid; `429` with `Retry-After` at the admission limit |
+| `GET /api/payments/{id}` and `/result?timeout_ms=` | the transaction: phase, steps, history, outcome (`completed`, `failed`, `needs_review`) |
+| `GET /api/replay` | the audit log checked against the rules and residency |
+| `GET /api/economics`, `/api/guarantees`, `/api/cutoffs`, `/api/metrics`, `/api/providers`, `/api/events` | the figures behind the dashboard |
+| `POST /api/control` `{action: ...}` | provider, cutoff, submit, admission, review and bulk commands |
+
+If the dashboard shows nothing at all, stop any older server (`pkill -f "ActorTxApplication|actor-tx-0.1.0.jar|spring-boot:run"`), restart with `./java/run`, and reload the page.

@@ -219,3 +219,7 @@ Single node. The audit log is now also the recovery store: open transactions res
 * **Runtime:** none beyond OTP/Elixir standard library (JSON module from Elixir 1.18).
 * **Dev/test only:** credo, sobelow, mix_audit (and their transitive deps).
 * **Tooling entry points:** `mix demo` (`--audit`, `--audit-dir`; resumes open transactions at start), `mix audit.verify`, `mix replay` (including `residency`).
+
+## The Java build
+
+The structure of the Java 21 / Spring Boot build (packages, the step and workflow engine, threads, extension points, compatibility and mapping from the OTP components above) is in [13-java-architecture.md](13-java-architecture.md).

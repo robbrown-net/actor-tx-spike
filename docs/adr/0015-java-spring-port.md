@@ -23,3 +23,7 @@ The Elixir/OTP spike did its job: it proved the design (orchestration, idempoten
 * **Rewrite from scratch in Java.** Throws away the tested business rules.
 * **Keep Elixir only.** Fine technically; does not meet the stated ecosystem goal.
 * **Port module by module with no vertical slices.** Hides integration problems until late.
+
+## Outcome (2026-10-23)
+
+Chunks 1 to 3 are largely done (quote and select, pay with the write-ahead audit log, replay, review, bulk send, metrics and the dashboard served by Spring) with the bars held: 673 unit tests, 68 integration tests, mutation score 98% on the pure core. Recovery after restart, the CLI tools and four dashboard controls remain. The engine was reshaped by [ADR 0016](0016-extensible-domain-model.md) so that new steps, workflows and criteria need no engine change. Lessons: a server run from `target/classes` breaks if a build runs beside it (use `./java/run`); the dashboard page is an implicit contract with the JSON the server sends and needs its own test; PMD mis-reports private methods used only through method references.

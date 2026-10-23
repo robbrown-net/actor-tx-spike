@@ -23,6 +23,7 @@ SECTIONS = [
     ("Back-pressure", "architecture/10-back-pressure.md"),
     ("Review workflow", "architecture/11-review-workflow.md"),
     ("Currencies", "architecture/12-currencies.md"),
+    ("Java architecture", "architecture/13-java-architecture.md"),
     ("Compliance evidence", "compliance/COMPLIANCE_EVIDENCE.md"),
     ("Java port", "../java/README.md"),
     ("Developer guide", "DEVELOPER_GUIDE.md"),

@@ -250,17 +250,43 @@ Manual review of the dashboard server (the only network-facing code):
 5. Authentication and connection limits before any non-loopback exposure.
 6. Record-and-replay contract tests once a real provider adapter exists.
 
-## 9. The Java port (chunk 1: quote and select), measured 2026-10-23
+## 9. The Java build (chunks 1 to 3 and the extensible domain model), measured 2026-10-23
 
 | Area | Result | Bar | Verdict |
 |---|---|---|---|
-| Unit tests | **198**, 0 failures | n/a | ✅ |
-| Unit coverage | **100% lines**, **99.4% branches** | 100% lines, 90% branches | ✅ |
-| Integration tests | **20**, 0 failures (HTTP end to end, scheduled sentinel, provider resilience, a world of mixed providers) | n/a | ✅ |
-| Integration coverage | **90.1% lines** | at least 85% | ✅ |
-| Mutation testing (PIT, all default mutators, pure core) | **381 of 389** killed (98%); 8 survivors under review | n/a | ✅ |
-| Cyclomatic complexity, nesting, method size, duplication | at the limits (4, 2, 30 lines, 50 tokens), main and test code | same as Elixir | ✅ |
-| Source | 93 files; about 3,050 code lines main, 3,500 test | n/a | |
+| Unit tests | **673**, 0 failures | n/a | ✅ |
+| Unit coverage | **100% lines** (4,652 of 4,652), **97.2% branches** | 100% lines, 90% branches | ✅ |
+| Integration tests | **68**, 0 failures (the whole application over HTTP, real audit log on disk, real provider servers, every package end to end) | n/a | ✅ |
+| Integration coverage | **86.7% lines** (4,033 of 4,652; branches 70.0%) | at least 85% lines | ✅ (1.7 points of headroom) |
+| Mutation testing (PIT, all default mutators, the pure core: money, policy and criteria, eligibility, health, limits, selector, validation) | **401 of 409** killed (98%); line coverage of the mutated classes 99% | n/a | ✅ |
+| Cyclomatic complexity (Checkstyle) | at most 4 per method, main and test code; 0 violations | 4 | ✅ |
+| Nesting, method length, parameters, NPath, boolean expressions | at the limits (2, 30 lines, 6, 16, 3); 0 violations | same as Elixir | ✅ |
+| Duplication (PMD CPD, main code) | none at 50 tokens | 50 tokens | ✅ |
+| Static analysis (PMD) | 0 violations | 0 | ✅ |
+| Formatting and warnings | Spotless clean; `-Xlint:all -Werror` | clean | ✅ |
+| Source | 186 main files, about **10,300 code lines**; 122 test files, about **12,200 code lines** (tests are larger than the code) | n/a | |
 
-Details and the mapping from the Elixir bars: [../../java/README.md](../../java/README.md).
+### Thresholds, in one place
 
+| Gate | Threshold | Enforced by |
+|---|---|---|
+| Unit line coverage | 100% | JaCoCo `check-unit`, fails `verify` |
+| Unit branch coverage | 90% | JaCoCo `check-unit` |
+| Integration line coverage | 85% | JaCoCo `check-it` |
+| Cyclomatic complexity | 4 | Checkstyle |
+| Nesting (if, for / try) | 2 / 1 | Checkstyle |
+| Method length / parameters | 30 lines / 6 | Checkstyle |
+| NPath / boolean expression | 16 / 3 | Checkstyle |
+| Cognitive complexity | 6 | PMD |
+| Duplicated block (main code) | 50 tokens | PMD CPD |
+| Warnings | none (`-Werror`, `-Xlint:all`) | javac |
+| Formatting | google-java-format | Spotless `check` |
+
+### What the numbers do not say
+
+* **Branch coverage in the integration suite is 70%**, and the 85% gate is on lines only. The engine's failover, doubt and compensation paths are covered by unit tests; the integration suite covers them end to end through `PaymentResilienceIT` and `PaymentIT`, but not every branch.
+* **Mutation testing still covers only the pure core.** It does not reach the payment engine, replay, review, bulk or the event bus, where concurrency and ordering bugs would live. Widening `targetClasses` to `payment.*` is the obvious next step; it is slower.
+* **Coverage of the dashboard's JavaScript is nil** (see [TESTING](../TESTING.md) section 7). A missing JSON field stopped the page drawing once; a test pins the provider fields now.
+* **The measurements are per `./java/jmvn verify` on one machine** (macOS, JDK 21.0.12); CI runs the same command, and its result has not been checked here.
+
+Details, the layout and the mapping from the Elixir bars: [../../java/README.md](../../java/README.md) and [../architecture/13-java-architecture.md](../architecture/13-java-architecture.md).

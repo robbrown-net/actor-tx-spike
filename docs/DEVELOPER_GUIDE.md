@@ -190,19 +190,54 @@ See [ROADMAP](ROADMAP.md) and the risk list in [ENGINEERING_STORY](ENGINEERING_S
 is recorded not enforced; no forward deal lifecycle, sanctions/KYC gates or trade reporting; the
 jurisdiction matrix is unverified by counsel; the dashboard has no authentication (loopback only).
 
-## 9. The Java and Spring port
+## 9. The Java and Spring build
 
-A Java 21 / Spring Boot 3 port lives in [`java/`](../java/README.md) ([ADR 0015](adr/0015-java-spring-port.md)). It is converted in chunks that each add an end-to-end capability, and is held to the same bars as the Elixir code, enforced by `./jmvn verify` and CI:
+A Java 21 / Spring Boot 3 build lives in [`java/`](../java/README.md) ([ADR 0015](adr/0015-java-spring-port.md), [ADR 0016](adr/0016-extensible-domain-model.md), structure in [architecture/13](architecture/13-java-architecture.md)). It is held to the same bars as the Elixir code, enforced by `./jmvn verify` and CI (`.github/workflows/java.yml`):
 
 | Bar | Elixir | Java |
 |---|---|---|
-| Cyclomatic complexity per function | 4 (Credo) | 4 (Checkstyle) |
-| Nesting depth | 2 | 2 (`NestedIfDepth`, `NestedForDepth`) |
-| Size | ABC 40 | method length 30, NPath 16, boolean expression 3, cognitive complexity 6 (PMD) |
-| Duplication | mass 16 | PMD CPD, 50 tokens |
-| Unit coverage | 100% lines | 100% lines and 90% branches |
-| Integration coverage | above 85% | at least 85% lines |
+| Cyclomatic complexity per function | 4 (Credo) | 4 (Checkstyle `CyclomaticComplexity`) |
+| Nesting depth | 2 | 2 (`NestedIfDepth`, `NestedForDepth`), try 1 |
+| Size | ABC 40 | method length 30, NPath 16, boolean expression 3, parameters 6, cognitive complexity 6 (PMD) |
+| Duplication | mass 16 | PMD CPD, 50 tokens (main code) |
+| Unit coverage | 100% lines | 100% lines and 90% branches (JaCoCo; measured 100% / 97.2%) |
+| Integration coverage | above 85% | at least 85% lines (measured 86.7%) |
 | Mutation testing | `scripts/mutate.py` (sampled) | PIT, all default mutators |
+| Formatting, warnings | `mix format`, warnings as errors | Spotless (google-java-format), `-Xlint:all -Werror` (no raw or unchecked types) |
 
-Commands (from `java/`): `./jmvn verify` (everything), `./jmvn spotless:apply` (format), `./jmvn spring-boot:run` (serve on 127.0.0.1:4040), `./jmvn -Pmutation test-compile org.pitest:pitest-maven:mutationCoverage` (mutation testing). The toolchain (JDK 21, Maven 3.9) is vendored in `.tooling/` like the Elixir one. Unit tests are `*Test`, integration tests `*IT`; test code is held to the same limits.
+### Commands (from the repo root)
 
+| Command | What it does |
+|---|---|
+| `./java/jmvn verify` | everything: format check, Checkstyle, PMD, CPD, unit and integration tests, coverage gates |
+| `./java/jmvn -q spotless:apply` | fix formatting (run before `verify`) |
+| `./java/run [--actortx.audit.dir=DIR] [--actortx.demo.pace=0.3]` | build a jar and run it on http://127.0.0.1:4040 (loopback only) |
+| `./java/jmvn spring-boot:run` | the same from `target/classes`. **Do not build or test in another terminal while it runs**: the build replaces the classes under the live JVM and the server fails with `NoClassDefFoundError`. Use `./java/run` if you also build |
+| `./java/jmvn -Pmutation test-compile org.pitest:pitest-maven:mutationCoverage` | mutation testing (several minutes) |
+
+The toolchain (JDK 21, Maven 3.9) is vendored in `.tooling/` like the Elixir one; no installation. Unit tests are `*Test`, integration tests `*IT`; test code is held to the same limits (a test method over 30 lines is split).
+
+### Layout
+
+`java/src/main/java/net/robbrown/actortx/`: `money`, `validation`, `policy` (+ `criteria`), `eligibility`, `provider`, `selection`, `payment` (the engine), `events`, `audit`, `economics`, `guarantee`, `metrics`, `narrative`, `review`, `replay`, `bulk`, `service`, `api`, `tooling`. The diagram is in [architecture/13](architecture/13-java-architecture.md). `tooling/` (the demo world and Spring wiring) and the application entry point are the only coverage exclusions.
+
+### Recipes (Java)
+
+| To add... | Do this |
+|---|---|
+| A payment step | Implement `Step` (or `Steps.reversible(...)`): operation, key name, verb, phase, label, compensation or none. Put it in a `Workflow`. A step with no compensation is a point of no return. Add a test like `WorkflowTest` |
+| A workflow per corridor or provider | A `Workflows` function: `PaymentServices.withWorkflows((request, providerId) -> ...)` |
+| An asynchronous step | Declare it `confirmedByStatus`; the engine confirms it by asking the provider |
+| A provider capability | Override `ProviderAdapter.perform` and `supports`; a provider that lacks an operation of the workflow is skipped |
+| A routing criterion | One class implementing `Criterion` (score 0 to 1, higher better); add it to `Criteria.standard()`; weights are keyed by its name |
+| An event kind | A constant in `EventKinds`; update the readers (replay rules, review, metrics) that match on it. Changing the shape of `tx_received` bumps `EventKinds.SCHEMA_VERSION` |
+| A dashboard command | A `ControlAction` bean (`name()` + `apply(command)`); `ControlController` dispatches by name |
+| A fault preset | `tooling/ProviderPresets` |
+
+### Conventions and traps
+
+* Prefer values and sealed types to enums where a set will grow ([ADR 0016](adr/0016-extensible-domain-model.md)); a closed enum is a bet that the set is closed, and the roadmap asks for them to be reviewed again.
+* PMD 7 mis-reports a private method that is used only through a method reference (`Foo::bar`) as unused on clean builds. Use a lambda.
+* `-Werror`: no raw types, no unchecked casts (use a small test helper such as `Json`).
+* The dashboard page is `priv/panel.html`, shared with the Elixir build and served by Spring from the classpath. The page reads many JSON fields on every frame; a missing field can stop it drawing at all (it happened with a provider's `faults`). `PaymentIT` pins the provider fields; when you change a view that the page reads, run the dashboard by hand as well.
+* Audit logs written by Java have not been cross-verified with the Elixir verifier.

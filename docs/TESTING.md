@@ -105,7 +105,42 @@ Note that randomised batches deliberately include combinations the rules refuse.
 | `audit_test.exs` "records are made durable together" | asserts the group-commit flag within a 50 ms window | passes alone; seen once in a full parallel run on a loaded machine |
 | A one-off cascade of failures from a failed global audit sink | seen twice in full `mix test` runs (once after running `mix test.system` immediately before); never reproduced in 25+ attempts | recorded as unexplained in the engineering story (risk list); if it recurs, keep the first failure's output |
 
-## 7. Not covered
+## 7. The Java suites
+
+The Java build ([architecture/13](architecture/13-java-architecture.md)) has its own suites under `java/src/test/java/net/robbrown/actortx/`, run by `./java/jmvn verify`. Measured 2026-10-23: **673 unit tests** (100% lines, 97.2% branches), **68 integration tests** (86.7% lines), mutation score reported in the [quality snapshot](quality/QUALITY_SNAPSHOT.md).
+
+| Layer | Naming | What it is | Gate |
+|---|---|---|---|
+| Unit | `*Test` (surefire) | one class or a small group; fake providers and stub services; fast and deterministic (injected clocks, sleepers and random sources) | 100% lines, 90% branches (JaCoCo) |
+| Integration | `*IT` (failsafe) | real threads, real event bus, real hash-chained audit log in a temp directory, real provider servers with scripted fakes; the whole Spring application over HTTP (`ApiIT`, `PaymentIT`, `SentinelIT`) | at least 85% lines |
+| Mutation | PIT profile | all default mutators over the pure core | tracked, not a gate |
+| Static | Checkstyle, PMD, CPD, Spotless, `-Werror` | limits as in [DEVELOPER_GUIDE](DEVELOPER_GUIDE.md) section 9 | build fails |
+
+What the notable suites prove:
+
+* `PaymentTest` (unit) and `PaymentResilienceIT`: every payment path: completes, fails over after rejection or error, retries with the same key, waits for a busy provider, reconciles a lost answer instead of repeating it, goes to review rather than to another provider when payment is unresolved, undoes in the right order, refuses to move money when the log cannot be written, and honours cut-offs.
+* `WorkflowTest`: the design claim of [ADR 0016](adr/0016-extensible-domain-model.md): an extra step, per-corridor workflows, a provider lacking a capability and an asynchronously confirmed step all work **without changing the engine**. `SelectorCriteriaTest` does the same for a new routing criterion.
+* `PaymentIT`: the whole application over HTTP: a payment is recorded on disk and **replays clean against the rules**, jurisdiction refusal, a cut-off that passes, a settlement failure that appears in the review queue and is checked and resolved, a bulk batch that finishes, the admission limit, the event stream, and the dashboard page and the provider fields it reads.
+* `ReplayIT`, `AuditIT`, `ReviewWorkflowIT`, `BulkIT`, `MetricsIT`, `EventBusIT`, `GuaranteeWorldIT`, `EconomicsLedgerIT`: each package end to end on real components.
+
+### Java: known time-sensitive tests and traps
+
+| Test or situation | Why | Handling |
+|---|---|---|
+| `ProviderResilienceIT`, `SelectionWorldIT` | breaker cool-downs and latency ordering are in milliseconds | cool-downs are set to 300 ms and assertions are synchronous; re-run alone if one fails on a loaded machine |
+| `PaymentIT` event stream | waits briefly for a client to connect before sending | uses a short sleep; if it flakes, replace with a subscribe-ready signal |
+| Running the server while building | `spring-boot:run` loads `target/classes`; a build replaces them and the server breaks with `NoClassDefFoundError` | run the server with `./java/run` (a jar) |
+| PMD "unused private method" | a private method used only through a method reference is mis-reported on clean builds | use a lambda |
+
+### Java: what is not covered
+
+* The dashboard's JavaScript has no automated test. A regression test pins the JSON the page reads, and the page was checked by hand in a browser (transactions, review, bulk, performance), but a rendering bug can still pass the build.
+* Audit logs written by Java have not been verified by the Elixir verifier (and the reverse).
+* Recovery after restart, the CLI tools and the dashboard controls Auto, Pace, Policy and the Test lab are not built in Java, so untested.
+* No load results for the Java build yet (`LoadRunner` exists and is tested; no measurement has been published).
+* Mutation testing covers the pure core, not the engine's concurrency.
+
+## 8. Not covered (Elixir)
 
 * No load or soak testing; the metrics layer is ready to observe one.
 * No branch coverage (not available in the toolchain); mutation testing stands in, sampled.

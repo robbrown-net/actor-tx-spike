@@ -66,3 +66,7 @@ with a limit of 100 completes 1,000 of 1,000.
   add cost; measure with `--audit-dir` before choosing a production limit.
 * Recovery-resumed transactions are not counted by admission control.
 * The production default is 100 (`config/prod.exs`, override with `ACTOR_TX_MAX_IN_FLIGHT`), chosen from this table.
+
+## The Java build
+
+The Java build has a load runner (`bulk.LoadRunner`: N payments at a rate and concurrency, latency percentiles, outcome counts, a table in the style of the one above) and the same admission control and priority bulkheads ([architecture/13](../architecture/13-java-architecture.md)). **No Java measurement has been published yet**, so nothing above applies to it. The runner is unit and integration tested against a stub; it has not been run against the demo world, and it has no command-line entry point yet.
