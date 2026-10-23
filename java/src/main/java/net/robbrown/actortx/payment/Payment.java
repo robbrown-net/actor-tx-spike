@@ -26,6 +26,7 @@ import net.robbrown.actortx.payment.Result.Summary;
 import net.robbrown.actortx.policy.Policy;
 import net.robbrown.actortx.provider.Answer;
 import net.robbrown.actortx.provider.Operation;
+import net.robbrown.actortx.provider.ProviderAdapter;
 import net.robbrown.actortx.provider.ProviderServer;
 import net.robbrown.actortx.provider.Receipt;
 import net.robbrown.actortx.selection.Candidate;
@@ -62,34 +63,6 @@ import net.robbrown.actortx.selection.Selection.Outcome;
  * does is announced to the event sink.
  */
 public final class Payment implements Runnable {
-
-  private static final List<Operation> STEPS =
-      List.of(Operation.ACCEPT_QUOTE, Operation.AUTHORISE, Operation.PAY, Operation.SETTLE);
-  private static final Map<Operation, Operation> UNDO =
-      Map.of(
-          Operation.ACCEPT_QUOTE, Operation.CANCEL_ACCEPT,
-          Operation.AUTHORISE, Operation.VOID_AUTHORISATION);
-  private static final Map<Operation, String> KEY_STEP =
-      Map.of(
-          Operation.ACCEPT_QUOTE, "accept",
-          Operation.AUTHORISE, "authorise",
-          Operation.PAY, "pay",
-          Operation.SETTLE, "settle");
-  private static final Map<Operation, String> VERB =
-      Map.of(
-          Operation.ACCEPT_QUOTE, "accept the quote",
-          Operation.AUTHORISE, "authorise the payment",
-          Operation.PAY, "make the payment",
-          Operation.SETTLE, "settle the payment",
-          Operation.CANCEL_ACCEPT, "cancel the accepted quote",
-          Operation.VOID_AUTHORISATION, "void the authorisation",
-          Operation.REFUND, "refund");
-  private static final Map<Operation, Phase> PHASE =
-      Map.of(
-          Operation.ACCEPT_QUOTE, Phase.ACCEPTING,
-          Operation.AUTHORISE, Phase.AUTHORISING,
-          Operation.PAY, Phase.PAYING,
-          Operation.SETTLE, Phase.SETTLING);
 
   /**
    * Who might serve a transaction and how the choice is made.
@@ -135,7 +108,8 @@ public final class Payment implements Runnable {
   private final PaymentServices services;
   private final CompletableFuture<Result> finished = new CompletableFuture<>();
   private final Deque<Candidate> candidates = new ArrayDeque<>();
-  private final List<Operation> done = new ArrayList<>();
+  private final List<Step> done = new ArrayList<>();
+  private Workflow workflow = Workflow.standard();
   private final List<HistoryEntry> history = new ArrayList<>();
   private final Map<String, StepHandler> handlers = new java.util.HashMap<>();
   private volatile Phase phase = Phase.RECEIVED;
@@ -145,7 +119,7 @@ public final class Payment implements Runnable {
   private String lastFailure;
 
   /** One answer to one attempt at a step. */
-  private record Call(Operation op, Answer<Receipt> answer, int attempt) {}
+  private record Call(Step step, Answer<Receipt> answer, int attempt) {}
 
   /** Reacts to one kind of answer to a step. */
   @FunctionalInterface
@@ -211,7 +185,7 @@ public final class Payment implements Runnable {
           id(),
           phase,
           chosen == null ? null : chosen.providerId(),
-          done.stream().map(Operation::wire).toList(),
+          done.stream().map(step -> step.operation().wire()).toList(),
           List.copyOf(history),
           result);
     }
@@ -353,19 +327,49 @@ public final class Payment implements Runnable {
         new Failed("exhausted: " + why), "every provider has been tried; giving up (" + why + ")");
   }
 
+  /** Why a candidate is passed over. */
+  private record Skip(String kind, String why) {}
+
   private Optional<Candidate> nextViable() {
     long now = services.clock().getAsLong();
     while (!candidates.isEmpty()) {
       Candidate c = candidates.poll();
-      if (!c.quote().expired(now)) {
+      Optional<Skip> skip = skipReason(c, now);
+      if (skip.isEmpty()) {
         return Optional.of(c);
       }
       note(
-          "quote_expired",
-          "skipping " + c.providerId() + ": its quote has expired",
+          skip.get().kind(),
+          "skipping " + c.providerId() + ": " + skip.get().why(),
           Map.of("provider", c.providerId()));
     }
     return Optional.empty();
+  }
+
+  // A candidate is passed over if its quote has lapsed or it cannot do every step of the workflow
+  // this route calls for. The workflow it would use is remembered when it is not passed over.
+  private Optional<Skip> skipReason(Candidate c, long now) {
+    if (c.quote().expired(now)) {
+      return Optional.of(new Skip("quote_expired", "its quote has expired"));
+    }
+    Workflow route = services.workflows().forRoute(request, c.providerId());
+    Optional<Operation> missing = unsupported(route, c.providerId());
+    missing.ifPresentOrElse(op -> {}, () -> workflow = route);
+    return missing.map(op -> new Skip("unsupported_step", "it cannot " + op.wire()));
+  }
+
+  private Optional<Operation> unsupported(Workflow route, String providerId) {
+    ProviderServer server = (ProviderServer) providerOf(providerId).source();
+    return route.steps().stream()
+        .flatMap(step -> operationsOf(step).stream())
+        .filter(op -> !server.supports(op))
+        .findFirst();
+  }
+
+  private static List<Operation> operationsOf(Step step) {
+    List<Operation> ops = new ArrayList<>(List.of(step.operation()));
+    step.compensation().ifPresent(c -> ops.add(c.operation()));
+    return ops;
   }
 
   private void choose(Candidate c) {
@@ -396,8 +400,8 @@ public final class Payment implements Runnable {
   // ---- the steps ---------------------------------------------------------------------------
 
   private Flow runSteps() {
-    for (Operation op : STEPS) {
-      Flow flow = step(op);
+    for (Step step : workflow.steps()) {
+      Flow flow = step(step);
       if (!(flow instanceof Flow.Next)) {
         return flow;
       }
@@ -405,53 +409,53 @@ public final class Payment implements Runnable {
     return complete();
   }
 
-  private Flow step(Operation op) {
-    Reaction reaction = attemptStep(op, 1);
+  private Flow step(Step step) {
+    Reaction reaction = attemptStep(step, 1);
     while (reaction instanceof Reaction.Retry retry) {
       pause(retry.delayMs());
-      reaction = attemptStep(op, retry.attempt());
+      reaction = attemptStep(step, retry.attempt());
     }
     return ((Reaction.Final) reaction).flow();
   }
 
-  private Reaction attemptStep(Operation op, int attempt) {
-    Optional<Flow> blocked = deadlineGuard(op);
+  private Reaction attemptStep(Step step, int attempt) {
+    Optional<Flow> blocked = deadlineGuard(step);
     if (blocked.isPresent()) {
       return new Reaction.Final(blocked.get());
     }
-    String key = key(op);
+    String key = key(step);
     note(
         "step_started",
         "asking %s to %s (attempt %d, key %s)"
-            .formatted(current.providerId(), VERB.get(op), attempt, key),
-        Map.of("provider", current.providerId(), "op", op.wire(), "key", key, "attempt", attempt));
-    phase = PHASE.get(op);
+            .formatted(current.providerId(), step.verb(), attempt, key),
+        Map.of(
+            "provider",
+            current.providerId(),
+            "op",
+            step.operation().wire(),
+            "key",
+            key,
+            "attempt",
+            attempt));
+    phase = step.phase();
     Optional<String> unavailable = services.barrier().get();
     if (unavailable.isPresent()) {
       return new Reaction.Final(auditUnavailable(unavailable.get()));
     }
-    return react(op, call(op, key, attempt), attempt);
+    return react(step, call(step, key, attempt), attempt);
   }
 
-  private Answer<Receipt> call(Operation op, String key, int attempt) {
+  private Answer<Receipt> call(Step step, String key, int attempt) {
     long started = System.nanoTime();
-    Answer<Receipt> answer = server().invoke(op, a -> invokeStep(a, op, key), stepTimeout());
-    journal("step", op, key, attempt, answer, started);
+    Answer<Receipt> answer =
+        server()
+            .invoke(step.operation(), a -> step.perform(a, current.quote(), key), stepTimeout());
+    journal("step", step.operation(), key, attempt, answer, started);
     return answer;
   }
 
-  private Answer<Receipt> invokeStep(
-      net.robbrown.actortx.provider.ProviderAdapter adapter, Operation op, String key) {
-    return switch (op) {
-      case ACCEPT_QUOTE -> adapter.acceptQuote(current.quote(), key);
-      case AUTHORISE -> adapter.authorise(current.quote(), key);
-      case PAY -> adapter.pay(current.quote(), key);
-      default -> adapter.settle(key);
-    };
-  }
-
-  private Reaction react(Operation op, Answer<Receipt> answer, int attempt) {
-    return handlers.get(answer.tag()).handle(new Call(op, answer, attempt));
+  private Reaction react(Step step, Answer<Receipt> answer, int attempt) {
+    return handlers.get(answer.tag()).handle(new Call(step, answer, attempt));
   }
 
   private void registerHandlers() {
@@ -461,7 +465,7 @@ public final class Payment implements Runnable {
         call ->
             new Reaction.Final(
                 stepFailed(
-                    call.op(),
+                    call.step(),
                     "rejected: " + ((Answer.Rejected<Receipt>) call.answer()).reason())));
     handlers.put("error", this::stepErrored);
     handlers.put("timeout", this::inDoubt);
@@ -469,70 +473,79 @@ public final class Payment implements Runnable {
   }
 
   private Reaction stepSucceeded(Call call) {
-    Operation op = call.op();
+    Step step = call.step();
+    if (step.confirmedByStatus()) {
+      return new Reaction.Final(reconcile(step));
+    }
+    String op = step.operation().wire();
     note(
         "step_succeeded",
-        current.providerId() + " did " + op.wire(),
-        Map.of("provider", current.providerId(), "op", op.wire()));
-    done.add(op);
+        current.providerId() + " did " + op,
+        Map.of("provider", current.providerId(), "op", op));
+    done.add(step);
     return new Reaction.Final(new Flow.Next());
   }
 
   private Reaction stepErrored(Call call) {
-    Operation op = call.op();
+    String op = call.step().operation().wire();
     int attempt = call.attempt();
     String reason = ((Answer.Error<Receipt>) call.answer()).reason();
     if ("overloaded".equals(reason)) {
       note(
           "step_retry",
-          "%s is busy (%s not sent); asking again shortly"
-              .formatted(current.providerId(), op.wire()),
-          Map.of("provider", current.providerId(), "op", op.wire()));
+          "%s is busy (%s not sent); asking again shortly".formatted(current.providerId(), op),
+          Map.of("provider", current.providerId(), "op", op));
       return new Reaction.Retry(attempt, options.backoffMs());
     }
     if (attempt < options.maxAttempts()) {
       note(
           "step_retry",
           "%s errored on %s (%s); retrying (attempt %d/%d)"
-              .formatted(
-                  current.providerId(), op.wire(), reason, attempt + 1, options.maxAttempts()),
-          Map.of("provider", current.providerId(), "op", op.wire()));
+              .formatted(current.providerId(), op, reason, attempt + 1, options.maxAttempts()),
+          Map.of("provider", current.providerId(), "op", op));
       return new Reaction.Retry(attempt + 1, options.backoffMs() * attempt);
     }
-    return new Reaction.Final(stepFailed(op, "error: " + reason));
+    return new Reaction.Final(stepFailed(call.step(), "error: " + reason));
   }
 
-  private Flow stepFailed(Operation op, String reason) {
-    if (op == Operation.SETTLE) {
-      // The payment already happened and cannot be undone: a person must settle it.
+  private Flow stepFailed(Step step, String reason) {
+    if (committed()) {
+      // Something already done cannot be undone: a person must finish what is left.
       return needsReview(
-          "settlement_failed: " + reason,
-          current.providerId() + " could not settle a payment that was already made: " + reason);
+          step.label() + "_failed: " + reason,
+          "%s could not %s after a step that cannot be undone: %s"
+              .formatted(current.providerId(), step.verb(), reason));
     }
     note(
         "step_failed",
-        "%s could not %s: %s".formatted(current.providerId(), VERB.get(op), reason),
-        Map.of("provider", current.providerId(), "op", op.wire(), "reason", reason));
-    return compensate(undosOf(done), new After.FailOver(op.wire() + ": " + reason));
+        "%s could not %s: %s".formatted(current.providerId(), step.verb(), reason),
+        Map.of("provider", current.providerId(), "op", step.operation().wire(), "reason", reason));
+    return compensate(undosOf(done), new After.FailOver(step.operation().wire() + ": " + reason));
+  }
+
+  // Has a step been done that cannot be undone? Past that point the system never guesses.
+  private boolean committed() {
+    return done.stream().anyMatch(step -> !step.reversible());
   }
 
   // ---- doubt ---------------------------------------------------------------------------------
 
   private Reaction inDoubt(Call call) {
-    Operation op = call.op();
+    Step step = call.step();
+    String op = step.operation().wire();
     Answer<Receipt> answer = call.answer();
     note(
         "in_doubt",
         "%s gave no definite answer to %s (%s); it may or may not have happened"
-            .formatted(current.providerId(), op.wire(), answer.tag()),
-        Map.of("provider", current.providerId(), "op", op.wire()));
-    return new Reaction.Final(reconcile(op));
+            .formatted(current.providerId(), op, answer.tag()),
+        Map.of("provider", current.providerId(), "op", op));
+    return new Reaction.Final(reconcile(step));
   }
 
-  private Flow reconcile(Operation op) {
+  private Flow reconcile(Step step) {
     phase = Phase.RECONCILING;
     for (int n = 1; ; n++) {
-      Optional<Flow> flow = reconcileRound(op, n);
+      Optional<Flow> flow = reconcileRound(step, n);
       if (flow.isPresent()) {
         return flow.get();
       }
@@ -541,24 +554,25 @@ public final class Payment implements Runnable {
   }
 
   // One question to the provider; empty means still unresolved, ask again.
-  private Optional<Flow> reconcileRound(Operation op, int n) {
-    Answer<Receipt> status = status(op, n);
+  private Optional<Flow> reconcileRound(Step step, int n) {
+    String op = step.operation().wire();
+    Answer<Receipt> status = status(step, n);
     if (status.isOk()) {
       note(
           "reconciled",
-          current.providerId() + " confirms " + op.wire() + " did happen",
-          Map.of("provider", current.providerId(), "op", op.wire()));
-      done.add(op);
+          current.providerId() + " confirms " + op + " did happen",
+          Map.of("provider", current.providerId(), "op", op));
+      done.add(step);
       return Optional.of(new Flow.Next());
     }
-    if (!irreversible(op)) {
-      return Optional.of(cancelByKey(op, status));
+    if (step.reversible()) {
+      return Optional.of(cancelByKey(step, status));
     }
     if (n >= options.reconcileAttempts()) {
       return Optional.of(
           needsReview(
-              "in_doubt: " + op.wire(),
-              op.wire()
+              "in_doubt: " + op,
+              op
                   + " with "
                   + current.providerId()
                   + " is unresolved; NOT failing over (the payment may already have happened)"));
@@ -566,18 +580,14 @@ public final class Payment implements Runnable {
     note(
         "reconcile_pending",
         "%s cannot yet confirm %s (%s); asking again (%d/%d)"
-            .formatted(
-                current.providerId(), op.wire(), status.tag(), n, options.reconcileAttempts()),
-        Map.of("provider", current.providerId(), "op", op.wire()));
+            .formatted(current.providerId(), op, status.tag(), n, options.reconcileAttempts()),
+        Map.of("provider", current.providerId(), "op", op));
     return Optional.empty();
   }
 
-  private static boolean irreversible(Operation op) {
-    return op == Operation.PAY || op == Operation.SETTLE;
-  }
-
-  private Answer<Receipt> status(Operation op, int n) {
-    String key = key(op);
+  private Answer<Receipt> status(Step step, int n) {
+    Operation op = step.operation();
+    String key = key(step);
     note(
         "status_check",
         "asking " + current.providerId() + " what it holds for " + op.wire(),
@@ -590,28 +600,32 @@ public final class Payment implements Runnable {
     return answer;
   }
 
-  private Flow cancelByKey(Operation op, Answer<Receipt> unresolved) {
+  private Flow cancelByKey(Step step, Answer<Receipt> unresolved) {
+    String op = step.operation().wire();
     note(
         "cancel_by_key",
         "%s cannot confirm %s (%s); cancelling by key to be safe"
-            .formatted(current.providerId(), op.wire(), unresolved.tag()),
-        Map.of("provider", current.providerId(), "op", op.wire()));
-    List<Operation> pending = new ArrayList<>(done);
-    pending.add(op);
-    return compensate(undosOf(pending), new After.FailOver("in_doubt: " + op.wire()));
+            .formatted(current.providerId(), op, unresolved.tag()),
+        Map.of("provider", current.providerId(), "op", op));
+    List<Step> pending = new ArrayList<>(done);
+    pending.add(step);
+    return compensate(undosOf(pending), new After.FailOver("in_doubt: " + op));
   }
 
   // ---- compensation ----------------------------------------------------------------------------
 
-  private record Undo(Operation undo, Operation original) {}
+  private record Undo(Compensation compensation, Step original) {
+    Operation operation() {
+      return compensation.operation();
+    }
+  }
 
-  // The undos for what was done, latest first.
-  private static List<Undo> undosOf(List<Operation> steps) {
+  // The undos for what was done, latest first; steps that cannot be undone have none.
+  private static List<Undo> undosOf(List<Step> steps) {
     List<Undo> undos = new ArrayList<>();
     for (int i = steps.size() - 1; i >= 0; i--) {
-      if (UNDO.containsKey(steps.get(i))) {
-        undos.add(new Undo(UNDO.get(steps.get(i)), steps.get(i)));
-      }
+      Step step = steps.get(i);
+      step.compensation().ifPresent(c -> undos.add(new Undo(c, step)));
     }
     return undos;
   }
@@ -654,8 +668,8 @@ public final class Payment implements Runnable {
     String key = key(undo.original());
     note(
         "undo_started",
-        "asking %s to %s (key %s)".formatted(current.providerId(), VERB.get(undo.undo()), key),
-        Map.of("provider", current.providerId(), "op", undo.undo().wire(), "key", key));
+        "asking %s to %s (key %s)".formatted(current.providerId(), undo.compensation().verb(), key),
+        Map.of("provider", current.providerId(), "op", undo.operation().wire(), "key", key));
     Optional<String> unavailable = services.barrier().get();
     if (unavailable.isPresent()) {
       return new Verdict.Stopped(auditUnavailable(unavailable.get()));
@@ -666,17 +680,13 @@ public final class Payment implements Runnable {
   private Answer<Receipt> sendUndo(Undo undo, String key, int attempt) {
     long started = System.nanoTime();
     Answer<Receipt> answer =
-        server().invoke(undo.undo(), a -> invokeUndo(a, undo.undo(), key), stepTimeout());
-    journal("undo", undo.undo(), key, attempt, answer, started);
+        server().invoke(undo.operation(), a -> invokeUndo(a, undo.operation(), key), stepTimeout());
+    journal("undo", undo.operation(), key, attempt, answer, started);
     return answer;
   }
 
-  private static Answer<Receipt> invokeUndo(
-      net.robbrown.actortx.provider.ProviderAdapter adapter, Operation undo, String key) {
-    return switch (undo) {
-      case CANCEL_ACCEPT -> adapter.cancelAccept(key);
-      default -> adapter.voidAuthorisation(key);
-    };
+  private static Answer<Receipt> invokeUndo(ProviderAdapter adapter, Operation undo, String key) {
+    return adapter.perform(undo, null, key);
   }
 
   /** How one attempt at an undo went. */
@@ -699,7 +709,7 @@ public final class Payment implements Runnable {
   }
 
   private Verdict undoVerdict(Undo undo, Answer<Receipt> answer, int attempt) {
-    String op = undo.undo().wire();
+    String op = undo.operation().wire();
     if (answer.isOk()) {
       note(
           "undone",
@@ -730,15 +740,16 @@ public final class Payment implements Runnable {
   // ---- guards
   // ------------------------------------------------------------------------------------
 
-  private Optional<Flow> deadlineGuard(Operation op) {
+  private Optional<Flow> deadlineGuard(Step step) {
     if (deadline == null || services.clock().getAsLong() < deadline.atMs()) {
       return Optional.empty();
     }
-    if (op == Operation.SETTLE) {
+    if (committed()) {
       return Optional.of(
           needsReview(
-              "settlement_overdue: " + deadline.region(),
-              "the " + deadline.region() + " cut-off has passed before settlement was confirmed"));
+              step.label() + "_overdue: " + deadline.region(),
+              "the %s cut-off has passed before we could %s"
+                  .formatted(deadline.region(), step.verb())));
     }
     note(
         "deadline_missed",
@@ -772,7 +783,7 @@ public final class Payment implements Runnable {
             c.quote().rate(),
             c.quote().fee(),
             c.net(),
-            done.stream().map(Operation::wire).toList(),
+            done.stream().map(step -> step.operation().wire()).toList(),
             policyLabel,
             guarantee.orElse(null));
     finish(
@@ -818,8 +829,8 @@ public final class Payment implements Runnable {
     return Duration.ofMillis(options.stepTimeoutMs());
   }
 
-  private String key(Operation op) {
-    return id() + ":" + current.providerId() + ":" + KEY_STEP.get(op);
+  private String key(Step step) {
+    return id() + ":" + current.providerId() + ":" + step.keyName();
   }
 
   private void pause(long ms) {

@@ -96,6 +96,7 @@ class PaymentTest {
         () -> System.currentTimeMillis() + skew.get(),
         Deadlines.NONE,
         Guarantees.NONE,
+        Workflows.STANDARD,
         id -> {});
   }
 

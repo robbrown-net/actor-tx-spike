@@ -46,4 +46,17 @@ public interface ProviderAdapter {
 
   /** A health probe. */
   Answer<ProbeInfo> probe();
+
+  /**
+   * Do any effectful operation, by name. The standard operations go to the typed methods above; a
+   * provider that offers more (screening, hedging, funding) overrides this.
+   */
+  default Answer<Receipt> perform(Operation op, Quote quote, String key) {
+    return StandardCalls.call(this, op, quote, key);
+  }
+
+  /** Can this provider do the operation? The default is the standard payment's operations. */
+  default boolean supports(Operation op) {
+    return Operation.STANDARD.contains(op);
+  }
 }

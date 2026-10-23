@@ -2,7 +2,6 @@ package net.robbrown.actortx.provider;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,9 +40,10 @@ public class FakeProvider implements ProviderAdapter {
   private final String id;
   private final EventSink events;
   private final Object lock = new Object();
-  private final Map<Operation, Deque<Mode>> scripts = new EnumMap<>(Operation.class);
+  private final Map<Operation, Deque<Mode>> scripts = new java.util.HashMap<>();
   private final Map<EffectKey, Receipt> effects = new HashMap<>();
-  private final Map<Operation, Integer> calls = new EnumMap<>(Operation.class);
+  private final java.util.Set<Operation> unsupported = new java.util.HashSet<>();
+  private final Map<Operation, Integer> calls = new java.util.HashMap<>();
   private Map<String, Long> pairMids = new HashMap<>();
   private long rate = DEFAULT_RATE;
   private long refRate = DEFAULT_REF_RATE;
@@ -184,7 +184,7 @@ public class FakeProvider implements ProviderAdapter {
   /** How many times each operation was invoked (including failed and retried calls). */
   public Map<Operation, Integer> calls() {
     synchronized (lock) {
-      return new EnumMap<>(calls.isEmpty() ? new EnumMap<>(Operation.class) : calls);
+      return new java.util.HashMap<>(calls);
     }
   }
 
@@ -196,6 +196,27 @@ public class FakeProvider implements ProviderAdapter {
     announce(request.id(), "received", "received a quote request for " + amountText(request));
     delay(request.id());
     return answered(request.id(), Operation.REQUEST_QUOTE, quoteAnswer(mode, request));
+  }
+
+  /** This provider cannot do these operations (a capability it lacks). */
+  public FakeProvider without(Operation... ops) {
+    synchronized (lock) {
+      unsupported.addAll(List.of(ops));
+    }
+    return this;
+  }
+
+  @Override
+  public boolean supports(Operation op) {
+    synchronized (lock) {
+      return !unsupported.contains(op);
+    }
+  }
+
+  /** Any operation, including ones the standard payment does not know: it is scriptable too. */
+  @Override
+  public Answer<Receipt> perform(Operation op, Quote quote, String key) {
+    return effect(op, quote, key);
   }
 
   @Override

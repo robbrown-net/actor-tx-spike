@@ -179,12 +179,7 @@ class ReviewWorkflowIT {
     }
 
     private static Answer<Receipt> send(ProviderAdapter adapter, Operation op, String key) {
-      return switch (op) {
-        case SETTLE -> adapter.settle(key);
-        case REFUND -> adapter.refund(key);
-        case CANCEL_ACCEPT -> adapter.cancelAccept(key);
-        default -> adapter.voidAuthorisation(key);
-      };
+      return adapter.perform(op, null, key);
     }
   }
 }

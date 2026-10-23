@@ -116,6 +116,11 @@ public final class ProviderServer implements QuoteSource, AutoCloseable {
     }
   }
 
+  /** Can the provider behind this server do the operation? */
+  public boolean supports(Operation op) {
+    return adapter.supports(op);
+  }
+
   @Override
   public Answer<Quote> requestQuote(QuoteRequest request, Duration timeout) {
     return invoke(Operation.REQUEST_QUOTE, a -> a.requestQuote(request), timeout);

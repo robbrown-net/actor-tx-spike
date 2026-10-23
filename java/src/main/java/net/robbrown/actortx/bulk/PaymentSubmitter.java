@@ -42,7 +42,7 @@ public final class PaymentSubmitter implements Submitter {
                 ending.complete(
                     payments
                         .await(id, PATIENCE)
-                        .map(PaymentSubmitter::endingOf)
+                        .map(view -> endingOf(view))
                         .orElseGet(() -> new Ending(Ending.Status.FAILED, "still_running"))));
     return ending;
   }

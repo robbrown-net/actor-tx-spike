@@ -7,6 +7,7 @@ import net.robbrown.actortx.payment.PaymentSnapshot;
 import net.robbrown.actortx.payment.PaymentSnapshot.HistoryEntry;
 import net.robbrown.actortx.payment.Phase;
 import net.robbrown.actortx.payment.Result;
+import net.robbrown.actortx.payment.Steps;
 import org.junit.jupiter.api.Test;
 
 class PaymentViewTest {
@@ -24,7 +25,7 @@ class PaymentViewTest {
 
   @Test
   void aTransactionInFlightHasNoOutcome() {
-    PaymentView view = of(Phase.PAYING, null);
+    PaymentView view = of(Steps.PAY.phase(), null);
 
     assertThat(view.outcome()).isNull();
     assertThat(view.phase()).isEqualTo("paying");
