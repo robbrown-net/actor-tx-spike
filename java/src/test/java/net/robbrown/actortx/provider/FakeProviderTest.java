@@ -302,4 +302,18 @@ class FakeProviderTest {
     assertThat(fake.requestQuote(QuoteRequest.of("r", null))).isInstanceOf(Ok.class);
     assertThat(fake.pay(quoted(), "t:k")).isInstanceOf(Ok.class);
   }
+
+  @Test
+  void faultsListWhatEachOperationWillDoInsteadOfBehaving() {
+    FakeProvider fake = new FakeProvider("p");
+    fake.script(Operation.SETTLE, Mode.REJECT);
+    fake.script(Operation.PAY, Mode.OK);
+    fake.script(Operation.AUTHORISE, Mode.error("down"), Mode.OK);
+
+    assertThat(fake.faults())
+        .containsOnlyKeys(Operation.AUTHORISE, Operation.SETTLE)
+        .containsEntry(Operation.SETTLE, Mode.REJECT);
+    fake.resetScripts();
+    assertThat(fake.faults()).isEmpty();
+  }
 }

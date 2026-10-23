@@ -181,6 +181,25 @@ public class FakeProvider implements ProviderAdapter {
     }
   }
 
+  /**
+   * The misbehaviours in force: for each operation that is scripted to do something other than
+   * behave, what it does next.
+   */
+  public Map<Operation, Mode> faults() {
+    synchronized (lock) {
+      Map<Operation, Mode> faults =
+          new java.util.TreeMap<>(java.util.Comparator.comparing(Operation::wire));
+      scripts.forEach(
+          (op, script) -> {
+            Mode next = script.peekFirst();
+            if (next != null && next.kind() != Mode.Kind.OK) {
+              faults.put(op, next);
+            }
+          });
+      return faults;
+    }
+  }
+
   /** How many times each operation was invoked (including failed and retried calls). */
   public Map<Operation, Integer> calls() {
     synchronized (lock) {

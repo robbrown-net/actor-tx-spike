@@ -161,6 +161,26 @@ class PaymentIT {
 
     assertThat(page).contains("<title>");
     assertThat(Json.get(http, "/api/snapshot").getBody()).containsKeys("providers", "admission");
+    // The page maps over these on every frame; a missing one stops it drawing at all.
+    assertThat(Json.maps(Json.get(http, "/api/snapshot").getBody().get("providers")))
+        .allSatisfy(
+            p ->
+                assertThat(p)
+                    .containsKeys(
+                        "id",
+                        "state",
+                        "breaker",
+                        "error_rate",
+                        "p95_ms",
+                        "samples",
+                        "in_flight",
+                        "version",
+                        "recovering",
+                        "rate",
+                        "fee",
+                        "latency_ms",
+                        "currencies",
+                        "faults"));
     assertThat(Json.get(http, "/api/metrics").getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(Json.get(http, "/api/lab").getBody()).containsEntry("available", false);
   }

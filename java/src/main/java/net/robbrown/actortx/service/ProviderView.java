@@ -32,4 +32,9 @@ public record ProviderView(
     double rate,
     double fee,
     long latencyMs,
-    List<String> currencies) {}
+    List<String> currencies,
+    List<Fault> faults) {
+
+  /** A misbehaviour in force: which operation, and what it does instead of behaving. */
+  public record Fault(String op, String mode) {}
+}

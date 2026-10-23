@@ -13,6 +13,7 @@ import net.robbrown.actortx.provider.FakeProvider;
 import net.robbrown.actortx.provider.Health;
 import net.robbrown.actortx.provider.HealthConfig;
 import net.robbrown.actortx.provider.Limits;
+import net.robbrown.actortx.provider.Mode;
 import net.robbrown.actortx.provider.ProviderServer;
 import net.robbrown.actortx.provider.Stats;
 import net.robbrown.actortx.selection.Participant;
@@ -171,7 +172,19 @@ public final class DemoWorld implements ProviderCatalog, ProviderControl, AutoCl
         Money.rateToDouble(fake.currentRate()),
         Money.toMajor(fake.currentFee()),
         fake.currentLatencyMs(),
-        currencies.get(id));
+        currencies.get(id),
+        faultsOf(fake));
+  }
+
+  private static List<ProviderView.Fault> faultsOf(FakeProvider fake) {
+    return fake.faults().entrySet().stream()
+        .map(e -> new ProviderView.Fault(e.getKey().wire(), modeName(e.getValue())))
+        .toList();
+  }
+
+  private static String modeName(Mode mode) {
+    String name = mode.kind().name().toLowerCase(java.util.Locale.ROOT);
+    return mode.reason() == null ? name : name + ": " + mode.reason();
   }
 
   @Override
