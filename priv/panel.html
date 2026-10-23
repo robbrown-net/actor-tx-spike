@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Actor TX Monitor</title>
 <style>
+.srv { font-size: 12px; font-weight: 400; color: var(--muted, #8b949e); margin-left: 8px; }
   :root {
     --ease: cubic-bezier(.2,.8,.2,1); --fast:.15s; --med:.3s; --slow:.8s;
     --bg:#0e1116; --panel:#161b22; --panel2:#1c2330; --line:#2a3342; --text:#e6edf3; --dim:#8b98a9;
@@ -196,7 +197,7 @@
 </head>
 <body>
 <header>
-  <h1>Actor TX Monitor</h1>
+  <h1>Actor TX Monitor <span id="serverInfo" class="srv"></span></h1>
   <span class="conn" id="conn"><i></i><span>connecting…</span></span>
   <div class="grp"><label>Amount</label><input type="number" id="amount" value="1000" min="1" step="100">
     <label>Merchant</label><select id="merchant"><option value="">–</option><option value="acme">acme (overrides, guarantee)</option><option value="globex">globex (no overrides)</option></select>
@@ -959,6 +960,14 @@ function connect() {
   es.onerror = () => { conn.classList.remove('up'); conn.lastElementChild.textContent = 'reconnecting…'; };
   es.onmessage = m => ingest(JSON.parse(m.data));
 }
+// Which server is this, and how was it started? (Elixir or Java, and its flags, in the tab title)
+fetch('/api/server').then(r => r.ok ? r.json() : null).then(s => {
+  if (!s) return;
+  const flags = (s.args || []).join(' ') || 'no flags';
+  const port = s.settings && s.settings.port ? ':' + s.settings.port : '';
+  $('serverInfo').textContent = '· ' + s.server + ' ' + s.version + port + ' · ' + flags;
+  document.title = s.server + port + ' · ' + flags + ' · Actor TX Monitor';
+}).catch(() => {});
 connect(); refreshSnapshot(); setInterval(refreshSnapshot, 1500); requestAnimationFrame(frame);
 </script>
 </body>

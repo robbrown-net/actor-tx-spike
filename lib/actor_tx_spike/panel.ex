@@ -9,6 +9,7 @@ defmodule ActorTxSpike.Panel do
   * `GET /api/lab`       JSON from `handler.lab()` if the handler offers one (the test lab)
   * `GET /api/review`    JSON from `handler.review()` if the handler offers one (the review queue)
   * `GET /api/bulk`      JSON from `handler.bulk()` if the handler offers one (bulk sending progress)
+  * `GET /api/server`    JSON from `handler.server()` if the handler offers one (what is running and how it was started)
   * `POST /api/control`  JSON body passed to `handler.control/1`
 
   Binds to loopback only by default. POSTs must be `application/json`, which a
@@ -148,6 +149,9 @@ defmodule ActorTxSpike.Panel do
 
   defp route(socket, :GET, "/api/bulk", _h, _b, cfg),
     do: optional(socket, cfg.handler, :bulk, "this handler has no bulk sender")
+
+  defp route(socket, :GET, "/api/server", _h, _b, cfg),
+    do: optional(socket, cfg.handler, :server, "this handler does not say what it is")
 
   defp route(socket, :GET, "/events", _h, _b, cfg), do: stream_events(socket, cfg.keepalive_ms)
 

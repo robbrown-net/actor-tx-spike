@@ -39,6 +39,12 @@ defmodule Mix.Tasks.Demo do
   def run(args) do
     {opts, _, _} = OptionParser.parse(args, strict: @switches)
 
+    # what the dashboard shows in its title: how this server was started
+    Application.put_env(:actor_tx_spike, :server_info, %{
+      args: args,
+      settings: Map.put_new(Map.new(opts), :port, 4040)
+    })
+
     Mix.Task.run("app.start")
 
     # logs left by a previous run: load them before this run starts appending

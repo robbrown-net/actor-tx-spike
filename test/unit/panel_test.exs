@@ -10,6 +10,9 @@ defmodule ActorTxSpike.PanelTest do
     def bulk, do: %{status: :idle, submitted: 0}
     def review, do: %{open: 1, entries: []}
 
+    def server,
+      do: %{server: "Elixir", version: "1.18 / OTP 27", args: ["--lab"], settings: %{port: 4040}}
+
     def control(%{"action" => "ok"}), do: {:ok, %{done: true}}
     def control(%{"action" => "bad"}), do: {:error, "nope"}
     def control(_), do: :whatever
@@ -143,6 +146,18 @@ defmodule ActorTxSpike.PanelTest do
     resp = request(Panel.port(bare), "GET /api/review HTTP/1.1\r\nhost: x\r\n\r\n")
     assert resp =~ "404"
     assert resp =~ "no review queue"
+  end
+
+  test "the server endpoint says what is running and how it was started, or 404s", %{port: port} do
+    resp = request(port, "GET /api/server HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert resp =~ "200 OK"
+    assert resp =~ ~s("server":"Elixir")
+    assert resp =~ ~s("--lab")
+
+    {:ok, bare} = Panel.start_link(handler: NoLabHandler, port: 0, page: "x", keepalive_ms: 30)
+    resp = request(Panel.port(bare), "GET /api/server HTTP/1.1\r\nhost: x\r\n\r\n")
+    assert resp =~ "404"
+    assert resp =~ "does not say what it is"
   end
 
   test "a client that vanishes mid-stream or mid-request is tolerated", %{port: port} do

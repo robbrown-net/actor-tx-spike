@@ -601,6 +601,18 @@ defmodule ActorTxSpike.Demo.Handler do
 
   def snapshot, do: ActorTxSpike.Demo.snapshot()
 
+  # Which server this is and how it was started (the dashboard puts it in the page title).
+  def server do
+    info = Application.get_env(:actor_tx_spike, :server_info, %{args: [], settings: %{}})
+
+    %{
+      server: "Elixir",
+      version: "#{System.version()} / OTP #{System.otp_release()}",
+      args: info.args,
+      settings: info.settings
+    }
+  end
+
   def control(%{"action" => "lab"} = command) do
     if Process.whereis(Lab),
       do: Lab.command(command),
