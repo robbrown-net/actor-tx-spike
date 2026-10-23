@@ -28,7 +28,12 @@ class OperationsControllerTest {
     cutoffs = new CutoffBook();
     controller =
         new OperationsController(
-            bus, new EconomicsLedger(RateCard.defaults()), new GuaranteeLedger(), cutoffs);
+            bus,
+            new EconomicsLedger(RateCard.defaults()),
+            new GuaranteeLedger(),
+            cutoffs,
+            new net.robbrown.actortx.service.ReplayService(
+                java.util.Optional.empty(), java.util.Optional::empty));
   }
 
   @AfterEach
@@ -55,6 +60,7 @@ class OperationsControllerTest {
     assertThat(controller.economics().overall().transactions()).isZero();
     assertThat(controller.guarantees()).isEmpty();
     assertThat(controller.cutoffs()).containsKey("IN");
+    assertThat(controller.replay()).containsEntry("available", false);
   }
 
   @Test

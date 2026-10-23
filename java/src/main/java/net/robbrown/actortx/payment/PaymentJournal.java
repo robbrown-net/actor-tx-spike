@@ -45,7 +45,7 @@ final class PaymentJournal {
   private static Map<String, Object> eligibility(
       Decision decision, List<Participant> eligible, List<Participant> denied) {
     Map<String, Object> map = new LinkedHashMap<>();
-    map.put("permitted", decision.permitted());
+    map.put("permitted?", decision.permitted());
     map.put("reasons", decision.reasons());
     map.put("regions", decision.regions());
     map.put("instrument", decision.instrument().name().toLowerCase(java.util.Locale.ROOT));

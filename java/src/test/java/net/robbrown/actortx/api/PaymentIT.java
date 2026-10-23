@@ -1,6 +1,7 @@
 package net.robbrown.actortx.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import java.io.IOException;
 import java.net.URI;
@@ -9,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -138,5 +140,114 @@ class PaymentIT {
 
     HttpResponse<Stream<String>> stream = response.get(10, TimeUnit.SECONDS);
     assertThat(stream.body().filter(l -> l.startsWith("event:")).findFirst()).isPresent();
+  }
+
+  @Test
+  void theDurableLogReplaysCleanAgainstTheRules() {
+    pay(Map.of("amount", 75, "merchant_id", "acme"));
+
+    Map<String, Object> report = Json.get(http, "/api/replay").getBody();
+
+    assertThat(report).containsEntry("available", true);
+    assertThat(Json.map(report.get("residency"))).containsEntry("ok", true);
+    assertThat(Json.maps(report.get("logs"))).isNotEmpty();
+    assertThat(Json.maps(report.get("logs")))
+        .allSatisfy(l -> assertThat(l).containsEntry("ok", true));
+  }
+
+  @Test
+  void theDashboardPageAndItsViewsAreServed() {
+    String page = http.getForObject("/", String.class);
+
+    assertThat(page).contains("<title>");
+    assertThat(Json.get(http, "/api/snapshot").getBody()).containsKeys("providers", "admission");
+    assertThat(Json.get(http, "/api/metrics").getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(Json.get(http, "/api/lab").getBody()).containsEntry("available", false);
+  }
+
+  @Test
+  void aSettlementThatFailsWaitsForAPersonWhoChecksAndResolvesIt() {
+    List<String> ids =
+        Json.list(http, "/api/providers").stream().map(p -> (String) p.get("id")).toList();
+    ids.forEach(id -> control(Map.of("action", "provider", "id", id, "do", "settle_fails")));
+    try {
+      Map<String, Object> done = pay(Map.of("amount", 20));
+      assertThat(Json.map(done.get("outcome"))).containsEntry("status", "needs_review");
+      review((String) done.get("id"));
+    } finally {
+      ids.forEach(id -> control(Map.of("action", "provider", "id", id, "do", "heal")));
+    }
+  }
+
+  // The transaction appears in the queue; a person checks it and resolves it.
+  private void review(String tx) {
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () ->
+                assertThat(Json.maps(Json.get(http, "/api/review").getBody().get("entries")))
+                    .anyMatch(e -> tx.equals(e.get("tx")) && "open".equals(e.get("status"))));
+    assertThat(control(Map.of("action", "review", "do", "check", "tx", tx, "by", "rob")))
+        .containsEntry("ok", true);
+    Map<String, Object> resolve =
+        Map.of(
+            "action",
+            "review",
+            "do",
+            "resolve",
+            "tx",
+            tx,
+            "by",
+            "rob",
+            "outcome",
+            "paid",
+            "note",
+            "settled by hand");
+    assertThat(control(resolve)).containsEntry("ok", true);
+  }
+
+  @Test
+  void aBatchOfPaymentsIsSentAndFinishes() {
+    Map<String, Object> started =
+        control(
+            Map.of(
+                "action",
+                "bulk",
+                "do",
+                "start",
+                "count",
+                6,
+                "min_amount",
+                "5",
+                "max_amount",
+                "50",
+                "interval_ms",
+                5));
+    assertThat(started).containsEntry("ok", true);
+
+    await()
+        .atMost(Duration.ofSeconds(20))
+        .untilAsserted(
+            () ->
+                assertThat(Json.get(http, "/api/bulk").getBody())
+                    .containsEntry("status", "finished"));
+    assertThat(Json.get(http, "/api/bulk").getBody()).containsEntry("submitted", 6);
+    control(Map.of("action", "bulk", "do", "clear"));
+  }
+
+  @Test
+  void anAdmissionLimitCanBeSetAndRemoved() {
+    Map<String, Object> set = control(Map.of("action", "admission", "max_in_flight", 50));
+    assertThat(Json.map(set.get("result"))).containsEntry("limit", 50);
+    control(Map.of("action", "admission", "max_in_flight", "none"));
+    assertThat(control(Map.of("action", "submit", "amount", 12))).containsEntry("ok", true);
+  }
+
+  private Map<String, Object> control(Map<String, Object> command) {
+    ResponseEntity<Map<String, Object>> response = Json.post(http, "/api/control", command);
+    assertThat(response.getStatusCode())
+        .as(String.valueOf(response.getBody()))
+        .isEqualTo(HttpStatus.OK);
+    return response.getBody();
   }
 }

@@ -13,14 +13,32 @@ import java.util.List;
  */
 public sealed interface Result {
 
+  /** How it ended, without the detail. */
+  Outcome outcome();
+
   /** Paid and settled. */
-  record Completed(Summary summary) implements Result {}
+  record Completed(Summary summary) implements Result {
+    @Override
+    public Outcome outcome() {
+      return Outcome.COMPLETED;
+    }
+  }
 
   /** Stopped cleanly, with why. */
-  record Failed(String reason) implements Result {}
+  record Failed(String reason) implements Result {
+    @Override
+    public Outcome outcome() {
+      return Outcome.FAILED;
+    }
+  }
 
   /** Waiting for a person, with why. */
-  record NeedsReview(String reason) implements Result {}
+  record NeedsReview(String reason) implements Result {
+    @Override
+    public Outcome outcome() {
+      return Outcome.NEEDS_REVIEW;
+    }
+  }
 
   /** What a completed transaction came to. */
   record Summary(

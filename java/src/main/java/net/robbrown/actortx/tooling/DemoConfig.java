@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import net.robbrown.actortx.audit.AuditRouter;
@@ -44,6 +45,7 @@ import net.robbrown.actortx.service.PaymentService;
 import net.robbrown.actortx.service.PolicyResolver;
 import net.robbrown.actortx.service.ProviderCatalog;
 import net.robbrown.actortx.service.ProviderControl;
+import net.robbrown.actortx.service.ReplayService;
 import net.robbrown.actortx.service.SelectionService;
 import net.robbrown.actortx.service.Sentinel;
 import net.robbrown.actortx.service.ServerReviewProviders;
@@ -169,6 +171,14 @@ public class DemoConfig {
   public SelectionService selectionService(
       ProviderCatalog catalog, QuoteSelector selector, PolicyResolver resolver) {
     return new SelectionService(catalog, selector, resolver);
+  }
+
+  /** Replay of the durable log. */
+  @Bean
+  public ReplayService replayService(
+      EventBus bus, @Value("${actortx.audit.dir:}") String auditDir) {
+    return new ReplayService(
+        auditDir.isEmpty() ? Optional.empty() : Optional.of(Path.of(auditDir)), bus::barrier);
   }
 
   /** The manual-review queue, fed from the narrative. */

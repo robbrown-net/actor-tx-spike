@@ -10,6 +10,7 @@ import net.robbrown.actortx.events.EventBus;
 import net.robbrown.actortx.events.Subscription;
 import net.robbrown.actortx.guarantee.GuaranteeLedger;
 import net.robbrown.actortx.service.CutoffBook;
+import net.robbrown.actortx.service.ReplayService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -25,10 +26,16 @@ public class OperationsController {
   private final EconomicsLedger economics;
   private final GuaranteeLedger guarantees;
   private final CutoffBook cutoffs;
+  private final ReplayService replay;
 
   /** Fronts the operational views. */
   public OperationsController(
-      EventBus bus, EconomicsLedger economics, GuaranteeLedger guarantees, CutoffBook cutoffs) {
+      EventBus bus,
+      EconomicsLedger economics,
+      GuaranteeLedger guarantees,
+      CutoffBook cutoffs,
+      ReplayService replay) {
+    this.replay = replay;
     this.bus = bus;
     this.economics = economics;
     this.guarantees = guarantees;
@@ -76,5 +83,13 @@ public class OperationsController {
   @GetMapping("/cutoffs")
   public Map<String, Long> cutoffs() {
     return cutoffs.remaining(System.currentTimeMillis());
+  }
+
+  /**
+   * Replay the durable log against the rules: did every transaction do what the system promises?
+   */
+  @GetMapping("/replay")
+  public Map<String, Object> replay() {
+    return replay.verify();
   }
 }
