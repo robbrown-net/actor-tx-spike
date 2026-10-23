@@ -3,6 +3,8 @@ package net.robbrown.actortx.api;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Map;
+import net.robbrown.actortx.bulk.BulkRunner;
+import net.robbrown.actortx.bulk.Progress;
 import net.robbrown.actortx.events.Event;
 import net.robbrown.actortx.events.EventBus;
 import net.robbrown.actortx.events.Subscription;
@@ -26,10 +28,16 @@ public class DashboardController {
   private final Metrics metrics;
   private final ReviewService reviews;
   private final EventBus bus;
+  private final BulkRunner bulk;
 
   /** Fronts the dashboard's data. */
   public DashboardController(
-      SnapshotService snapshots, Metrics metrics, ReviewService reviews, EventBus bus) {
+      SnapshotService snapshots,
+      Metrics metrics,
+      ReviewService reviews,
+      EventBus bus,
+      BulkRunner bulk) {
+    this.bulk = bulk;
     this.snapshots = snapshots;
     this.metrics = metrics;
     this.reviews = reviews;
@@ -62,10 +70,10 @@ public class DashboardController {
     return reviews.snapshot();
   }
 
-  /** Bulk sending: not offered until the bulk runner is wired. */
+  /** Bulk sending: the batch in progress, or the last one. */
   @GetMapping("/api/bulk")
-  public Map<String, Object> bulk() {
-    return Map.of("available", false);
+  public Progress bulk() {
+    return bulk.snapshot();
   }
 
   /** The test lab: not offered in the Java port. */

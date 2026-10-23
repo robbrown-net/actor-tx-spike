@@ -108,13 +108,4 @@ public final class ControlActions {
   public static ControlAction review(ReviewService reviews) {
     return new Named("review", c -> Map.of("reply", reviews.command(c)));
   }
-
-  /** An action the Java port does not offer yet: says so rather than pretending. */
-  public static ControlAction notYet(String name) {
-    return new Named(
-        name,
-        c -> {
-          throw new InvalidInputException(List.of(name + " is not available in the Java port yet"));
-        });
-  }
 }

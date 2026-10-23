@@ -44,4 +44,11 @@ class ControlControllerTest {
     assertThatThrownBy(() -> controller.control(Map.of()))
         .isInstanceOf(InvalidInputException.class);
   }
+
+  @Test
+  void commandsThePortLacksSaySoInsteadOfPretending() {
+    assertThatThrownBy(() -> controller.control(Map.of("action", "auto")))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessage("auto is not available in the Java port yet");
+  }
 }

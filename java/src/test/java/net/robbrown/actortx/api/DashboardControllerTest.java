@@ -12,6 +12,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import java.util.Map;
+import net.robbrown.actortx.bulk.BulkRunner;
+import net.robbrown.actortx.bulk.Sleeper;
+import net.robbrown.actortx.bulk.Submission;
 import net.robbrown.actortx.economics.EconomicsLedger;
 import net.robbrown.actortx.economics.RateCard;
 import net.robbrown.actortx.eligibility.Eligibility;
@@ -64,6 +67,15 @@ class DashboardControllerTest {
         admission);
   }
 
+  private BulkRunner bulk() {
+    return new BulkRunner(
+        command -> new Submission.Invalid(java.util.List.of("no")),
+        java.time.Clock.systemUTC(),
+        Sleeper.SYSTEM,
+        new java.util.Random(),
+        EventSink.NONE);
+  }
+
   private ReviewService reviews() {
     return new ReviewService(
         new ReviewQueue(),
@@ -92,7 +104,7 @@ class DashboardControllerTest {
             payments(admission, resolver));
     ObjectMapper mapper =
         new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-    controller = new DashboardController(snapshots, new Metrics(), reviews(), bus);
+    controller = new DashboardController(snapshots, new Metrics(), reviews(), bus, bulk());
     mvc =
         MockMvcBuilders.standaloneSetup(controller)
             .setMessageConverters(
@@ -120,7 +132,7 @@ class DashboardControllerTest {
     mvc.perform(get("/api/snapshot")).andExpect(jsonPath("$.providers[0].id", is("p")));
     mvc.perform(get("/api/metrics")).andExpect(status().isOk());
     mvc.perform(get("/api/review")).andExpect(jsonPath("$.open", is(0)));
-    mvc.perform(get("/api/bulk")).andExpect(jsonPath("$.available", is(false)));
+    mvc.perform(get("/api/bulk")).andExpect(jsonPath("$.status", is("idle")));
     mvc.perform(get("/api/lab")).andExpect(jsonPath("$.available", is(false)));
   }
 

@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -14,6 +16,10 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import net.robbrown.actortx.audit.AuditRouter;
+import net.robbrown.actortx.bulk.BulkAction;
+import net.robbrown.actortx.bulk.BulkRunner;
+import net.robbrown.actortx.bulk.PaymentSubmitter;
+import net.robbrown.actortx.bulk.Sleeper;
 import net.robbrown.actortx.economics.EconomicsLedger;
 import net.robbrown.actortx.economics.RateCard;
 import net.robbrown.actortx.eligibility.Eligibility;
@@ -219,26 +225,47 @@ public class DemoConfig {
     return new SnapshotService.Ledgers(guarantees, economics);
   }
 
-  /** The operator commands the dashboard can give. */
+  /** Sends batches of payments for the dashboard. */
   @Bean
-  public List<ControlAction> controlActions(
-      ProviderControl control,
-      CutoffBook cutoffs,
-      EventBus bus,
-      PaymentService payments,
-      Admission admission,
-      ReviewService reviews) {
-    return List.of(
-        ControlActions.provider(control),
-        ControlActions.cutoff(cutoffs, bus),
-        ControlActions.submit(payments),
-        ControlActions.admission(admission, bus),
-        ControlActions.review(reviews),
-        ControlActions.notYet("auto"),
-        ControlActions.notYet("pace"),
-        ControlActions.notYet("policy"),
-        ControlActions.notYet("bulk"),
-        ControlActions.notYet("lab"));
+  public BulkRunner bulkRunner(PaymentService payments, EventBus bus) {
+    return new BulkRunner(
+        new PaymentSubmitter(payments), Clock.systemUTC(), Sleeper.SYSTEM, new SecureRandom(), bus);
+  }
+
+  /** The dashboard's bulk command. */
+  @Bean
+  public BulkAction bulkAction(BulkRunner runner) {
+    return new BulkAction(runner);
+  }
+
+  /** {@code provider}: misbehave a provider. */
+  @Bean
+  public ControlAction providerAction(ProviderControl control) {
+    return ControlActions.provider(control);
+  }
+
+  /** {@code cutoff}: set or clear a regional cut-off. */
+  @Bean
+  public ControlAction cutoffAction(CutoffBook cutoffs, EventBus bus) {
+    return ControlActions.cutoff(cutoffs, bus);
+  }
+
+  /** {@code submit}: send one payment. */
+  @Bean
+  public ControlAction submitAction(PaymentService payments) {
+    return ControlActions.submit(payments);
+  }
+
+  /** {@code admission}: change the limit. */
+  @Bean
+  public ControlAction admissionAction(Admission admission, EventBus bus) {
+    return ControlActions.admission(admission, bus);
+  }
+
+  /** {@code review}: check, retry or resolve. */
+  @Bean
+  public ControlAction reviewAction(ReviewService reviews) {
+    return ControlActions.review(reviews);
   }
 
   /** The jurisdiction rules. */

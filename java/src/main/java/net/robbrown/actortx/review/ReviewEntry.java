@@ -1,5 +1,6 @@
 package net.robbrown.actortx.review;
 
+import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.List;
 import java.util.Map;
 
@@ -36,7 +37,13 @@ public record ReviewEntry(
     /** Waiting for a person. */
     OPEN,
     /** Closed with a decision. */
-    RESOLVED
+    RESOLVED;
+
+    /** The lower-case name the dashboard reads. */
+    @JsonValue
+    public String wire() {
+      return name().toLowerCase(java.util.Locale.ROOT);
+    }
   }
 
   /**

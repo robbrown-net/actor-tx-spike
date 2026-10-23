@@ -114,11 +114,4 @@ class ControlActionsTest {
     assertThatThrownBy(() -> ControlActions.review(reviews).apply(Map.of("do", "nonsense")))
         .isInstanceOf(InvalidInputException.class);
   }
-
-  @Test
-  void actionsThePortLacksSaySoInsteadOfPretending() {
-    assertThatThrownBy(() -> ControlActions.notYet("auto").apply(Map.of()))
-        .isInstanceOf(InvalidInputException.class)
-        .hasMessage("auto is not available in the Java port yet");
-  }
 }

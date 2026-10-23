@@ -1,5 +1,6 @@
 package net.robbrown.actortx.bulk;
 
+import com.fasterxml.jackson.annotation.JsonValue;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -54,7 +55,13 @@ public record Progress(
     /** Everything was sent and everything ended. */
     FINISHED,
     /** Stopped before everything was sent; what was sent has ended. */
-    STOPPED
+    STOPPED;
+
+    /** The lower-case name the dashboard reads. */
+    @JsonValue
+    public String wire() {
+      return name().toLowerCase(java.util.Locale.ROOT);
+    }
   }
 
   /**
