@@ -9,6 +9,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import net.robbrown.actortx.payment.Outcome;
 import net.robbrown.actortx.replay.Compare.Divergence;
 import org.junit.jupiter.api.Test;
 
@@ -70,8 +72,8 @@ class CompareTest {
     Compare.Diff d = Compare.diff(good(), other);
     assertThat(d.divergences()).hasSize(1);
     assertThat(d.divergences().get(0).field()).isEqualTo(Compare.Field.OUTCOME);
-    assertThat(d.divergences().get(0).a()).isEqualTo(Outcome.COMPLETED);
-    assertThat(d.divergences().get(0).b()).isEqualTo(Outcome.OPEN);
+    assertThat(d.divergences().get(0).a()).isEqualTo(Optional.of(Outcome.COMPLETED));
+    assertThat(d.divergences().get(0).b()).isEqualTo(Optional.empty());
     assertThat(d.identical()).isEqualTo(4);
   }
 }

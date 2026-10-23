@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import net.robbrown.actortx.payment.Outcome;
 import org.junit.jupiter.api.Test;
 
 class TallyTest {
@@ -34,10 +35,10 @@ class TallyTest {
     CompletableFuture<Ending> second = new CompletableFuture<>();
     accept(tally, "a", first);
     clock.advance(30);
-    first.complete(new Ending(Ending.Status.COMPLETED, null));
+    first.complete(new Ending(Outcome.COMPLETED, null));
     accept(tally, "b", second);
     clock.advance(70);
-    second.complete(new Ending(Ending.Status.FAILED, "quote 12.5 expired"));
+    second.complete(new Ending(Outcome.FAILED, "quote 12.5 expired"));
 
     Progress progress = tally.snapshot();
 
@@ -54,7 +55,7 @@ class TallyTest {
     CompletableFuture<Ending> ending = new CompletableFuture<>();
     accept(tally, "a", ending);
 
-    ending.complete(new Ending(Ending.Status.NEEDS_REVIEW, "stuck"));
+    ending.complete(new Ending(Outcome.NEEDS_REVIEW, "stuck"));
 
     assertThat(tally.snapshot().needsReview()).isEqualTo(1);
     assertThat(tally.snapshot().reasons()).containsExactly(new Progress.Reason("stuck", 1));
@@ -66,7 +67,7 @@ class TallyTest {
     CompletableFuture<Ending> ending = new CompletableFuture<>();
     accept(tally, "a", ending);
 
-    ending.complete(new Ending(Ending.Status.COMPLETED, null));
+    ending.complete(new Ending(Outcome.COMPLETED, null));
 
     assertThat(tally.snapshot().completed()).isEqualTo(1);
     assertThat(tally.snapshot().reasons()).isEmpty();
@@ -92,7 +93,7 @@ class TallyTest {
       CompletableFuture<Ending> ending = new CompletableFuture<>();
       endings.add(ending);
       accept(tally, "t" + i, ending);
-      ending.complete(new Ending(Ending.Status.FAILED, "fault-" + "x".repeat(i)));
+      ending.complete(new Ending(Outcome.FAILED, "fault-" + "x".repeat(i)));
     }
 
     List<Progress.Reason> reasons = tally.snapshot().reasons();
@@ -107,7 +108,7 @@ class TallyTest {
     CompletableFuture<Ending> ending = new CompletableFuture<>();
     accept(tally, "a", ending);
 
-    ending.complete(new Ending(Ending.Status.FAILED, "x".repeat(150)));
+    ending.complete(new Ending(Outcome.FAILED, "x".repeat(150)));
 
     assertThat(tally.snapshot().reasons().get(0).text()).hasSize(110);
   }
@@ -163,7 +164,7 @@ class TallyTest {
     Thread.ofVirtual()
         .start(
             () -> {
-              ok.complete(new Ending(Ending.Status.COMPLETED, null));
+              ok.complete(new Ending(Outcome.COMPLETED, null));
               bad.completeExceptionally(new IllegalStateException("gone"));
             });
 

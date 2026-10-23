@@ -1,5 +1,7 @@
 package net.robbrown.actortx.economics;
 
+import static net.robbrown.actortx.payment.Outcome.COMPLETED;
+
 /**
  * What a transaction earned, in minor units. Only a completed transaction earns value; the rest
  * earn {@link #ZERO}.
@@ -18,7 +20,7 @@ public record Value(
 
   /** The value of one finished transaction. */
   public static Value of(Outcome outcome) {
-    if (outcome.status() != Outcome.Status.COMPLETED) {
+    if (outcome.status() != COMPLETED) {
       return ZERO;
     }
     return outcome.discovery() == null ? withoutDiscovery(outcome) : withDiscovery(outcome);

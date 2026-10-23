@@ -40,9 +40,10 @@ public record PaymentView(
 
     static Outcome of(Result result) {
       return switch (result) {
-        case Completed completed -> new Outcome("completed", null, completed.summary());
-        case Failed failed -> new Outcome("failed", failed.reason(), null);
-        case NeedsReview review -> new Outcome("needs_review", review.reason(), null);
+        case Completed completed ->
+            new Outcome(completed.outcome().wire(), null, completed.summary());
+        case Failed failed -> new Outcome(failed.outcome().wire(), failed.reason(), null);
+        case NeedsReview review -> new Outcome(review.outcome().wire(), review.reason(), null);
       };
     }
   }

@@ -4,7 +4,8 @@ package net.robbrown.actortx.economics;
  * One finished transaction as the ledger sees it.
  *
  * @param txId the transaction
- * @param status how it finished
+ * @param status how it finished, from the one terminal vocabulary ({@link
+ *     net.robbrown.actortx.payment.Outcome})
  * @param provider the provider that carried it, or {@code null} when none did
  * @param merchant the merchant, or {@code null}
  * @param usage what the transaction consumed
@@ -14,21 +15,10 @@ package net.robbrown.actortx.economics;
  */
 public record Outcome(
     String txId,
-    Status status,
+    net.robbrown.actortx.payment.Outcome status,
     String provider,
     String merchant,
     Measurement usage,
     Discovery discovery,
     long margin,
-    long providerFee) {
-
-  /** How a transaction finished. */
-  public enum Status {
-    /** Settled: value is earned. */
-    COMPLETED,
-    /** Failed: costs money, earns none. */
-    FAILED,
-    /** Parked for a person: costs money, earns none yet. */
-    NEEDS_REVIEW
-  }
-}
+    long providerFee) {}

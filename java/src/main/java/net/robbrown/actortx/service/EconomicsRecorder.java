@@ -7,9 +7,8 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.robbrown.actortx.economics.EconomicsLedger;
 import net.robbrown.actortx.economics.Measurement;
-import net.robbrown.actortx.economics.Outcome;
-import net.robbrown.actortx.economics.Outcome.Status;
 import net.robbrown.actortx.events.Event;
+import net.robbrown.actortx.payment.Outcome;
 
 /**
  * Turns the event stream into priced outcomes: what each transaction used (time, provider calls,
@@ -17,11 +16,11 @@ import net.robbrown.actortx.events.Event;
  */
 public final class EconomicsRecorder implements Consumer<Event> {
 
-  private static final Map<String, Status> ENDS =
+  private static final Map<String, Outcome> ENDS =
       Map.of(
-          "tx_completed", Status.COMPLETED,
-          "tx_failed", Status.FAILED,
-          "needs_review", Status.NEEDS_REVIEW);
+          "tx_completed", Outcome.COMPLETED,
+          "tx_failed", Outcome.FAILED,
+          "needs_review", Outcome.NEEDS_REVIEW);
 
   /** What one transaction has used so far. */
   private static final class Usage {
@@ -81,11 +80,11 @@ public final class EconomicsRecorder implements Consumer<Event> {
   }
 
   private void finishIfEnd(Usage usage, Event event) {
-    Status status = ENDS.get(event.kind());
+    Outcome status = ENDS.get(event.kind());
     if (status != null) {
       open.remove(event.txId());
       ledger.record(
-          new Outcome(
+          new net.robbrown.actortx.economics.Outcome(
               event.txId(),
               status,
               usage.provider,

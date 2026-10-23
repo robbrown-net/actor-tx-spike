@@ -93,7 +93,7 @@ public final class EconomicsLedger {
    */
   public record Entry(
       String txId,
-      Outcome.Status status,
+      net.robbrown.actortx.payment.Outcome status,
       String provider,
       String merchant,
       Cost cost,

@@ -127,7 +127,7 @@ public final class Replay {
    * @return the kinds, in order
    */
   public static List<String> terminalKinds() {
-    return Outcome.terminalKinds();
+    return Tx.terminalKinds();
   }
 
   private static AuditLog.Head intact(Path path) {

@@ -12,9 +12,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 import net.robbrown.actortx.audit.AuditRouter;
 import net.robbrown.actortx.events.Event;
+import net.robbrown.actortx.payment.Outcome;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -92,7 +94,7 @@ class ReplayIT {
     Day in = Replay.loadDir(dir).get("IN");
 
     State end = Replay.stateAt(in, Position.seq(Long.MAX_VALUE));
-    assertThat(end.outcomes()).containsEntry(Outcome.COMPLETED, 1L);
+    assertThat(end.outcomes()).containsEntry(Optional.of(Outcome.COMPLETED), 1L);
     assertThat(end.inFlight()).isEmpty();
     assertThat(Report.state(end)).contains("transactions: 1 completed");
 

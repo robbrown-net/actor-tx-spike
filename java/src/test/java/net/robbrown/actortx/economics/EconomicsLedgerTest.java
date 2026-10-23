@@ -135,7 +135,7 @@ class EconomicsLedgerTest {
 
     EconomicsLedger.Entry entry = ledger.recent(1).get(0);
 
-    assertThat(entry.status()).isEqualTo(Outcome.Status.COMPLETED);
+    assertThat(entry.status()).isEqualTo(net.robbrown.actortx.payment.Outcome.COMPLETED);
     assertThat(entry.provider()).isEqualTo("cobalt");
     assertThat(entry.value().savedVsMedian()).isEqualTo(1_000L);
     assertThat(entry.cost().total()).isEqualTo(302_611_000L);

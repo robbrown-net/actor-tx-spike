@@ -5,6 +5,7 @@ import static net.robbrown.actortx.bulk.PlanTest.valid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.SplittableRandom;
+import net.robbrown.actortx.payment.Outcome;
 import org.junit.jupiter.api.Test;
 
 class LoadRunnerTest {
@@ -15,7 +16,7 @@ class LoadRunnerTest {
   @Test
   void itSendsEverythingAndReportsHowItWentUnderTheLabel() {
     StubSubmitter submitter =
-        new StubSubmitter().completingWith(new Ending(Ending.Status.COMPLETED, null));
+        new StubSubmitter().completingWith(new Ending(Outcome.COMPLETED, null));
     LoadRunner runner = new LoadRunner(submitter, clock, pauses, new SplittableRandom(1));
 
     LoadReport report = runner.measure("none", valid(params("count", 4, "interval_ms", 10)));
@@ -35,7 +36,7 @@ class LoadRunnerTest {
     StubSubmitter submitter =
         new StubSubmitter()
             .script(new Submission.Busy(1, 20), new Submission.Invalid(java.util.List.of("bad")))
-            .completingWith(new Ending(Ending.Status.COMPLETED, null));
+            .completingWith(new Ending(Outcome.COMPLETED, null));
     LoadRunner runner = new LoadRunner(submitter, clock, pauses, new SplittableRandom(1));
 
     LoadReport report = runner.measure("100", valid(params("count", 2)));

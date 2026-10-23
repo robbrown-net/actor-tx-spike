@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import net.robbrown.actortx.payment.Outcome;
 
 /**
  * The counts of one batch (or one load run): what was sent, refused, retried and how each accepted
@@ -140,10 +141,7 @@ final class Tally {
   private synchronized void ended(String id, Ending ending, Throwable error) {
     long startedAt = inFlight.remove(id);
     latencies.add(clock.millis() - startedAt);
-    count(
-        error == null
-            ? ending
-            : new Ending(Ending.Status.FAILED, String.valueOf(error.getMessage())));
+    count(error == null ? ending : new Ending(Outcome.FAILED, String.valueOf(error.getMessage())));
   }
 
   private void count(Ending outcome) {
