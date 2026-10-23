@@ -85,6 +85,19 @@
   </profiles>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <!-- the dashboard page is shared with the Elixir side -->
+        <directory>../priv</directory>
+        <includes>
+          <include>panel.html</include>
+        </includes>
+        <targetPath>static</targetPath>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

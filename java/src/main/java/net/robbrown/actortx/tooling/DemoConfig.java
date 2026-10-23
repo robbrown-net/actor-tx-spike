@@ -11,6 +11,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import net.robbrown.actortx.audit.AuditRouter;
 import net.robbrown.actortx.economics.EconomicsLedger;
 import net.robbrown.actortx.economics.RateCard;
@@ -18,11 +20,16 @@ import net.robbrown.actortx.eligibility.Eligibility;
 import net.robbrown.actortx.events.EventBus;
 import net.robbrown.actortx.guarantee.Guarantee;
 import net.robbrown.actortx.guarantee.GuaranteeLedger;
+import net.robbrown.actortx.metrics.Metrics;
 import net.robbrown.actortx.payment.PaymentOptions;
 import net.robbrown.actortx.payment.PaymentServices;
 import net.robbrown.actortx.policy.PolicySet;
+import net.robbrown.actortx.review.ReviewQueue;
+import net.robbrown.actortx.review.ReviewService;
 import net.robbrown.actortx.selection.QuoteSelector;
 import net.robbrown.actortx.service.Admission;
+import net.robbrown.actortx.service.ControlAction;
+import net.robbrown.actortx.service.ControlActions;
 import net.robbrown.actortx.service.CutoffBook;
 import net.robbrown.actortx.service.EconomicsRecorder;
 import net.robbrown.actortx.service.EligibilityService;
@@ -30,8 +37,11 @@ import net.robbrown.actortx.service.GuaranteeBook;
 import net.robbrown.actortx.service.PaymentService;
 import net.robbrown.actortx.service.PolicyResolver;
 import net.robbrown.actortx.service.ProviderCatalog;
+import net.robbrown.actortx.service.ProviderControl;
 import net.robbrown.actortx.service.SelectionService;
 import net.robbrown.actortx.service.Sentinel;
+import net.robbrown.actortx.service.ServerReviewProviders;
+import net.robbrown.actortx.service.SnapshotService;
 import net.robbrown.actortx.validation.Validated;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -128,9 +138,9 @@ public class DemoConfig {
       EligibilityService eligibility,
       PolicyResolver resolver,
       PaymentServices services,
-      @Value("${actortx.admission.max:500}") int max) {
+      Admission admission) {
     return new PaymentService(
-        catalog, eligibility, resolver, PaymentOptions.defaults(), services, new Admission(max));
+        catalog, eligibility, resolver, PaymentOptions.defaults(), services, admission);
   }
 
   /** The sentinel that probes the providers for drift. */
@@ -153,6 +163,82 @@ public class DemoConfig {
   public SelectionService selectionService(
       ProviderCatalog catalog, QuoteSelector selector, PolicyResolver resolver) {
     return new SelectionService(catalog, selector, resolver);
+  }
+
+  /** The manual-review queue, fed from the narrative. */
+  @Bean
+  public ReviewQueue reviewQueue(EventBus bus, PaymentService payments) {
+    ReviewQueue queue = new ReviewQueue(payments::snapshot);
+    bus.subscribe(queue::onEvent);
+    return queue;
+  }
+
+  /** Check, retry and resolve what is waiting for a person. */
+  @Bean
+  public ReviewService reviewService(ReviewQueue queue, ProviderCatalog catalog, EventBus bus) {
+    return new ReviewService(
+        queue, new ServerReviewProviders(catalog), bus, bus::barrier, System::currentTimeMillis);
+  }
+
+  /** Ticks that sample the metrics. */
+  @Bean(destroyMethod = "shutdownNow")
+  public ScheduledExecutorService metricsClock() {
+    return Executors.newSingleThreadScheduledExecutor();
+  }
+
+  /** Throughput, outcomes and JVM figures, rolled up from the narrative. */
+  @Bean
+  public Metrics metrics(EventBus bus, ScheduledExecutorService metricsClock) {
+    Metrics metrics = new Metrics();
+    bus.subscribe(metrics::onEvent);
+    metrics.schedule(metricsClock, Duration.ofSeconds(1));
+    return metrics;
+  }
+
+  /** The admission limit. */
+  @Bean
+  public Admission admission(@Value("${actortx.admission.max:500}") int max) {
+    return new Admission(max);
+  }
+
+  /** The picture the dashboard polls. */
+  @Bean
+  public SnapshotService snapshotService(
+      ProviderCatalog catalog,
+      PolicyResolver resolver,
+      CutoffBook cutoffs,
+      SnapshotService.Ledgers ledgers,
+      Admission admission,
+      PaymentService payments) {
+    return new SnapshotService(catalog, resolver, cutoffs, ledgers, admission, payments);
+  }
+
+  /** Both ledgers together. */
+  @Bean
+  public SnapshotService.Ledgers ledgers(GuaranteeLedger guarantees, EconomicsLedger economics) {
+    return new SnapshotService.Ledgers(guarantees, economics);
+  }
+
+  /** The operator commands the dashboard can give. */
+  @Bean
+  public List<ControlAction> controlActions(
+      ProviderControl control,
+      CutoffBook cutoffs,
+      EventBus bus,
+      PaymentService payments,
+      Admission admission,
+      ReviewService reviews) {
+    return List.of(
+        ControlActions.provider(control),
+        ControlActions.cutoff(cutoffs, bus),
+        ControlActions.submit(payments),
+        ControlActions.admission(admission, bus),
+        ControlActions.review(reviews),
+        ControlActions.notYet("auto"),
+        ControlActions.notYet("pace"),
+        ControlActions.notYet("policy"),
+        ControlActions.notYet("bulk"),
+        ControlActions.notYet("lab"));
   }
 
   /** The jurisdiction rules. */

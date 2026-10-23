@@ -14,6 +14,7 @@ import net.robbrown.actortx.payment.Payment;
 import net.robbrown.actortx.payment.Payment.Routing;
 import net.robbrown.actortx.payment.PaymentOptions;
 import net.robbrown.actortx.payment.PaymentServices;
+import net.robbrown.actortx.payment.PaymentSnapshot;
 import net.robbrown.actortx.payment.TransactionRequest;
 import net.robbrown.actortx.policy.PolicySet;
 import net.robbrown.actortx.policy.PolicySet.Resolved;
@@ -98,6 +99,16 @@ public class PaymentService {
   /** Wait for a transaction to end; empty if it is unknown or did not end in time. */
   public Optional<PaymentView> await(String id, Duration timeout) {
     return find(id).flatMap(p -> p.await(timeout).map(r -> PaymentView.of(p.snapshot())));
+  }
+
+  /** The raw snapshot of a transaction, for views that need more than {@link PaymentView}. */
+  public Optional<PaymentSnapshot> snapshot(String id) {
+    return find(id).map(Payment::snapshot);
+  }
+
+  /** How many payments have been sent since start. */
+  public long submitted() {
+    return ids.get();
   }
 
   /** How many transactions are in flight. */

@@ -63,6 +63,9 @@ class PaymentServiceTest {
     assertThat(view.phase()).isEqualTo("completed");
     assertThat(view.history()).isNotEmpty();
     assertThat(service.view(id)).isPresent();
+    assertThat(service.snapshot(id)).isPresent();
+    assertThat(service.snapshot("nope")).isEmpty();
+    assertThat(service.submitted()).isEqualTo(1);
     assertThat(service.inFlight()).isZero();
   }
 
