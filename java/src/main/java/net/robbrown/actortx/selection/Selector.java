@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.LongSummaryStatistics;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -11,6 +13,10 @@ import net.robbrown.actortx.money.Money;
 import net.robbrown.actortx.policy.Policy;
 import net.robbrown.actortx.policy.Policy.TooDear;
 import net.robbrown.actortx.policy.Policy.WithinBest;
+import net.robbrown.actortx.policy.criteria.Criteria;
+import net.robbrown.actortx.policy.criteria.Criterion;
+import net.robbrown.actortx.policy.criteria.CriterionInput;
+import net.robbrown.actortx.policy.criteria.Span;
 import net.robbrown.actortx.provider.Answer;
 import net.robbrown.actortx.provider.Answer.Error;
 import net.robbrown.actortx.provider.Answer.Ok;
@@ -33,7 +39,7 @@ public final class Selector {
   private Selector() {}
 
   /**
-   * Judge observations under a policy.
+   * Judge observations under a policy, with the standard criteria.
    *
    * @param amount the amount being converted, minor units
    * @param observations what each provider answered
@@ -41,11 +47,51 @@ public final class Selector {
    * @return the per-provider judgements, the ranking and every exclusion
    */
   public static Evaluation evaluate(long amount, List<Observation> observations, Policy policy) {
+    return evaluate(amount, observations, policy, Criteria.standard());
+  }
+
+  /**
+   * Judge observations under a policy, scoring with the given criteria.
+   *
+   * @param amount the amount being converted, minor units
+   * @param observations what each provider answered
+   * @param policy the rules; a criterion it does not weigh counts for nothing
+   * @param criteria the registry the scores are summed over
+   * @return the per-provider judgements, the ranking and every exclusion
+   */
+  public static Evaluation evaluate(
+      long amount, List<Observation> observations, Policy policy, Criteria criteria) {
     List<Item> items = observations.stream().map(o -> judge(o, amount, policy)).toList();
     WithinBest within = policy.withinBest(accepted(items));
     List<Excluded> excluded =
         Stream.concat(refusals(items), within.dropped().stream().map(d -> tooDear(d))).toList();
-    return new Evaluation(items, rank(within.kept(), policy), excluded);
+    return new Evaluation(items, rank(within.kept(), policy, criteria), excluded);
+  }
+
+  /**
+   * Scores (higher is better) for the candidates, in the same order: for each candidate, the sum of
+   * each criterion's score times the policy's weight for it. Empty in, empty out.
+   */
+  public static List<Double> scores(List<Candidate> candidates, Policy policy, Criteria criteria) {
+    if (candidates.isEmpty()) {
+      return List.of();
+    }
+    LongSummaryStatistics nets = candidates.stream().mapToLong(Candidate::net).summaryStatistics();
+    LongSummaryStatistics latencies =
+        candidates.stream().mapToLong(Candidate::latencyMs).summaryStatistics();
+    Span net = new Span(nets.getMin(), nets.getMax());
+    Span latency = new Span(latencies.getMin(), latencies.getMax());
+    return candidates.stream()
+        .map(c -> score(policy, criteria, new CriterionInput(c, net, latency, Map.of())))
+        .toList();
+  }
+
+  private static double score(Policy policy, Criteria criteria, CriterionInput input) {
+    double total = 0.0;
+    for (Criterion criterion : criteria.all()) {
+      total += policy.weights().get(criterion.name()) * criterion.score(input);
+    }
+    return total;
   }
 
   private static Item judge(Observation observation, long amount, Policy policy) {
@@ -110,8 +156,9 @@ public final class Selector {
     return new Excluded(dear.candidate().providerId(), "worse_than_best_bps: " + rounded);
   }
 
-  private static List<Candidate> rank(List<Candidate> candidates, Policy policy) {
-    List<Double> scores = policy.scores(candidates);
+  private static List<Candidate> rank(
+      List<Candidate> candidates, Policy policy, Criteria criteria) {
+    List<Double> scores = scores(candidates, policy, criteria);
     List<Candidate> scored =
         new ArrayList<>(
             IntStream.range(0, candidates.size())

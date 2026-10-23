@@ -3,6 +3,7 @@ package net.robbrown.actortx.selection;
 import java.util.List;
 import net.robbrown.actortx.events.EventSink;
 import net.robbrown.actortx.policy.Policy;
+import net.robbrown.actortx.policy.criteria.Criteria;
 import net.robbrown.actortx.provider.HealthState;
 import net.robbrown.actortx.provider.QuoteRequest;
 import net.robbrown.actortx.selection.QuoteFanOut.Target;
@@ -22,10 +23,17 @@ public final class QuoteSelector implements AutoCloseable {
 
   private final QuoteFanOut fanOut = new QuoteFanOut();
   private final Narrator narrator;
+  private final Criteria criteria;
 
-  /** A selector that narrates to {@code events}. */
+  /** A selector that narrates to {@code events} and scores with the standard criteria. */
   public QuoteSelector(EventSink events) {
+    this(events, Criteria.standard());
+  }
+
+  /** A selector that narrates to {@code events} and scores with {@code criteria}. */
+  public QuoteSelector(EventSink events, Criteria criteria) {
     this.narrator = new Narrator(events);
+    this.criteria = criteria;
   }
 
   /**
@@ -50,7 +58,7 @@ public final class QuoteSelector implements AutoCloseable {
     List<Observation> observations = fanOut.observe(request, screened.callable(), deadlineMs);
     observations.forEach(o -> narrator.observation(request, o));
 
-    Evaluation evaluation = Selector.evaluate(amountOf(request), observations, policy);
+    Evaluation evaluation = Selector.evaluate(amountOf(request), observations, policy, criteria);
     evaluation.items().forEach(item -> narrator.item(request, item));
 
     Selection selection = build(evaluation, screened.notCalled(), baseline, elapsedMs(started));
