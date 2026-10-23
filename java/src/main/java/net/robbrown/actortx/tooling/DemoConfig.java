@@ -6,17 +6,27 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import net.robbrown.actortx.audit.AuditRouter;
+import net.robbrown.actortx.economics.EconomicsLedger;
+import net.robbrown.actortx.economics.RateCard;
 import net.robbrown.actortx.eligibility.Eligibility;
 import net.robbrown.actortx.events.EventBus;
+import net.robbrown.actortx.guarantee.Guarantee;
+import net.robbrown.actortx.guarantee.GuaranteeLedger;
 import net.robbrown.actortx.payment.PaymentOptions;
 import net.robbrown.actortx.payment.PaymentServices;
 import net.robbrown.actortx.policy.PolicySet;
 import net.robbrown.actortx.selection.QuoteSelector;
 import net.robbrown.actortx.service.Admission;
+import net.robbrown.actortx.service.CutoffBook;
+import net.robbrown.actortx.service.EconomicsRecorder;
 import net.robbrown.actortx.service.EligibilityService;
+import net.robbrown.actortx.service.GuaranteeBook;
 import net.robbrown.actortx.service.PaymentService;
 import net.robbrown.actortx.service.PolicyResolver;
 import net.robbrown.actortx.service.ProviderCatalog;
@@ -64,16 +74,61 @@ public class DemoConfig {
     return new QuoteSelector(bus);
   }
 
+  /** The standing guarantees: acme is guaranteed 1.078 this ISO week. */
+  @Bean
+  public GuaranteeBook guaranteeBook() {
+    String week =
+        LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_WEEK_DATE).substring(0, 8);
+    Map<String, Object> acme = Map.of("merchant_id", "acme", "period", week, "rate", "1.078");
+    return new GuaranteeBook(
+        Map.of("acme", ((Validated.Valid<Guarantee>) Guarantee.fromMap(acme)).value()),
+        new GuaranteeLedger());
+  }
+
+  /** The regional cut-offs the operator sets. */
+  @Bean
+  public CutoffBook cutoffBook() {
+    return new CutoffBook();
+  }
+
+  /** Prices every transaction as it ends. */
+  @Bean
+  public EconomicsRecorder economicsRecorder(EventBus bus) {
+    EconomicsRecorder recorder = new EconomicsRecorder(new EconomicsLedger(RateCard.defaults()));
+    bus.subscribe(recorder);
+    return recorder;
+  }
+
+  /** The economics ledger. */
+  @Bean
+  public EconomicsLedger economicsLedger(EconomicsRecorder recorder) {
+    return recorder.ledger();
+  }
+
+  /** The guarantee ledger. */
+  @Bean
+  public GuaranteeLedger guaranteeLedger(GuaranteeBook book) {
+    return book.ledger();
+  }
+
+  /** What a transaction needs from the system around it. */
+  @Bean
+  public PaymentServices paymentServices(
+      QuoteSelector selector, EventBus bus, CutoffBook cutoffs, GuaranteeBook guarantees) {
+    return PaymentServices.of(selector, bus)
+        .withBarrier(bus::barrier)
+        .withDeadlines(cutoffs)
+        .withGuarantees(guarantees);
+  }
+
   /** Sending payments: at most {@code actortx.admission.max} at once. */
   @Bean
   public PaymentService paymentService(
       ProviderCatalog catalog,
       EligibilityService eligibility,
       PolicyResolver resolver,
-      QuoteSelector selector,
-      EventBus bus,
+      PaymentServices services,
       @Value("${actortx.admission.max:500}") int max) {
-    PaymentServices services = PaymentServices.of(selector, bus).withBarrier(bus::barrier);
     return new PaymentService(
         catalog, eligibility, resolver, PaymentOptions.defaults(), services, new Admission(max));
   }

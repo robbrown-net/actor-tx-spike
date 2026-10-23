@@ -3,16 +3,23 @@ package net.robbrown.actortx.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -32,6 +39,7 @@ class PaymentIT {
   }
 
   @Autowired private TestRestTemplate http;
+  @LocalServerPort private int port;
 
   private Map<String, Object> pay(Map<String, Object> body) {
     ResponseEntity<Map<String, Object>> accepted = Json.post(http, "/api/payments", body);
@@ -84,5 +92,51 @@ class PaymentIT {
               })
           .toList();
     }
+  }
+
+  @Test
+  void aGuaranteedMerchantsPaymentIsJudgedAndAppearsInTheLedgers() {
+    Map<String, Object> done = pay(Map.of("amount", 1000, "merchant_id", "acme"));
+
+    Map<String, Object> summary = Json.map(Json.map(done.get("outcome")).get("summary"));
+    assertThat(Json.map(summary.get("guarantee"))).containsEntry("merchant_id", "acme");
+    assertThat(Json.list(http, "/api/guarantees")).isNotEmpty();
+    assertThat(Json.map(Json.map(Json.get(http, "/api/economics").getBody()).get("overall")))
+        .containsKey("transactions");
+    assertThat(Json.list(http, "/api/events?limit=5")).hasSizeLessThanOrEqualTo(5);
+  }
+
+  @Test
+  void aCutOffThatPassesStopsPaymentsToThatRegion() {
+    Map<String, Object> set =
+        Json.post(
+                http,
+                "/api/control",
+                Map.of("action", "cutoff", "region", "IN", "in_seconds", 0.001))
+            .getBody();
+    assertThat(set).containsEntry("ok", true);
+    assertThat(Json.get(http, "/api/cutoffs").getBody()).containsKey("IN");
+
+    Map<String, Object> done = pay(Map.of("amount", 10, "destination_region", "IN"));
+
+    assertThat(Json.map(done.get("outcome"))).containsEntry("status", "failed");
+    assertThat(Json.map(done.get("outcome")).get("reason").toString())
+        .startsWith("deadline_missed: IN");
+    Json.post(http, "/api/control", Map.of("action", "cutoff", "region", "IN"));
+  }
+
+  @Test
+  void theEventStreamCarriesWhatHappens() throws Exception {
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest request =
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/stream")).build();
+    CompletableFuture<HttpResponse<Stream<String>>> response =
+        client.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
+    Thread.sleep(300);
+
+    pay(Map.of("amount", 5));
+
+    HttpResponse<Stream<String>> stream = response.get(10, TimeUnit.SECONDS);
+    assertThat(stream.body().filter(l -> l.startsWith("event:")).findFirst()).isPresent();
   }
 }
