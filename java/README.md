@@ -19,7 +19,7 @@ cd java
 |---|---|---|
 | 1 | **Quote and select** over HTTP: exact money, policy and cascade, jurisdiction rules, provider model (scriptable fake with currency pairs, health and circuit breaker, bulkhead with priority classes), concurrent selector, sentinel, operator control | done |
 | 2 | **Pay**: event bus, payment orchestrator (idempotent steps, retries, failover, compensation, doubt resolved by asking the provider), hash-chained audit log and regional router with write-ahead barrier, admission control (429 + `Retry-After`). Ported and unit/integration tested but **not yet wired into the demo**: economics ledger, guarantees, regional cut-offs | done (396 unit tests at 100% lines / 98% branches; 47 integration tests at 90% lines) |
-| 3 | **Operate**: wire economics/guarantees/cut-offs and SSE, recovery, replay, review, bulk send and load tool, the existing dashboard served by Spring, CLI tools | next |
+| 3 | **Operate**: economics, guarantees, cut-offs and SSE wired in; replay (`GET /api/replay`), review workflow, bulk send, metrics and the existing dashboard (`/`) served by Spring. Still to do: recovery after restart, CLI tools, dashboard actions `auto`/`pace`/`policy`/lab | mostly done |
 
 ### The HTTP API (JSON, snake_case, the same shapes the Elixir dashboard speaks)
 
@@ -61,7 +61,7 @@ src/main/java/net/robbrown/actortx/
   eligibility/  jurisdiction rules: instruments, customer types, currencies, providers, logs, retention
   provider/     Answer vocabulary, ProviderAdapter, FakeProvider, Health (breaker), ProviderServer (bulkhead, timeouts), Limits
   selection/    Selector (pure judgement), QuoteSelector (fan-out, narration), Participant, Selection
-  payment/      Payment (one virtual thread per transaction), PaymentServices, Result, journal
+  payment/      Payment (the engine: one virtual thread per transaction, runs a Workflow of Steps), Step, Workflow, Workflows, Steps (the standard ones), Phase, Outcome, Result, journal
   events/       EventBus (ordered narrative, durable sinks, barrier), Event, DurableSink
   audit/        AuditLog (hash chain), AuditRouter (regional logs, residency), one-writer lock, card scrubber
   economics/    costs and the economics ledger     guarantee/  guarantees, ledger, regional cut-offs

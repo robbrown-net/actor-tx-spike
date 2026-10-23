@@ -17,3 +17,4 @@
 | [0013](0013-back-pressure.md) | Back-pressure: admission control, priority bulkheads, waiting instead of failing | accepted |
 | [0014](0014-product-depth-currencies-review-and-batches.md) | Currencies price, route and permit; a review workflow for needs_review; recorded batches | accepted |
 | [0015](0015-java-spring-port.md) | Java 21 / Spring Boot port in chunks, held to the same bars | accepted |
+| [0016](0016-extensible-domain-model.md) | Steps, workflows, capabilities and criteria are values, not enum members | accepted |

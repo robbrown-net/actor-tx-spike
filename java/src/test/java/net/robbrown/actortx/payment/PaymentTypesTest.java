@@ -52,4 +52,21 @@ class PaymentTypesTest {
     assertThat(List.of(Phase.RECEIVED, Phase.COMPLETED).stream().map(Phase::terminal))
         .containsExactly(false, true);
   }
+
+  @Test
+  void theReceivedRecordCarriesItsSchemaVersionAndTheDecisionKeyReplayReads() {
+    TransactionRequest request = TransactionRequest.of("t", 5);
+
+    Map<String, Object> data =
+        PaymentJournal.received(
+            request,
+            Map.of(),
+            PaymentOptions.defaults(),
+            List.of(),
+            List.of(),
+            net.robbrown.actortx.eligibility.Eligibility.open().decide(request.eligibilityMap()));
+
+    assertThat(data).containsEntry("schema", net.robbrown.actortx.events.EventKinds.SCHEMA_VERSION);
+    assertThat(((Map<?, ?>) data.get("eligibility")).get("permitted?")).isEqualTo(true);
+  }
 }

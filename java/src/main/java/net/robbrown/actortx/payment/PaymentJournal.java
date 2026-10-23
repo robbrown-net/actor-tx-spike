@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import net.robbrown.actortx.eligibility.Decision;
 import net.robbrown.actortx.eligibility.Eligibility;
+import net.robbrown.actortx.events.EventKinds;
 import net.robbrown.actortx.selection.Participant;
 
 /** The records a replay reads: what a transaction was given, in the shape the audit log keeps. */
@@ -21,6 +22,7 @@ final class PaymentJournal {
       List<Participant> denied,
       Decision decision) {
     Map<String, Object> data = new LinkedHashMap<>();
+    data.put("schema", EventKinds.SCHEMA_VERSION);
     data.put("amount", request.amount());
     data.put("request", request.toMap());
     data.put("policy", policy);

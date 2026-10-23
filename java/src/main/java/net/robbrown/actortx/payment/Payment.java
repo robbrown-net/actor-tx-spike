@@ -15,6 +15,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.LockSupport;
 import net.robbrown.actortx.eligibility.Decision;
 import net.robbrown.actortx.eligibility.Eligibility;
+import net.robbrown.actortx.events.EventKinds;
 import net.robbrown.actortx.money.Money;
 import net.robbrown.actortx.payment.Deadlines.Deadline;
 import net.robbrown.actortx.payment.PaymentSnapshot.HistoryEntry;
@@ -208,7 +209,7 @@ public final class Payment implements Runnable {
 
   private void execute() {
     note(
-        "tx_received",
+        EventKinds.TX_RECEIVED,
         "transaction received: amount " + Money.format(request.amount()) + pair(),
         PaymentJournal.received(request, policy.toMap(), options, eligible, denied, decision));
     Optional<Result> refusal = admission();
@@ -254,7 +255,7 @@ public final class Payment implements Runnable {
       return;
     }
     note(
-        "eligibility_decided",
+        EventKinds.ELIGIBILITY_DECIDED,
         "jurisdiction %s: %d of %d providers eligible; records kept in %s"
             .formatted(
                 String.join("/", decision.regions()),
@@ -272,7 +273,10 @@ public final class Payment implements Runnable {
 
   private void announcePolicy() {
     if (policyLabel != null && !policyLabel.isEmpty()) {
-      note("policy_resolved", "routing policy: " + policyLabel, Map.of("layers", policyLabel));
+      note(
+          EventKinds.POLICY_RESOLVED,
+          "routing policy: " + policyLabel,
+          Map.of("layers", policyLabel));
     }
   }
 
@@ -282,7 +286,7 @@ public final class Payment implements Runnable {
     if (deadline != null) {
       double seconds = Math.round((deadline.atMs() - now) / 100.0) / 10.0;
       note(
-          "deadline_set",
+          EventKinds.DEADLINE_SET,
           deadline.region() + " cut-off in " + seconds + "s",
           Map.of("region", deadline.region(), "deadline_ms", deadline.atMs(), "seconds", seconds));
     }
@@ -350,12 +354,12 @@ public final class Payment implements Runnable {
   // this route calls for. The workflow it would use is remembered when it is not passed over.
   private Optional<Skip> skipReason(Candidate c, long now) {
     if (c.quote().expired(now)) {
-      return Optional.of(new Skip("quote_expired", "its quote has expired"));
+      return Optional.of(new Skip(EventKinds.QUOTE_EXPIRED, "its quote has expired"));
     }
     Workflow route = services.workflows().forRoute(request, c.providerId());
     Optional<Operation> missing = unsupported(route, c.providerId());
     missing.ifPresentOrElse(op -> {}, () -> workflow = route);
-    return missing.map(op -> new Skip("unsupported_step", "it cannot " + op.wire()));
+    return missing.map(op -> new Skip(EventKinds.UNSUPPORTED_STEP, "it cannot " + op.wire()));
   }
 
   private Optional<Operation> unsupported(Workflow route, String providerId) {
@@ -376,7 +380,7 @@ public final class Payment implements Runnable {
     current = c;
     done.clear();
     note(
-        "provider_chosen",
+        EventKinds.PROVIDER_CHOSEN,
         "going with %s (quote rate %s, fee %s)"
             .formatted(
                 c.providerId(), Money.formatRate(c.quote().rate()), Money.format(c.quote().fee())),
@@ -389,7 +393,7 @@ public final class Payment implements Runnable {
 
   private void failOver(String reason) {
     note(
-        "failover",
+        EventKinds.FAILOVER,
         "moving on from " + current.providerId() + ": " + reason,
         Map.of("provider", current.providerId()));
     current = null;
@@ -425,7 +429,7 @@ public final class Payment implements Runnable {
     }
     String key = key(step);
     note(
-        "step_started",
+        EventKinds.STEP_STARTED,
         "asking %s to %s (attempt %d, key %s)"
             .formatted(current.providerId(), step.verb(), attempt, key),
         Map.of(
@@ -479,7 +483,7 @@ public final class Payment implements Runnable {
     }
     String op = step.operation().wire();
     note(
-        "step_succeeded",
+        EventKinds.STEP_SUCCEEDED,
         current.providerId() + " did " + op,
         Map.of("provider", current.providerId(), "op", op));
     done.add(step);
@@ -492,14 +496,14 @@ public final class Payment implements Runnable {
     String reason = ((Answer.Error<Receipt>) call.answer()).reason();
     if ("overloaded".equals(reason)) {
       note(
-          "step_retry",
+          EventKinds.STEP_RETRY,
           "%s is busy (%s not sent); asking again shortly".formatted(current.providerId(), op),
           Map.of("provider", current.providerId(), "op", op));
       return new Reaction.Retry(attempt, options.backoffMs());
     }
     if (attempt < options.maxAttempts()) {
       note(
-          "step_retry",
+          EventKinds.STEP_RETRY,
           "%s errored on %s (%s); retrying (attempt %d/%d)"
               .formatted(current.providerId(), op, reason, attempt + 1, options.maxAttempts()),
           Map.of("provider", current.providerId(), "op", op));
@@ -517,7 +521,7 @@ public final class Payment implements Runnable {
               .formatted(current.providerId(), step.verb(), reason));
     }
     note(
-        "step_failed",
+        EventKinds.STEP_FAILED,
         "%s could not %s: %s".formatted(current.providerId(), step.verb(), reason),
         Map.of("provider", current.providerId(), "op", step.operation().wire(), "reason", reason));
     return compensate(undosOf(done), new After.FailOver(step.operation().wire() + ": " + reason));
@@ -535,7 +539,7 @@ public final class Payment implements Runnable {
     String op = step.operation().wire();
     Answer<Receipt> answer = call.answer();
     note(
-        "in_doubt",
+        EventKinds.IN_DOUBT,
         "%s gave no definite answer to %s (%s); it may or may not have happened"
             .formatted(current.providerId(), op, answer.tag()),
         Map.of("provider", current.providerId(), "op", op));
@@ -559,7 +563,7 @@ public final class Payment implements Runnable {
     Answer<Receipt> status = status(step, n);
     if (status.isOk()) {
       note(
-          "reconciled",
+          EventKinds.RECONCILED,
           current.providerId() + " confirms " + op + " did happen",
           Map.of("provider", current.providerId(), "op", op));
       done.add(step);
@@ -578,7 +582,7 @@ public final class Payment implements Runnable {
                   + " is unresolved; NOT failing over (the payment may already have happened)"));
     }
     note(
-        "reconcile_pending",
+        EventKinds.RECONCILE_PENDING,
         "%s cannot yet confirm %s (%s); asking again (%d/%d)"
             .formatted(current.providerId(), op, status.tag(), n, options.reconcileAttempts()),
         Map.of("provider", current.providerId(), "op", op));
@@ -589,7 +593,7 @@ public final class Payment implements Runnable {
     Operation op = step.operation();
     String key = key(step);
     note(
-        "status_check",
+        EventKinds.STATUS_CHECK,
         "asking " + current.providerId() + " what it holds for " + op.wire(),
         Map.of("provider", current.providerId(), "op", op.wire(), "key", key));
     phase = Phase.RECONCILING;
@@ -603,7 +607,7 @@ public final class Payment implements Runnable {
   private Flow cancelByKey(Step step, Answer<Receipt> unresolved) {
     String op = step.operation().wire();
     note(
-        "cancel_by_key",
+        EventKinds.CANCEL_BY_KEY,
         "%s cannot confirm %s (%s); cancelling by key to be safe"
             .formatted(current.providerId(), op, unresolved.tag()),
         Map.of("provider", current.providerId(), "op", op));
@@ -667,7 +671,7 @@ public final class Payment implements Runnable {
   private Verdict undoAttempt(Undo undo, int attempt) {
     String key = key(undo.original());
     note(
-        "undo_started",
+        EventKinds.UNDO_STARTED,
         "asking %s to %s (key %s)".formatted(current.providerId(), undo.compensation().verb(), key),
         Map.of("provider", current.providerId(), "op", undo.operation().wire(), "key", key));
     Optional<String> unavailable = services.barrier().get();
@@ -712,7 +716,7 @@ public final class Payment implements Runnable {
     String op = undo.operation().wire();
     if (answer.isOk()) {
       note(
-          "undone",
+          EventKinds.UNDONE,
           current.providerId() + " did " + op,
           Map.of("provider", current.providerId(), "op", op));
       return new Verdict.Settled();
@@ -722,7 +726,7 @@ public final class Payment implements Runnable {
     }
     if (attempt < options.maxAttempts()) {
       note(
-          "undo_retry",
+          EventKinds.UNDO_RETRY,
           op + " at " + current.providerId() + " failed (" + answer.tag() + "); retrying",
           Map.of());
       return new Verdict.Again();
@@ -752,7 +756,7 @@ public final class Payment implements Runnable {
                   .formatted(deadline.region(), step.verb())));
     }
     note(
-        "deadline_missed",
+        EventKinds.DEADLINE_MISSED,
         "the " + deadline.region() + " cut-off has passed; stopping and undoing",
         Map.of("region", deadline.region()));
     return Optional.of(
@@ -808,9 +812,9 @@ public final class Payment implements Runnable {
 
   private static String kindOf(Result outcome) {
     return switch (outcome) {
-      case Completed completed -> "tx_completed";
-      case Failed failed -> "tx_failed";
-      case NeedsReview review -> "needs_review";
+      case Completed completed -> EventKinds.TX_COMPLETED;
+      case Failed failed -> EventKinds.TX_FAILED;
+      case NeedsReview review -> EventKinds.NEEDS_REVIEW;
     };
   }
 

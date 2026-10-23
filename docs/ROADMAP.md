@@ -122,8 +122,11 @@ exponents per currency and fee schedules; forward deal lifecycle; sanctions and 
 
 ## Phase 4: Java and Spring port - IN PROGRESS (started 2026-10-23, ADR 0015)
 - Chunk 1 DONE: quote and select over HTTP (exact money, policy cascade, jurisdiction rules, provider model, concurrent selector, sentinel, operator control, demo world as data); 198 unit and 20 integration tests; same bars as Elixir plus branch coverage and PIT mutation testing.
-- Chunk 2 next: events, payment orchestrator, audit log and router (write-ahead, fail closed), admission, economics, guarantees and cut-offs, SSE.
-- Chunk 3: recovery, replay, review, bulk send and load, the existing dashboard served by Spring, CLI tools.
+- Chunk 2 DONE (2026-10-23): event bus, payment engine, audit log and router (write-ahead, fail closed), admission, economics, guarantees and cut-offs, SSE.
+- Chunk 3 mostly DONE (2026-10-23): replay, review, bulk send and load runner, metrics, the existing dashboard served by Spring. Still to do: recovery after restart, CLI tools (replay, load, audit verify), dashboard actions `auto`, `pace`, `policy` and the test lab, `docs/quality/LOAD_RESULTS.md` for Java.
+- Design change (ADR 0016, 2026-10-23): steps, workflows, provider capabilities and routing criteria are values, so new steps, per-corridor workflows, async settlement and new criteria need no engine change.
+- Follow-ups from ADR 0016: review derives its step lists from the recorded workflow; replay keeps a fourth criterion's weight; record workflow name/version in `tx_received` before recovery is ported; webhook-confirmed steps.
+- **Review the closed enums again** (`Outcome`, `Breaker`, `HealthState`, `Instrument`, `CustomerType`, `BulkheadClass`, review status, `Mode.Kind`) whenever the domain changes, and at the latest before the first new product or provider type: each is a bet that the set is closed. `Instrument` and `CustomerType` are the likeliest to be wrong (jurisdiction rules are data, they are not).
 - Find-and-fix list for the Elixir side: `PolicySet.resolve/2` crashes with a `MatchError` when merchant and customer layers are each valid but invalid combined.
 
 ## Regulatory-driven items (added 2026-10-17; see docs/compliance/COMPLIANCE_EVIDENCE.md)
