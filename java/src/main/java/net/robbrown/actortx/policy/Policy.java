@@ -1,14 +1,15 @@
 package net.robbrown.actortx.policy;
 
-import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import net.robbrown.actortx.policy.criteria.Criteria;
 import net.robbrown.actortx.provider.HealthState;
 import net.robbrown.actortx.selection.Candidate;
+import net.robbrown.actortx.selection.Selector;
 import net.robbrown.actortx.validation.FieldReader;
 import net.robbrown.actortx.validation.Parsed;
 import net.robbrown.actortx.validation.Parsers;
@@ -18,7 +19,8 @@ import net.robbrown.actortx.validation.Validated;
  * Routing and scoring policy as validated data.
  *
  * <ul>
- *   <li>{@code weights}: relative importance of net cost, response speed and reliability.
+ *   <li>{@code weights}: relative importance of each criterion in {@link Criteria} by name (by
+ *       default cost, speed and reliability).
  *   <li>{@code minValidityMs} and {@code maxLatencyMs}: hard constraints, see {@link #check}.
  *   <li>{@code maxBpsFromBest}: never accept a quote more than this many basis points worse than
  *       the best net received; {@code null} is no limit. Applied before scoring, so speed and
@@ -26,10 +28,10 @@ import net.robbrown.actortx.validation.Validated;
  *   <li>{@code excludeStates}: provider health states that are never called.
  * </ul>
  *
- * Scoring is pure and deterministic. Cost and speed are scaled 0..1 relative to the candidate set
- * (1 is best); reliability is a fixed factor per health state.
+ * Scoring is pure and deterministic: see {@link Selector#scores}, a weighted sum of each
+ * criterion's 0..1 score.
  *
- * @param weights relative importance of cost, speed and reliability
+ * @param weights relative importance of each criterion, by name
  * @param minValidityMs least remaining quote life accepted, in milliseconds
  * @param maxLatencyMs slowest provider answer accepted, or {@code null} for no limit
  * @param maxBpsFromBest widest gap to the best net accepted, or {@code null} for no limit
@@ -46,16 +48,8 @@ public record Policy(
    * The policy as plain data, exactly as it would be given to {@link #fromMap} (for the audit log).
    */
   public Map<String, Object> toMap() {
-    Map<String, Object> map = new java.util.LinkedHashMap<>();
-    map.put(
-        "weights",
-        Map.of(
-            "cost",
-            weights.cost(),
-            "speed",
-            weights.speed(),
-            "reliability",
-            weights.reliability()));
+    Map<String, Object> map = new LinkedHashMap<>();
+    map.put("weights", new LinkedHashMap<>(weights.values()));
     map.put("min_validity_ms", minValidityMs);
     map.put("max_latency_ms", maxLatencyMs);
     map.put("max_bps_from_best", maxBpsFromBest);
@@ -85,13 +79,6 @@ public record Policy(
       Set.of(HealthState.STALLED, HealthState.QUARANTINED);
   private static final Set<String> KEYS =
       Set.of("weights", "min_validity_ms", "max_latency_ms", "max_bps_from_best", "exclude_states");
-  private static final List<String> WEIGHT_KEYS = List.of("cost", "speed", "reliability");
-  private static final Map<HealthState, Double> RELIABILITY =
-      new EnumMap<>(
-          Map.of(
-              HealthState.HEALTHY, 1.0,
-              HealthState.UNKNOWN, 0.7,
-              HealthState.DEGRADED, 0.4));
   private static final double BPS_PER_UNIT = 10_000;
   private static final String MAX_LATENCY_MESSAGE = "must be nil or a positive integer";
   private static final String UNKNOWN_STATE =
@@ -102,10 +89,18 @@ public record Policy(
     return new Policy(DEFAULT_WEIGHTS, 0, null, null, DEFAULT_EXCLUDED);
   }
 
-  /** Validate plain data (decoded JSON). Every problem is reported, not just the first. */
+  /** Validate plain data (decoded JSON) against the standard criteria. */
   public static Validated<Policy> fromMap(Map<String, Object> data) {
+    return fromMap(data, Criteria.standard());
+  }
+
+  /**
+   * Validate plain data (decoded JSON). Every problem is reported, not just the first. A name in
+   * {@code weights} must be a criterion of the registry; missing ones weigh 0.
+   */
+  public static Validated<Policy> fromMap(Map<String, Object> data, Criteria criteria) {
     FieldReader reader = new FieldReader(data, "").rejectUnknown(KEYS);
-    Weights weights = reader.read("weights", DEFAULT_WEIGHTS, raw -> parseWeights(raw));
+    Weights weights = reader.read("weights", DEFAULT_WEIGHTS, raw -> parseWeights(raw, criteria));
     long minValidity = reader.read("min_validity_ms", 0L, raw -> parseMinValidity(raw));
     Long maxLatency = reader.read("max_latency_ms", null, raw -> parseMaxLatency(raw));
     Double maxBps = reader.read("max_bps_from_best", null, raw -> parseMaxBps(raw));
@@ -141,58 +136,36 @@ public record Policy(
         split.get(true).stream().map(TooDear::candidate).toList(), split.get(false));
   }
 
-  /** Scores (higher is better) for the candidates, in the same order. Empty in, empty out. */
+  /**
+   * Scores (higher is better) for the candidates under the standard criteria, in the same order.
+   * Empty in, empty out.
+   */
   public List<Double> scores(List<Candidate> candidates) {
-    if (candidates.isEmpty()) {
-      return List.of();
-    }
-    LongSummaryStatistics nets = candidates.stream().mapToLong(Candidate::net).summaryStatistics();
-    LongSummaryStatistics latencies =
-        candidates.stream().mapToLong(Candidate::latencyMs).summaryStatistics();
-    return candidates.stream().map(c -> score(c, nets, latencies)).toList();
+    return Selector.scores(candidates, this, Criteria.standard());
   }
 
   private boolean tooSlow(long latencyMs) {
     return maxLatencyMs != null && latencyMs > maxLatencyMs;
   }
 
-  private double score(Candidate c, LongSummaryStatistics nets, LongSummaryStatistics latencies) {
-    return weights.cost() * higherIsBetter(c.net(), nets)
-        + weights.speed() * lowerIsBetter(c.latencyMs(), latencies)
-        + weights.reliability() * RELIABILITY.getOrDefault(c.state(), 0.0);
-  }
-
   private static double bpsWorse(long net, long best) {
     return best > 0 ? (double) (best - net) / best * BPS_PER_UNIT : 0.0;
   }
 
-  private static double higherIsBetter(long value, LongSummaryStatistics range) {
-    return fraction(value - range.getMin(), range);
-  }
-
-  private static double lowerIsBetter(long value, LongSummaryStatistics range) {
-    return fraction(range.getMax() - value, range);
-  }
-
-  private static double fraction(long offset, LongSummaryStatistics range) {
-    long spread = range.getMax() - range.getMin();
-    return spread == 0 ? 1.0 : (double) offset / spread;
-  }
-
-  private static Parsed<Weights> parseWeights(Object raw) {
+  private static Parsed<Weights> parseWeights(Object raw, Criteria criteria) {
     if (!(raw instanceof Map<?, ?>)) {
       return Parsed.fail("must be a map");
     }
     Map<String, Object> map = Parsers.stringKeys(raw);
-    List<String> extra =
-        map.keySet().stream().filter(k -> !WEIGHT_KEYS.contains(k)).sorted().toList();
+    List<String> extra = map.keySet().stream().filter(k -> !criteria.knows(k)).sorted().toList();
     if (!extra.isEmpty()) {
       return Parsed.fail("unknown weights: " + String.join(", ", extra));
     }
-    return usableWeights(WEIGHT_KEYS.stream().map(k -> map.getOrDefault(k, 0)).toList());
+    List<String> names = criteria.names();
+    return usableWeights(names, names.stream().map(k -> map.getOrDefault(k, 0)).toList());
   }
 
-  private static Parsed<Weights> usableWeights(List<Object> values) {
+  private static Parsed<Weights> usableWeights(List<String> names, List<Object> values) {
     if (!values.stream().allMatch(Policy::isNonNegativeNumber)) {
       return Parsed.fail("must be non-negative numbers");
     }
@@ -201,7 +174,11 @@ public record Policy(
     if (total == 0) {
       return Parsed.fail("must not all be zero");
     }
-    return Parsed.ok(new Weights(nums.get(0) / total, nums.get(1) / total, nums.get(2) / total));
+    Map<String, Double> normalised = new LinkedHashMap<>();
+    for (int i = 0; i < names.size(); i++) {
+      normalised.put(names.get(i), nums.get(i) / total);
+    }
+    return Parsed.ok(new Weights(normalised));
   }
 
   private static boolean isNonNegativeNumber(Object value) {
