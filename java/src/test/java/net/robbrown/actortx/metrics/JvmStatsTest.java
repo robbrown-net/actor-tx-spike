@@ -14,5 +14,16 @@ class JvmStatsTest {
     assertThat(now.heapMax()).isNotZero();
     assertThat(now.threads()).isPositive();
     assertThat(now.gcCount()).isNotNegative();
+    assertThat(now.nonHeapUsed()).isPositive();
+    assertThat(now.gcTimeMs()).isNotNegative();
+    assertThat(now.cpuLoad()).isBetween(0.0, 1.0);
+  }
+
+  @Test
+  void theShortFormLeavesTheExtraReadingsAtZero() {
+    JvmStats stats = new JvmStats(1, 2, 3, 4);
+
+    assertThat(stats.nonHeapUsed()).isZero();
+    assertThat(stats.cpuLoad()).isZero();
   }
 }

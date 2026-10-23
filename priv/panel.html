@@ -660,6 +660,7 @@ function renderPerf() {
   const w = $('perfWindow').value, last = perfData.latest;
   const rollup = w === 'minutes';
   const rows = rollup ? perfData.minutes : perfData.raw.slice(-Number(w));
+  if (last && last.jvm) return renderPerfJvm(last, rows, rollup);   // the Java build reports JVM figures
   const get = (rawFn, minFn) => rows.map(rollup ? minFn : rawFn);
   const m = (k) => get(r => mb(r.memory[k]), () => 0);
   if (rollup) {
@@ -693,6 +694,43 @@ function renderPerf() {
       t(last.gc_ps + '/s', 'GC') + t(last.tx.in_flight, 'tx in flight') + t(Math.round(last.e2e.p95) + ' ms', 'e2e p95') +
       t(last.overhead_us + ' µs', 'monitor cost / sample') + t('n/a', 'storage (no durable store yet)');
   }
+}
+
+// The same tab for the Java build: its samples carry JVM figures (heap, threads, GC, CPU share)
+// instead of the BEAM's (memory kinds, schedulers, reductions, ports); the rest is shared.
+function perfLabels() {
+  const title = (id, text) => { $(id).parentNode.querySelector('h3 span').textContent = text; };
+  title('cMem', 'JVM memory'); title('cCpu', 'CPU and garbage collection'); title('cRed', 'Threads');
+  $('cNet').parentNode.style.display = 'none'; $('topTable').parentNode.style.display = 'none';
+}
+function renderPerfJvm(last, rows, rollup) {
+  perfLabels();
+  const tx = rollup ? [r => r.completed, r => r.failed, r => r.needs_review] : [r => r.tx.completed, r => r.tx.failed, r => r.tx.needs_review];
+  chartBars('cTx', 'lTx', [{ name: 'completed', color: '#3fb950', values: rows.map(tx[0]) }, { name: 'failed', color: '#f85149', values: rows.map(tx[1]) }, { name: 'review', color: '#d29922', values: rows.map(tx[2]) }]);
+  if (rollup) {
+    chartStack('cMem', 'lMem', [{ name: 'heap (mean)', color: PALETTE[0], values: rows.map(r => mb(r.heap_used_mean)) }]);
+    chartLines('cCpu', 'lCpu', [{ name: 'GC / s', color: PALETTE[1], values: rows.map(r => r.gc_per_second_mean) }], { fmt: v => v.toFixed(2) });
+    chartLines('cRed', 'lRed', [{ name: 'threads (max)', color: PALETTE[3], values: rows.map(r => r.threads_max) }], { fmt: v => Math.round(v) });
+    chartLines('cE2e', 'lE2e', [{ name: 'p95 (max in minute)', color: PALETTE[2], values: rows.map(r => r.e2e_p95_max) }], { fmt: v => Math.round(v) + ' ms' });
+    chartLines('cProv', 'lProv', [], {});
+  } else {
+    chartStack('cMem', 'lMem', [{ name: 'heap', color: PALETTE[0], values: rows.map(r => mb(r.jvm.heap_used)) }, { name: 'non-heap', color: PALETTE[1], values: rows.map(r => mb(r.jvm.non_heap_used)) }]);
+    chartLines('cCpu', 'lCpu', [{ name: 'cpu %', color: PALETTE[0], values: rows.map(r => r.jvm.cpu_load * 100) }, { name: 'GC / s', color: PALETTE[1], values: rows.map(r => r.gc_per_second) }], { fmt: v => v.toFixed(1) });
+    chartLines('cRed', 'lRed', [{ name: 'threads', color: PALETTE[3], values: rows.map(r => r.jvm.threads) }], { fmt: v => Math.round(v) });
+    chartLines('cE2e', 'lE2e', [{ name: 'p50', color: PALETTE[1], values: rows.map(r => r.e2e.p50) }, { name: 'p95', color: PALETTE[2], values: rows.map(r => r.e2e.p95) }, { name: 'p99', color: PALETTE[5], values: rows.map(r => r.e2e.p99) }], { fmt: v => Math.round(v) + ' ms' });
+    const ids = [...new Set(rows.flatMap(r => Object.keys(r.providers || {})))].sort();
+    chartLines('cProv', 'lProv', ids.map((id, i) => ({ name: id, color: PALETTE[i % PALETTE.length], values: rows.map(r => (r.providers[id] || {}).p95_ms || 0) })), { fmt: v => Math.round(v) + ' ms' });
+  }
+  const j = last.jvm;
+  $('memNow').textContent = mb(j.heap_used).toFixed(0) + ' / ' + mb(j.heap_max).toFixed(0) + ' MB heap';
+  $('cpuNow').textContent = (j.cpu_load * 100).toFixed(0) + '% cpu';
+  $('netNow').textContent = '';
+  $('redNow').textContent = j.threads + ' threads';
+  $('e2eNow').textContent = 'p95 ' + Math.round(last.e2e.p95) + ' ms';
+  const t = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
+  $('tiles').innerHTML = t(mb(j.heap_used).toFixed(0) + ' MB', 'heap in use') + t(mb(j.non_heap_used).toFixed(0) + ' MB', 'non-heap') + t(j.threads, 'threads') +
+    t(last.gc_per_second.toFixed(2) + '/s', 'GC') + t(j.gc_time_ms + ' ms', 'GC time so far') + t(last.tx.in_flight, 'tx in flight') +
+    t(Math.round(last.e2e.p95) + ' ms', 'e2e p95') + t(last.overhead_us + ' µs', 'monitor cost / sample');
 }
 
 function frame() { if (S.dirty) { S.dirty = false; renderProviders(); renderTxs(); renderStory(); } requestAnimationFrame(frame); }
