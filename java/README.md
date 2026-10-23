@@ -7,9 +7,12 @@ The Java 21 / Spring Boot 3 port of the Elixir spike in the repository root. Sam
 ```sh
 cd java
 ./jmvn verify                 # everything: format, static analysis, unit tests + gate, integration tests + gate
-./jmvn spring-boot:run        # the service on http://127.0.0.1:4040 (loopback only)
+./run                         # build a jar and run it on http://127.0.0.1:4040 (loopback only); extra args go to the app
+./jmvn spring-boot:run        # the same from the classes (do NOT build in another terminal while it runs)
 ./jmvn spotless:apply         # fix formatting
 ```
+
+**Run the server with `./run`, not `spring-boot:run`, if you will also build or test while it is up.** `spring-boot:run` loads classes straight from `target/classes`, so any `./jmvn verify` or `clean` run in another terminal replaces them under the live JVM and it fails with `NoClassDefFoundError` (for example in the sentinel). A jar is not affected. Options: `--actortx.audit.dir=DIR` (write the audit logs), `--actortx.demo.pace=0.3` (provider speed).
 
 `./jmvn` is Maven with the JDK 21 and Maven 3.9 vendored in `../.tooling` (no installation; works from git worktrees).
 

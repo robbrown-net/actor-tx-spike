@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Build the application jar and run it with the vendored JDK. Running from a jar means a later
+# build (./jmvn verify, spring-boot:run in another terminal) cannot pull classes out from under
+# the running server. Extra arguments are passed to the application, e.g.
+#   ./java/run --actortx.audit.dir=/tmp/actortx-audit --actortx.demo.pace=0.3
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+"$here/jmvn" -q package -DskipTests -Djacoco.skip=true
+java_bin="$(ls -d "$here"/../.tooling/java/jdk-*/Contents/Home/bin/java | head -1)"
+exec "$java_bin" -jar "$here/target/actor-tx-0.1.0.jar" "$@"
