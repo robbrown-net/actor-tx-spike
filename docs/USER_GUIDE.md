@@ -75,7 +75,15 @@ quotes asked and answered, *selected X*, accept, authorise, pay, settle, *comple
 money may have moved).
 
 **Performance.** CPU, memory, network, scheduler load, run queue, throughput and end-to-end
-latency, per second and rolled up per minute.
+latency, per second and rolled up per minute. Each chart has a vertical axis with round ticks
+and a horizontal axis with the time of each sample, so you can read how many transactions were
+processed at a given time. Hover a bar or a point for its time and exact figures; click it to
+pin every figure for that sample in a panel above the charts. Click the same column again, click
+elsewhere or press Esc to unpin.
+
+**Version history** (at the foot of the tab) charts throughput, CPU per transaction and peak
+memory per release, one line per runtime (Elixir and Java), with a dashed line at each release.
+It reads `Performance Analysis/results.json`; until that file exists the section says so.
 
 ## 4. Bulk send
 
@@ -248,6 +256,7 @@ Open http://127.0.0.1:4040 (loopback only; there is no authentication). `./java/
 | `GET /api/payments/{id}` and `/result?timeout_ms=` | the transaction: phase, steps, history, outcome (`completed`, `failed`, `needs_review`) |
 | `GET /api/replay` | the audit log checked against the rules and residency |
 | `GET /api/economics`, `/api/guarantees`, `/api/cutoffs`, `/api/metrics`, `/api/providers`, `/api/events` | the figures behind the dashboard |
+| `GET /api/perf-history` | the release history for the Performance tab's version charts (`[]` while there is none) |
 | `POST /api/control` `{action: ...}` | provider, cutoff, submit, admission, review and bulk commands |
 
 If the dashboard shows nothing at all, stop any older server (`pkill -f "ActorTxApplication|actor-tx-0.1.0.jar|spring-boot:run"`), restart with `./java/run`, and reload the page.

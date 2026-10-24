@@ -1,0 +1,200 @@
+[
+  {
+    "version": "java-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "java",
+    "audit": false,
+    "inflight": 20,
+    "tps": 217,
+    "cpu_ms_per_tx": 6.4,
+    "peak_rss_mb": 491,
+    "threads": 56
+  },
+  {
+    "version": "java-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "java",
+    "audit": false,
+    "inflight": 80,
+    "tps": 257,
+    "cpu_ms_per_tx": 3.8,
+    "peak_rss_mb": 496,
+    "threads": 55
+  },
+  {
+    "version": "java-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "java",
+    "audit": false,
+    "inflight": 200,
+    "tps": 307,
+    "cpu_ms_per_tx": 3.9,
+    "peak_rss_mb": 507,
+    "threads": 56
+  },
+  {
+    "version": "elixir-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 20,
+    "tps": 79,
+    "cpu_ms_per_tx": 22.5,
+    "peak_rss_mb": 224,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 80,
+    "tps": 90,
+    "cpu_ms_per_tx": 27.0,
+    "peak_rss_mb": 354,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 200,
+    "tps": 102,
+    "cpu_ms_per_tx": 20.3,
+    "peak_rss_mb": 483,
+    "threads": 32
+  },
+  {
+    "version": "java-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "java",
+    "audit": true,
+    "inflight": 20,
+    "tps": 10.3,
+    "cpu_ms_per_tx": 20.45,
+    "peak_rss_mb": 500.2,
+    "threads": 56
+  },
+  {
+    "version": "java-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "java",
+    "audit": true,
+    "inflight": 80,
+    "tps": 9.5,
+    "cpu_ms_per_tx": 14.93,
+    "peak_rss_mb": 503.7,
+    "threads": 55
+  },
+  {
+    "version": "java-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "java",
+    "audit": true,
+    "inflight": 200,
+    "tps": 10.3,
+    "cpu_ms_per_tx": 15.7,
+    "peak_rss_mb": 514.5,
+    "threads": 57
+  },
+  {
+    "version": "elixir-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": true,
+    "inflight": 20,
+    "tps": 61.1,
+    "cpu_ms_per_tx": 40.13,
+    "peak_rss_mb": 237.0,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": true,
+    "inflight": 80,
+    "tps": 59.2,
+    "cpu_ms_per_tx": 47.42,
+    "peak_rss_mb": 368.8,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": true,
+    "inflight": 200,
+    "tps": 48.7,
+    "cpu_ms_per_tx": 47.01,
+    "peak_rss_mb": 423.5,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0 (profile run 1, default BEAM)",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 80,
+    "tps": 119.9,
+    "cpu_ms_per_tx": 25.65,
+    "peak_rss_mb": 236.9,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0 (profile run 2, default BEAM)",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 80,
+    "tps": 110.3,
+    "cpu_ms_per_tx": 27.32,
+    "peak_rss_mb": 236.7,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0 (profile run 3, default BEAM; outlier, see md)",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 80,
+    "tps": 100.8,
+    "cpu_ms_per_tx": 12.21,
+    "peak_rss_mb": 230.1,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0 (profile run 1, +sbwt none)",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 80,
+    "tps": 87.5,
+    "cpu_ms_per_tx": 8.92,
+    "peak_rss_mb": 234.4,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0 (profile run 2, +sbwt none)",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 80,
+    "tps": 95.4,
+    "cpu_ms_per_tx": 10.43,
+    "peak_rss_mb": 233.4,
+    "threads": 32
+  },
+  {
+    "version": "elixir-0.1.0 (profile run 3, +sbwt none)",
+    "date": "2026-10-24",
+    "runtime": "elixir",
+    "audit": false,
+    "inflight": 80,
+    "tps": 94.6,
+    "cpu_ms_per_tx": 9.49,
+    "peak_rss_mb": 232.0,
+    "threads": 32
+  }
+]

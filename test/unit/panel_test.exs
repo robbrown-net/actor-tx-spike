@@ -160,6 +160,29 @@ defmodule ActorTxSpike.PanelTest do
     assert resp =~ "does not say what it is"
   end
 
+  @tag :tmp_dir
+  test "the perf-history endpoint serves the release list, or [] while there is none", %{
+    tmp_dir: dir
+  } do
+    file = Path.join(dir, "results.json")
+    get = "GET /api/perf-history HTTP/1.1\r\nhost: x\r\n\r\n"
+
+    {:ok, none} = Panel.start_link(handler: Handler, port: 0, page: "x", perf_history: file)
+    resp = request(Panel.port(none), get)
+    assert resp =~ "200 OK"
+    assert String.ends_with?(resp, "[]")
+
+    File.write!(file, ~s([{"version":"0.2","runtime":"Elixir","tps":123.4}]))
+    {:ok, has} = Panel.start_link(handler: Handler, port: 0, page: "x", perf_history: file)
+    resp = request(Panel.port(has), get)
+    assert resp =~ ~s("version":"0.2")
+    assert resp =~ ~s("tps":123.4)
+
+    File.write!(file, ~s({"not":"a list"}))
+    {:ok, other} = Panel.start_link(handler: Handler, port: 0, page: "x", perf_history: file)
+    assert request(Panel.port(other), get) |> String.ends_with?("[]")
+  end
+
   test "a client that vanishes mid-stream or mid-request is tolerated", %{port: port} do
     {:ok, s} = :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false])
     :ok = :gen_tcp.send(s, "GET /events HTTP/1.1\r\nhost: x\r\n\r\n")

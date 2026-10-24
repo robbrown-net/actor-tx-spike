@@ -178,8 +178,38 @@
   .kv { color:var(--dim); font-size:12px; } .kv b { color:var(--text); }
   .chart { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:150px; }
   .chart h3 { margin:0 0 4px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:600; display:flex; justify-content:space-between; }
-  .chart svg { width:100%; height:92px; display:block; }
-  .chart .grid { stroke:var(--line); stroke-width:1; }
+  .chart svg { width:100%; height:170px; display:block; overflow:visible; }
+  .chart svg text { fill:var(--dim); font-size:10px; font-variant-numeric:tabular-nums; }
+  .chart svg text.ytick { text-anchor:end; dominant-baseline:middle; }
+  .chart svg text.unit { font-size:10px; }
+  .chart .grid { stroke:var(--line); stroke-width:1; opacity:.55; }
+  .chart .axis { stroke:var(--line); stroke-width:1; }
+  .chart .marker { stroke:var(--dim); stroke-width:1; stroke-dasharray:4 4; opacity:.7; }
+  .chart .band.hover { fill:rgba(230,237,243,.07); }
+  .chart .band.pin { fill:rgba(88,166,255,.16); }
+  .chart .seg.hover { stroke:var(--text); stroke-width:1.2; }
+  .chart .seg.pin { stroke:var(--info); stroke-width:1.5; }
+  .chart .guide { stroke:var(--dim); stroke-width:1; stroke-dasharray:2 2; }
+  .chart .dot { stroke:var(--panel); stroke-width:1.5; }
+  .pdetail { margin-top:0; }
+  .pdetail[hidden] { display:none; }
+  .pd-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
+  .pd-close { padding:0 8px; font-size:16px; line-height:20px; }
+  .pd-lines { font-size:12px; color:var(--dim); }
+  .pd-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px 18px; margin-top:8px; }
+  .pd-chart h4 { margin:0 0 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .pd-row { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--dim); }
+  .pd-row b { color:var(--text); font-variant-numeric:tabular-nums; font-weight:500; }
+  .pd-row i, #perfTip i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; }
+  .hist-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; margin-top:8px; }
+  .hist-grid .chart { min-height:0; }
+  #perfTip { position:fixed; z-index:50; display:none; pointer-events:none; max-width:320px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:12px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  #perfTip .tt-head { color:var(--text); font-weight:600; margin-bottom:4px; font-variant-numeric:tabular-nums; }
+  #perfTip .tt-line { color:var(--dim); font-size:11px; }
+  #perfTip .tt-row { display:flex; justify-content:space-between; gap:14px; }
+  #perfTip .tt-row b, #perfTip .tt-total b { font-variant-numeric:tabular-nums; }
+  #perfTip .tt-total { display:flex; justify-content:space-between; gap:14px; border-top:1px solid var(--line); margin-top:4px; padding-top:4px; }
+  #perfTip .tt-foot { color:var(--dim); font-size:11px; margin-top:4px; }
   .legend { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; color:var(--dim); margin-top:4px; }
   .legend i { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
   .legend b { color:var(--text); font-variant-numeric:tabular-nums; }
@@ -239,17 +269,29 @@
 </main>
 <div id="perf">
   <div class="chart wide"><h3><span>Right now</span><span><select id="perfWindow"><option value="60">last 1 min</option><option value="300" selected>last 5 min</option><option value="900">last 15 min</option><option value="minutes">1-minute rollups</option></select></span></h3><div class="tiles" id="tiles"></div></div>
-  <div class="chart"><h3><span>Memory</span><span id="memNow"></span></h3><svg id="cMem" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lMem"></div></div>
-  <div class="chart"><h3><span>CPU and schedulers</span><span id="cpuNow"></span></h3><svg id="cCpu" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lCpu"></div></div>
-  <div class="chart"><h3><span>Network (TCP)</span><span id="netNow"></span></h3><svg id="cNet" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lNet"></div></div>
-  <div class="chart"><h3><span>Work (reductions / s)</span><span id="redNow"></span></h3><svg id="cRed" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lRed"></div></div>
-  <div class="chart"><h3><span>Transactions per sample</span><span></span></h3><svg id="cTx" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lTx"></div></div>
-  <div class="chart"><h3><span>End-to-end latency</span><span id="e2eNow"></span></h3><svg id="cE2e" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lE2e"></div></div>
-  <div class="chart"><h3><span>Provider latency p95</span><span></span></h3><svg id="cProv" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="legend" id="lProv"></div></div>
+  <div class="chart wide pdetail" id="detSamples" hidden></div>
+  <div class="chart"><h3><span>Memory</span><span id="memNow"></span></h3><svg id="cMem"></svg><div class="legend" id="lMem"></div></div>
+  <div class="chart"><h3><span>CPU and schedulers</span><span id="cpuNow"></span></h3><svg id="cCpu"></svg><div class="legend" id="lCpu"></div></div>
+  <div class="chart"><h3><span>Network (TCP)</span><span id="netNow"></span></h3><svg id="cNet"></svg><div class="legend" id="lNet"></div></div>
+  <div class="chart"><h3><span>Work (reductions / s)</span><span id="redNow"></span></h3><svg id="cRed"></svg><div class="legend" id="lRed"></div></div>
+  <div class="chart"><h3><span>Transactions per sample</span><span></span></h3><svg id="cTx"></svg><div class="legend" id="lTx"></div></div>
+  <div class="chart"><h3><span>End-to-end latency</span><span id="e2eNow"></span></h3><svg id="cE2e"></svg><div class="legend" id="lE2e"></div></div>
+  <div class="chart"><h3><span>Provider latency p95</span><span></span></h3><svg id="cProv"></svg><div class="legend" id="lProv"></div></div>
   <div class="chart"><h3><span>Hottest processes</span><span></span></h3><table class="top" id="topTable"></table></div>
   <div class="chart"><h3><span>Economics: what it saves vs what it costs</span><span id="econNet"></span></h3><table class="top" id="econTable"><tr><td>no transactions yet</td></tr></table></div>
   <div class="chart"><h3><span>Guarantee ledger</span><span></span></h3><table class="top" id="ledgerTable"><tr><td>no guaranteed transactions yet</td></tr></table></div>
+  <div class="chart wide" id="history">
+    <h3><span>Version history</span><span id="histNote"></span></h3>
+    <div class="chart pdetail" id="detHistory" hidden></div>
+    <div class="empty" id="histEmpty" hidden></div>
+    <div class="hist-grid" id="histGrid">
+      <div class="chart"><h3><span>Throughput</span><span></span></h3><svg id="hTps"></svg><div class="legend" id="lhTps"></div></div>
+      <div class="chart"><h3><span>CPU per transaction</span><span></span></h3><svg id="hCpu"></svg><div class="legend" id="lhCpu"></div></div>
+      <div class="chart"><h3><span>Peak resident memory</span><span></span></h3><svg id="hRss"></svg><div class="legend" id="lhRss"></div></div>
+    </div>
+  </div>
 </div>
+<div id="perfTip"></div>
 <div id="bulk">
   <div class="col">
     <section>
@@ -599,140 +641,397 @@ function renderStory() {
 const PALETTE = ['#58a6ff','#3fb950','#d29922','#bc8cff','#39c5cf','#f85149','#ff7b72'];
 const mb = b => (b / 1048576);
 const kb = b => (b / 1024);
-function chartLines(svgId, legendId, series, opts = {}) {
-  const svg = $(svgId), legend = $(legendId);
-  const n = Math.max(...series.map(s => s.values.length), 0);
-  if (n < 2) { svg.innerHTML = ''; legend.innerHTML = '<span>collecting…</span>'; return; }
-  const all = series.flatMap(s => s.values);
-  const max = opts.max ?? (Math.max(...all, opts.minMax ?? 0.0001) * 1.1);
-  const X = i => 300 * i / (n - 1), Y = v => 88 - 84 * Math.min(v, max) / max;
-  let body = `<line class="grid" x1="0" y1="4" x2="300" y2="4"/><line class="grid" x1="0" y1="46" x2="300" y2="46"/><line class="grid" x1="0" y1="88" x2="300" y2="88"/>`;
-  series.forEach((s, k) => {
-    const pts = s.values.map((v, i) => `${X(i + n - s.values.length).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
-    if (opts.area) body += `<polygon points="0,88 ${pts} 300,88" fill="${s.color}" opacity=".18"/>`;
-    body += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
-  });
-  svg.innerHTML = body;
-  const f = opts.fmt || (v => v.toFixed(1));
-  legend.innerHTML = series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)} <b>${f(s.values[s.values.length - 1] ?? 0)}</b></span>`).join('') +
-    `<span>max <b>${f(max / 1.1)}</b></span>`;
+const isNum = v => typeof v === 'number' && isFinite(v);
+// A number from the JSON at a dotted path, or 0 when it is missing (an older build, or not reported yet).
+const numAt = (o, path) => {
+  let v = o;
+  for (const k of path.split('.')) { if (v == null) return 0; v = v[k]; }
+  return isNum(v) ? v : 0;
+};
+const ser = (name, color, values, unit = '') => ({ name, color, values, unit });
+// A figure exactly as it is (tooltips and the detail panel), with its unit; '—' when there is none.
+const fmtExact = (v, unit) => {
+  if (!isNum(v)) return '—';
+  const text = Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumSignificantDigits: 4 });
+  return unit ? text + ' ' + unit : text;
+};
+// A round axis: about four steps of 1, 2, 2.5 or 5 times a power of ten, from zero to a little above the top value.
+function niceScale(top) {
+  const v = top > 0 ? top : 1, raw = v / 4, mag = 10 ** Math.floor(Math.log10(raw)), f = raw / mag;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+  return { step, max: Math.ceil(v / step - 1e-9) * step };
 }
-function chartStack(svgId, legendId, layers) {
-  const svg = $(svgId), legend = $(legendId);
-  const n = layers[0].values.length;
-  if (n < 2) { svg.innerHTML = ''; legend.innerHTML = '<span>collecting…</span>'; return; }
-  const totals = Array.from({ length: n }, (_, i) => layers.reduce((a, l) => a + l.values[i], 0));
-  const max = Math.max(...totals) * 1.1 || 1;
-  const X = i => 300 * i / (n - 1), Y = v => 88 - 84 * v / max;
-  let base = new Array(n).fill(0), body = `<line class="grid" x1="0" y1="4" x2="300" y2="4"/><line class="grid" x1="0" y1="88" x2="300" y2="88"/>`;
-  layers.forEach(l => {
-    const top = l.values.map((v, i) => base[i] + v);
-    const up = top.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
-    const down = base.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).reverse().join(' ');
-    body += `<polygon points="${up} ${down}" fill="${l.color}" opacity=".65"/>`;
-    base = top;
-  });
-  svg.innerHTML = body;
-  legend.innerHTML = layers.map(l => `<span><i style="background:${l.color}"></i>${esc(l.name)} <b>${l.values[n - 1].toFixed(1)} MB</b></span>`).join('');
+function decimalsFor(step) {
+  let d = 0;
+  while (d < 6 && Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) > 1e-9) d++;
+  return d;
 }
-function chartBars(svgId, legendId, layers) {
-  const svg = $(svgId), legend = $(legendId);
-  const n = layers[0].values.length;
-  if (n < 1) { svg.innerHTML = ''; legend.innerHTML = '<span>collecting…</span>'; return; }
-  const totals = Array.from({ length: n }, (_, i) => layers.reduce((a, l) => a + l.values[i], 0));
-  const max = Math.max(...totals, 1) * 1.15, w = 300 / n;
-  let body = `<line class="grid" x1="0" y1="88" x2="300" y2="88"/>`;
-  for (let i = 0; i < n; i++) {
-    let y = 88;
-    layers.forEach(l => { const h = 84 * l.values[i] / max; y -= h; if (h > 0) body += `<rect x="${(i * w + w * .1).toFixed(1)}" y="${y.toFixed(1)}" width="${(w * .8).toFixed(1)}" height="${h.toFixed(1)}" fill="${l.color}"/>`; });
+// Which of n columns carry an axis label: at most `max`, always the first and the last.
+function labelIndexes(n, max) {
+  if (n === 1) return [0];
+  const k = Math.min(n, Math.max(max, 2));
+  return [...new Set(Array.from({ length: k }, (_, j) => Math.round(j * (n - 1) / (k - 1))))];
+}
+const lastNum = values => { for (let i = values.length - 1; i >= 0; i--) if (isNum(values[i])) return values[i]; return null; };
+
+// Every chart drawn, by svg id: its columns and where they sit. Used for hover, pinning and the detail panel.
+const CHARTS = {};
+let PIN = null, HOVER = null;   // { group, key }; HOVER also carries svg, x and y
+
+/*
+ * Draw one chart into an svg, with a vertical axis (round ticks, light gridlines) and a horizontal axis of
+ * column labels. spec: { group, kind: 'lines' | 'bars' | 'stack', heads: [{ key, title, tick, tick2, lines }],
+ * series: [{ name, color, values, unit }], unit (axis label), legend: 'latest' | 'sum' | 'none', markers,
+ * dots, tickRows: 1 | 2, minColumns }. Each head is one column: a sample, or a release.
+ */
+function plot(svgId, legendId, spec) {
+  const svg = $(svgId), legend = $(legendId), { heads, series, kind } = spec, n = heads.length;
+  const group = spec.group || 'samples';
+  delete CHARTS[svgId];
+  if (!series.length) { svg.innerHTML = ''; legend.innerHTML = ''; return; }
+  if (n < (spec.minColumns ?? (kind === 'lines' ? 2 : 1))) { svg.innerHTML = ''; legend.innerHTML = '<span>collecting…</span>'; return; }
+  const W = Math.max(200, svg.clientWidth || 300), H = 170;
+  const x0 = 46, x1 = W - 10, y0 = 22, y1 = H - (spec.tickRows === 2 ? 34 : 20);
+  const cw = (x1 - x0) / n, cx = i => x0 + (i + 0.5) * cw;
+  const val = (s, i) => (isNum(s.values[i]) ? s.values[i] : null);
+  const tops = heads.map((_, i) => (kind === 'lines'
+    ? Math.max(0, ...series.map(s => val(s, i) ?? 0))
+    : series.reduce((a, s) => a + (val(s, i) ?? 0), 0)));
+  const { step, max } = niceScale(Math.max(0, ...tops));
+  const y = v => y1 - (Math.min(Math.max(v, 0), max) / max) * (y1 - y0);
+  const geo = { bars: [], pts: series.map(() => []) };
+  let grid = '', layers = '', axes = '';
+  const dec = decimalsFor(step);
+  for (let k = 0; k * step <= max + 1e-9; k++) {
+    const yy = y(k * step).toFixed(1);
+    grid += `<line class="${k ? 'grid' : 'axis'}" x1="${x0}" x2="${x1}" y1="${yy}" y2="${yy}"/>`;
+    axes += `<text class="ytick" x="${x0 - 6}" y="${yy}">${(k * step).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })}</text>`;
   }
-  svg.innerHTML = body;
-  legend.innerHTML = layers.map(l => `<span><i style="background:${l.color}"></i>${esc(l.name)} <b>${l.values.reduce((a, b) => a + b, 0)}</b></span>`).join('');
+  if (spec.markers) heads.forEach((_, i) => { grid += `<line class="marker" x1="${cx(i).toFixed(1)}" x2="${cx(i).toFixed(1)}" y1="${y0}" y2="${y1}"/>`; });
+  if (kind === 'bars') {
+    heads.forEach((_, i) => {
+      let base = y1;
+      geo.bars[i] = [];
+      series.forEach(s => {
+        const v = val(s, i) ?? 0;
+        if (v <= 0) return;
+        const h = (v / max) * (y1 - y0);
+        geo.bars[i].push({ x: cx(i) - cw * 0.4, y: base - h, w: Math.max(cw * 0.8, 0.5), h, color: s.color });
+        base -= h;
+      });
+      geo.bars[i].forEach(g => { layers += `<rect x="${g.x.toFixed(1)}" y="${g.y.toFixed(1)}" width="${g.w.toFixed(1)}" height="${g.h.toFixed(1)}" fill="${g.color}"/>`; });
+    });
+  } else if (kind === 'stack') {
+    let under = heads.map(() => 0);
+    series.forEach(s => {
+      const top = under.map((u, i) => u + (val(s, i) ?? 0));
+      const up = top.map((v, i) => `${cx(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+      const down = under.map((v, i) => `${cx(i).toFixed(1)},${y(v).toFixed(1)}`).reverse().join(' ');
+      layers += `<polygon points="${up} ${down}" fill="${s.color}" opacity=".65"/>`;
+      under = top;
+    });
+  } else {
+    series.forEach((s, k) => {
+      const runs = [];
+      let run = [];
+      heads.forEach((_, i) => {
+        const v = val(s, i);
+        if (v == null) { if (run.length) runs.push(run); run = []; return; }
+        const p = { x: cx(i), y: y(v) };
+        geo.pts[k][i] = p;
+        run.push(p);
+      });
+      if (run.length) runs.push(run);
+      runs.forEach(r => { layers += `<polyline points="${r.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="1.6" stroke-linejoin="round"/>`; });
+      if (spec.dots) geo.pts[k].forEach(p => { layers += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="${s.color}"/>`; });
+    });
+  }
+  labelIndexes(n, Math.floor((x1 - x0) / (spec.tickRows === 2 ? 84 : 72))).forEach(i => {
+    const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle', xx = cx(i).toFixed(1);
+    axes += `<text class="xtick" x="${xx}" y="${y1 + 13}" text-anchor="${anchor}">${esc(heads[i].tick || '')}</text>`;
+    if (spec.tickRows === 2) axes += `<text class="xtick" x="${xx}" y="${y1 + 26}" text-anchor="${anchor}">${esc(heads[i].tick2 || '')}</text>`;
+  });
+  axes += `<line class="axis" x1="${x0}" x2="${x0}" y1="${y0}" y2="${y1}"/>` + (spec.unit ? `<text class="unit" x="0" y="10">${esc(spec.unit)}</text>` : '');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.dataset.chart = svgId;
+  svg.innerHTML = grid + layers + axes + '<g class="hl"></g>';
+  CHARTS[svgId] = {
+    id: svgId, svg, group, kind, spec, heads, series, n, W, x0, x1, y0, y1, cw, geo,
+    title: (svg.parentNode.querySelector('h3 span') || {}).textContent || '',
+  };
+  legend.innerHTML = series.map(s => {
+    const v = spec.legend === 'none' ? null : spec.legend === 'sum' ? s.values.reduce((a, b) => a + (isNum(b) ? b : 0), 0) : lastNum(s.values);
+    return `<span><i style="background:${s.color}"></i>${esc(s.name)}${v == null ? '' : ` <b>${fmtExact(v, s.unit)}</b>`}</span>`;
+  }).join('');
 }
 
+// The column under the pointer, or -1 when it is off the plot.
+function colAt(c, e) {
+  const r = c.svg.getBoundingClientRect();
+  if (!r.width) return -1;
+  const i = Math.floor(((e.clientX - r.left) * (c.W / r.width) - c.x0) / c.cw);
+  return i >= 0 && i < c.n ? i : -1;
+}
+const keyIndex = (c, sel) => (sel && sel.group === c.group ? c.heads.findIndex(h => h.key === sel.key) : -1);
+// The highlight for one column: a band, the outlined bars, or the guide line and dots of a line chart.
+function column(c, i, cls) {
+  let out = `<rect class="band ${cls}" x="${(c.x0 + i * c.cw).toFixed(1)}" y="${c.y0}" width="${c.cw.toFixed(2)}" height="${c.y1 - c.y0}"/>`;
+  if (c.kind === 'bars') c.geo.bars[i].forEach(g => { out += `<rect class="seg ${cls}" x="${g.x.toFixed(1)}" y="${g.y.toFixed(1)}" width="${g.w.toFixed(1)}" height="${g.h.toFixed(1)}" fill="none"/>`; });
+  if (c.kind === 'lines') {
+    const gx = (c.x0 + (i + 0.5) * c.cw).toFixed(1);
+    out += `<line class="guide" x1="${gx}" x2="${gx}" y1="${c.y0}" y2="${c.y1}"/>`;
+    c.geo.pts.forEach((pts, k) => { const p = pts[i]; if (p) out += `<circle class="dot ${cls}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.6" fill="${c.series[k].color}"/>`; });
+  }
+  return out;
+}
+function paintHighlights() {
+  Object.values(CHARTS).forEach(c => {
+    const hl = c.svg.querySelector('g.hl');
+    if (!hl) return;
+    const p = keyIndex(c, PIN), h = keyIndex(c, HOVER);
+    hl.innerHTML = (p >= 0 ? column(c, p, 'pin') : '') + (h >= 0 && h !== p ? column(c, h, 'hover') : '');
+  });
+}
+function showTip(c, i, x, y) {
+  const tip = $('perfTip'), h = c.heads[i];
+  const pinned = !!PIN && PIN.group === c.group && PIN.key === h.key;
+  const total = c.kind === 'lines' || c.series.length < 2 ? '' :
+    `<div class="tt-total"><span>total</span><b>${fmtExact(c.series.reduce((a, s) => a + (isNum(s.values[i]) ? s.values[i] : 0), 0))}</b></div>`;
+  tip.innerHTML = `<div class="tt-head">${esc(h.title)}</div>` +
+    (h.lines || []).map(l => `<div class="tt-line">${esc(l)}</div>`).join('') +
+    c.series.map(s => `<div class="tt-row"><span><i style="background:${s.color}"></i>${esc(s.name)}</span><b>${fmtExact(s.values[i], s.unit)}</b></div>`).join('') +
+    total + `<div class="tt-foot">${pinned ? 'click to unpin' : 'click to pin the details'}</div>`;
+  tip.style.display = 'block';
+  const r = tip.getBoundingClientRect(), gap = 14;
+  let left = x + gap, top = y + gap;
+  if (left + r.width > innerWidth - 8) left = x - gap - r.width;
+  if (top + r.height > innerHeight - 8) top = y - gap - r.height;
+  tip.style.left = Math.max(8, left) + 'px';
+  tip.style.top = Math.max(8, top) + 'px';
+}
+function refreshTip() {
+  const c = HOVER && CHARTS[HOVER.svg], i = c ? c.heads.findIndex(h => h.key === HOVER.key) : -1;
+  if (i < 0) { HOVER = null; $('perfTip').style.display = 'none'; return; }
+  showTip(c, i, HOVER.x, HOVER.y);
+}
+// The pinned column's figures, every series of every chart in its group.
+function renderDetails() {
+  [['samples', 'detSamples', 'sample'], ['history', 'detHistory', 'release']].forEach(([group, id, noun]) => {
+    const box = $(id), pin = PIN && PIN.group === group ? PIN : null;
+    if (!pin) { box.hidden = true; return; }
+    const hits = Object.values(CHARTS).filter(c => c.group === group)
+      .map(c => ({ c, i: c.heads.findIndex(h => h.key === pin.key) })).filter(x => x.i >= 0);
+    box.hidden = false;
+    const head = hits.length ? hits[0].c.heads[hits[0].i].title : `That ${noun} is no longer shown`;
+    box.innerHTML = `<div class="pd-head"><b>${esc(head)}</b><button type="button" class="pd-close" aria-label="Unpin">×</button></div>` +
+      (hits.length ? (hits[0].c.heads[hits[0].i].lines || []).map(l => `<div class="pd-lines">${esc(l)}</div>`).join('') +
+        '<div class="pd-grid">' + hits.map(({ c, i }) => `<div class="pd-chart"><h4>${esc(c.title)}</h4>` +
+          c.series.map(s => `<div class="pd-row"><span><i style="background:${s.color}"></i>${esc(s.name)}</span><b>${fmtExact(s.values[i], s.unit)}</b></div>`).join('') +
+          '</div>').join('') + '</div>' : '');
+  });
+}
+function afterDraw() { paintHighlights(); renderDetails(); refreshTip(); }
+function resetGroup(group) { Object.keys(CHARTS).forEach(id => { if (CHARTS[id].group === group) delete CHARTS[id]; }); }
+
+// Hover and click on any chart: the same column lights up in every chart of its group, the tooltip follows the pointer,
+// and a click pins the column's figures (a second click, a click elsewhere or Esc unpins).
+document.addEventListener('mousemove', e => {
+  const svg = e.target.closest && e.target.closest('svg[data-chart]'), c = svg && CHARTS[svg.dataset.chart];
+  const i = c ? colAt(c, e) : -1;
+  if (i < 0) { if (HOVER) { HOVER = null; $('perfTip').style.display = 'none'; paintHighlights(); } return; }
+  const key = c.heads[i].key, moved = !HOVER || HOVER.key !== key || HOVER.svg !== c.id;
+  HOVER = { group: c.group, key, svg: c.id, x: e.clientX, y: e.clientY };
+  showTip(c, i, e.clientX, e.clientY);
+  if (moved) paintHighlights();
+});
+document.addEventListener('click', e => {
+  const t = e.target, svg = t.closest && t.closest('svg[data-chart]'), c = svg && CHARTS[svg.dataset.chart];
+  if (c) {
+    const i = colAt(c, e);
+    if (i < 0) return;
+    const key = c.heads[i].key;
+    PIN = PIN && PIN.group === c.group && PIN.key === key ? null : { group: c.group, key };
+  } else if (t.closest && t.closest('.pdetail') && !t.closest('.pd-close')) {
+    return;   // clicks inside the detail panel keep the pin
+  } else {
+    PIN = null;
+  }
+  afterDraw();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && PIN) { PIN = null; afterDraw(); } });
+// Scrolling moves the columns under a still pointer without a mousemove: drop the hover then.
+document.addEventListener('scroll', () => { if (HOVER) { HOVER = null; $('perfTip').style.display = 'none'; paintHighlights(); } }, true);
+
+// Samples: the live charts, from /api/metrics.
 let perfData = null, perfBusy = false;
+function sampleHeads(rows, rollup) {
+  return rows.map((r, i) => {
+    const o = r || {}, at = isNum(o.at) ? o.at : null, d = at == null ? null : new Date(at);
+    return {
+      key: at ?? `#${i}`,
+      title: d ? d.toLocaleString([], { dateStyle: 'medium', timeStyle: rollup ? 'short' : 'medium' }) : `sample ${i + 1}`,
+      tick: d ? d.toLocaleTimeString([], rollup ? { hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '',
+      lines: rollup && isNum(o.samples) ? [`${o.samples} samples in this minute`] : [],
+    };
+  });
+}
 function fetchPerf() {
-  if (!document.body.classList.contains('perf') || perfBusy) return;
+  if (!document.body.classList.contains('perf')) return;
+  fetchHistory();
+  if (perfBusy) return;
   perfBusy = true;
   fetch('/api/metrics').then(r => r.json()).then(d => { perfData = d; renderPerf(); }).catch(() => {}).finally(() => perfBusy = false);
 }
 function renderPerf() {
   if (!perfData) return;
-  const w = $('perfWindow').value, last = perfData.latest;
-  const rollup = w === 'minutes';
-  const rows = rollup ? perfData.minutes : perfData.raw.slice(-Number(w));
-  if (last && last.jvm) return renderPerfJvm(last, rows, rollup);   // the Java build reports JVM figures
-  const get = (rawFn, minFn) => rows.map(rollup ? minFn : rawFn);
-  const m = (k) => get(r => mb(r.memory[k]), () => 0);
-  if (rollup) {
-    chartStack('cMem', 'lMem', [{ name: 'total (mean)', color: PALETTE[0], values: rows.map(r => mb(r.memory_total_mean)) }]);
-    chartLines('cCpu', 'lCpu', [{ name: 'cpu (cores)', color: PALETTE[0], values: rows.map(r => r.cpu_mean) }, { name: 'scheduler util', color: PALETTE[1], values: rows.map(r => r.sched_mean) }], { fmt: v => v.toFixed(2) });
-    chartLines('cNet', 'lNet', [{ name: 'in KB/s', color: PALETTE[0], values: rows.map(r => kb(r.net_in_mean)) }, { name: 'out KB/s', color: PALETTE[2], values: rows.map(r => kb(r.net_out_mean)) }]);
-    chartLines('cRed', 'lRed', [{ name: 'reductions/s', color: PALETTE[3], values: rows.map(r => r.reductions_mean) }], { fmt: v => Math.round(v).toLocaleString() });
-    chartBars('cTx', 'lTx', [{ name: 'completed', color: '#3fb950', values: rows.map(r => r.completed) }, { name: 'failed', color: '#f85149', values: rows.map(r => r.failed) }, { name: 'review', color: '#d29922', values: rows.map(r => r.needs_review) }]);
-    chartLines('cE2e', 'lE2e', [{ name: 'p95 (max in minute)', color: PALETTE[2], values: rows.map(r => r.e2e_p95_max) }], { fmt: v => Math.round(v) + ' ms' });
-    chartLines('cProv', 'lProv', [], {}); $('topTable').innerHTML = '';
-  } else {
-    chartStack('cMem', 'lMem', [{ name: 'processes', color: PALETTE[0], values: m('processes') }, { name: 'binary', color: PALETTE[1], values: m('binary') }, { name: 'ets', color: PALETTE[2], values: m('ets') }, { name: 'code', color: PALETTE[3], values: m('code') },
-      { name: 'other', color: PALETTE[4], values: get(r => mb(Math.max(r.memory.total - r.memory.processes - r.memory.binary - r.memory.ets - r.memory.code, 0)), () => 0) }]);
-    chartLines('cCpu', 'lCpu', [{ name: 'cpu (cores)', color: PALETTE[0], values: rows.map(r => r.cpu) }, { name: 'scheduler util', color: PALETTE[1], values: rows.map(r => r.sched) }, { name: 'run queue', color: PALETTE[2], values: rows.map(r => r.run_queue) }], { fmt: v => v.toFixed(2) });
-    chartLines('cNet', 'lNet', [{ name: 'in KB/s', color: PALETTE[0], values: rows.map(r => kb(r.net_in_bps)) }, { name: 'out KB/s', color: PALETTE[2], values: rows.map(r => kb(r.net_out_bps)) }]);
-    chartLines('cRed', 'lRed', [{ name: 'reductions/s', color: PALETTE[3], values: rows.map(r => r.reductions_ps) }], { fmt: v => Math.round(v).toLocaleString() });
-    chartBars('cTx', 'lTx', [{ name: 'completed', color: '#3fb950', values: rows.map(r => r.tx.completed) }, { name: 'failed', color: '#f85149', values: rows.map(r => r.tx.failed) }, { name: 'review', color: '#d29922', values: rows.map(r => r.tx.needs_review) }]);
-    chartLines('cE2e', 'lE2e', [{ name: 'p50', color: PALETTE[1], values: rows.map(r => r.e2e.p50) }, { name: 'p95', color: PALETTE[2], values: rows.map(r => r.e2e.p95) }, { name: 'p99', color: PALETTE[5], values: rows.map(r => r.e2e.p99) }], { fmt: v => Math.round(v) + ' ms' });
-    const ids = [...new Set(rows.flatMap(r => Object.keys(r.providers || {})))].sort();
-    chartLines('cProv', 'lProv', ids.map((id, i) => ({ name: id, color: PALETTE[i % PALETTE.length], values: rows.map(r => (r.providers[id] || {}).p95_ms || 0) })), { fmt: v => Math.round(v) + ' ms' });
-    $('topTable').innerHTML = '<tr><th>process</th><th>memory</th><th>mailbox</th></tr>' + ((last && last.top) || []).map(t => `<tr><td>${esc(t.label)}</td><td>${(t.memory / 1024).toFixed(0)} KB</td><td>${t.mailbox}</td></tr>`).join('');
-  }
-  if (last) {
-    $('memNow').textContent = mb(last.memory.total).toFixed(1) + ' MB';
-    $('cpuNow').textContent = (last.sched * 100).toFixed(0) + '% sched';
-    $('netNow').textContent = kb(last.net_in_bps + last.net_out_bps).toFixed(1) + ' KB/s';
-    $('redNow').textContent = Math.round(last.reductions_ps).toLocaleString();
-    $('e2eNow').textContent = 'p95 ' + Math.round(last.e2e.p95) + ' ms';
-    const t = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
-    $('tiles').innerHTML = t(mb(last.memory.total).toFixed(1) + ' MB', 'memory') + t(last.processes, 'processes') + t(last.ports + ' / ' + last.sockets, 'ports / tcp') +
-      t(last.gc_ps + '/s', 'GC') + t(last.tx.in_flight, 'tx in flight') + t(Math.round(last.e2e.p95) + ' ms', 'e2e p95') +
-      t(last.overhead_us + ' µs', 'monitor cost / sample') + t('n/a', 'storage (no durable store yet)');
-  }
+  const w = $('perfWindow').value, last = perfData.latest || null, rollup = w === 'minutes';
+  const rows = (rollup ? perfData.minutes : (perfData.raw || []).slice(-Number(w))) || [];
+  const jvm = !!(last && last.jvm);   // the Java build reports JVM figures instead of the BEAM's
+  resetGroup('samples');
+  if (jvm) perfLabels();
+  const heads = sampleHeads(rows, rollup);
+  const ch = (id, legend, spec) => plot(id, legend, { group: 'samples', heads, ...spec });
+  const col = path => rows.map(r => numAt(r, path));
+  const tx = rollup ? ['completed', 'failed', 'needs_review'] : ['tx.completed', 'tx.failed', 'tx.needs_review'];
+  ch('cTx', 'lTx', { kind: 'bars', unit: 'tx per sample', legend: 'sum', series: [
+    ser('completed', '#3fb950', col(tx[0])), ser('failed', '#f85149', col(tx[1])), ser('review', '#d29922', col(tx[2]))] });
+  if (jvm) jvmCharts(rows, rollup, ch, col);
+  else beamCharts(rows, rollup, ch, col, last);
+  if (last) nowTiles(last, jvm);
+  afterDraw();
 }
-
-// The same tab for the Java build: its samples carry JVM figures (heap, threads, GC, CPU share)
-// instead of the BEAM's (memory kinds, schedulers, reductions, ports); the rest is shared.
+function beamCharts(rows, rollup, ch, col, last) {
+  const mbCol = p => col(p).map(mb), kbCol = p => col(p).map(kb);
+  if (rollup) {
+    ch('cMem', 'lMem', { kind: 'stack', unit: 'MB', series: [ser('total (mean)', PALETTE[0], mbCol('memory_total_mean'), 'MB')] });
+    ch('cCpu', 'lCpu', { kind: 'lines', unit: 'cores · util', series: [ser('cpu (cores)', PALETTE[0], col('cpu_mean')), ser('scheduler util', PALETTE[1], col('sched_mean'))] });
+    ch('cNet', 'lNet', { kind: 'lines', unit: 'KB/s', series: [ser('in KB/s', PALETTE[0], kbCol('net_in_mean')), ser('out KB/s', PALETTE[2], kbCol('net_out_mean'))] });
+    ch('cRed', 'lRed', { kind: 'lines', unit: 'reductions/s', series: [ser('reductions/s', PALETTE[3], col('reductions_mean'))] });
+    ch('cE2e', 'lE2e', { kind: 'lines', unit: 'ms', series: [ser('p95 (max in minute)', PALETTE[2], col('e2e_p95_max'), 'ms')] });
+    ch('cProv', 'lProv', { kind: 'lines', series: [] });
+    $('topTable').innerHTML = '';
+    return;
+  }
+  ch('cMem', 'lMem', { kind: 'stack', unit: 'MB', series: [
+    ser('processes', PALETTE[0], mbCol('memory.processes'), 'MB'), ser('binary', PALETTE[1], mbCol('memory.binary'), 'MB'),
+    ser('ets', PALETTE[2], mbCol('memory.ets'), 'MB'), ser('code', PALETTE[3], mbCol('memory.code'), 'MB'),
+    ser('other', PALETTE[4], rows.map(r => mb(Math.max(numAt(r, 'memory.total') - numAt(r, 'memory.processes') - numAt(r, 'memory.binary') - numAt(r, 'memory.ets') - numAt(r, 'memory.code'), 0))), 'MB')] });
+  ch('cCpu', 'lCpu', { kind: 'lines', unit: 'cores · util', series: [ser('cpu (cores)', PALETTE[0], col('cpu')), ser('scheduler util', PALETTE[1], col('sched')), ser('run queue', PALETTE[2], col('run_queue'))] });
+  ch('cNet', 'lNet', { kind: 'lines', unit: 'KB/s', series: [ser('in KB/s', PALETTE[0], kbCol('net_in_bps')), ser('out KB/s', PALETTE[2], kbCol('net_out_bps'))] });
+  ch('cRed', 'lRed', { kind: 'lines', unit: 'reductions/s', series: [ser('reductions/s', PALETTE[3], col('reductions_ps'))] });
+  ch('cE2e', 'lE2e', { kind: 'lines', unit: 'ms', series: [ser('p50', PALETTE[1], col('e2e.p50')), ser('p95', PALETTE[2], col('e2e.p95')), ser('p99', PALETTE[5], col('e2e.p99'))] });
+  ch('cProv', 'lProv', { kind: 'lines', unit: 'ms', series: providerSeries(rows, PALETTE) });
+  $('topTable').innerHTML = '<tr><th>process</th><th>memory</th><th>mailbox</th></tr>' + ((last && last.top) || []).map(t =>
+    `<tr><td>${esc(t.label ?? '')}</td><td>${(numAt(t, 'memory') / 1024).toFixed(0)} KB</td><td>${numAt(t, 'mailbox')}</td></tr>`).join('');
+}
+// One line per provider: its p95 latency in each sample.
+function providerSeries(rows, palette) {
+  const ids = [...new Set(rows.flatMap(r => Object.keys((r && r.providers) || {})))].sort();
+  return ids.map((id, i) => ser(id, palette[i % palette.length], rows.map(r => numAt({ p: ((r && r.providers) || {})[id] }, 'p.p95_ms'))));
+}
+// The same tab for the Java build: its samples carry JVM figures (heap, threads, GC, CPU share) instead of the BEAM's.
 function perfLabels() {
   const title = (id, text) => { $(id).parentNode.querySelector('h3 span').textContent = text; };
   title('cMem', 'JVM memory'); title('cCpu', 'CPU and garbage collection'); title('cRed', 'Threads');
   $('cNet').parentNode.style.display = 'none'; $('topTable').parentNode.style.display = 'none';
 }
-function renderPerfJvm(last, rows, rollup) {
-  perfLabels();
-  const tx = rollup ? [r => r.completed, r => r.failed, r => r.needs_review] : [r => r.tx.completed, r => r.tx.failed, r => r.tx.needs_review];
-  chartBars('cTx', 'lTx', [{ name: 'completed', color: '#3fb950', values: rows.map(tx[0]) }, { name: 'failed', color: '#f85149', values: rows.map(tx[1]) }, { name: 'review', color: '#d29922', values: rows.map(tx[2]) }]);
+function jvmCharts(rows, rollup, ch, col) {
   if (rollup) {
-    chartStack('cMem', 'lMem', [{ name: 'heap (mean)', color: PALETTE[0], values: rows.map(r => mb(r.heap_used_mean)) }]);
-    chartLines('cCpu', 'lCpu', [{ name: 'GC / s', color: PALETTE[1], values: rows.map(r => r.gc_per_second_mean) }], { fmt: v => v.toFixed(2) });
-    chartLines('cRed', 'lRed', [{ name: 'threads (max)', color: PALETTE[3], values: rows.map(r => r.threads_max) }], { fmt: v => Math.round(v) });
-    chartLines('cE2e', 'lE2e', [{ name: 'p95 (max in minute)', color: PALETTE[2], values: rows.map(r => r.e2e_p95_max) }], { fmt: v => Math.round(v) + ' ms' });
-    chartLines('cProv', 'lProv', [], {});
-  } else {
-    chartStack('cMem', 'lMem', [{ name: 'heap', color: PALETTE[0], values: rows.map(r => mb(r.jvm.heap_used)) }, { name: 'non-heap', color: PALETTE[1], values: rows.map(r => mb(r.jvm.non_heap_used)) }]);
-    chartLines('cCpu', 'lCpu', [{ name: 'cpu %', color: PALETTE[0], values: rows.map(r => r.jvm.cpu_load * 100) }, { name: 'GC / s', color: PALETTE[1], values: rows.map(r => r.gc_per_second) }], { fmt: v => v.toFixed(1) });
-    chartLines('cRed', 'lRed', [{ name: 'threads', color: PALETTE[3], values: rows.map(r => r.jvm.threads) }], { fmt: v => Math.round(v) });
-    chartLines('cE2e', 'lE2e', [{ name: 'p50', color: PALETTE[1], values: rows.map(r => r.e2e.p50) }, { name: 'p95', color: PALETTE[2], values: rows.map(r => r.e2e.p95) }, { name: 'p99', color: PALETTE[5], values: rows.map(r => r.e2e.p99) }], { fmt: v => Math.round(v) + ' ms' });
-    const ids = [...new Set(rows.flatMap(r => Object.keys(r.providers || {})))].sort();
-    chartLines('cProv', 'lProv', ids.map((id, i) => ({ name: id, color: PALETTE[i % PALETTE.length], values: rows.map(r => (r.providers[id] || {}).p95_ms || 0) })), { fmt: v => Math.round(v) + ' ms' });
+    ch('cMem', 'lMem', { kind: 'stack', unit: 'MB', series: [ser('heap (mean)', PALETTE[0], rows.map(r => mb(numAt(r, 'heap_used_mean'))), 'MB')] });
+    ch('cCpu', 'lCpu', { kind: 'lines', unit: 'GC per second', series: [ser('GC / s', PALETTE[1], col('gc_per_second_mean'))] });
+    ch('cRed', 'lRed', { kind: 'lines', unit: 'threads', series: [ser('threads (max)', PALETTE[3], col('threads_max'))] });
+    ch('cE2e', 'lE2e', { kind: 'lines', unit: 'ms', series: [ser('p95 (max in minute)', PALETTE[2], col('e2e_p95_max'), 'ms')] });
+    ch('cProv', 'lProv', { kind: 'lines', series: [] });
+    return;
   }
-  const j = last.jvm;
-  $('memNow').textContent = mb(j.heap_used).toFixed(0) + ' / ' + mb(j.heap_max).toFixed(0) + ' MB heap';
-  $('cpuNow').textContent = (j.cpu_load * 100).toFixed(0) + '% cpu';
-  $('netNow').textContent = '';
-  $('redNow').textContent = j.threads + ' threads';
-  $('e2eNow').textContent = 'p95 ' + Math.round(last.e2e.p95) + ' ms';
-  const t = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
-  $('tiles').innerHTML = t(mb(j.heap_used).toFixed(0) + ' MB', 'heap in use') + t(mb(j.non_heap_used).toFixed(0) + ' MB', 'non-heap') + t(j.threads, 'threads') +
-    t(last.gc_per_second.toFixed(2) + '/s', 'GC') + t(j.gc_time_ms + ' ms', 'GC time so far') + t(last.tx.in_flight, 'tx in flight') +
-    t(Math.round(last.e2e.p95) + ' ms', 'e2e p95') + t(last.overhead_us + ' µs', 'monitor cost / sample');
+  ch('cMem', 'lMem', { kind: 'stack', unit: 'MB', series: [
+    ser('heap', PALETTE[0], rows.map(r => mb(numAt(r, 'jvm.heap_used'))), 'MB'),
+    ser('non-heap', PALETTE[1], rows.map(r => mb(numAt(r, 'jvm.non_heap_used'))), 'MB')] });
+  ch('cCpu', 'lCpu', { kind: 'lines', unit: '% · GC per second', series: [ser('cpu %', PALETTE[0], rows.map(r => numAt(r, 'jvm.cpu_load') * 100), '%'), ser('GC / s', PALETTE[1], col('gc_per_second'))] });
+  ch('cRed', 'lRed', { kind: 'lines', unit: 'threads', series: [ser('threads', PALETTE[3], col('jvm.threads'))] });
+  ch('cE2e', 'lE2e', { kind: 'lines', unit: 'ms', series: [ser('p50', PALETTE[1], col('e2e.p50')), ser('p95', PALETTE[2], col('e2e.p95')), ser('p99', PALETTE[5], col('e2e.p99'))] });
+  ch('cProv', 'lProv', { kind: 'lines', unit: 'ms', series: providerSeries(rows, PALETTE) });
 }
+function nowTiles(last, jvm) {
+  const t = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
+  $('e2eNow').textContent = 'p95 ' + Math.round(numAt(last, 'e2e.p95')) + ' ms';
+  if (jvm) {
+    $('memNow').textContent = mb(numAt(last, 'jvm.heap_used')).toFixed(0) + ' / ' + mb(numAt(last, 'jvm.heap_max')).toFixed(0) + ' MB heap';
+    $('cpuNow').textContent = (numAt(last, 'jvm.cpu_load') * 100).toFixed(0) + '% cpu';
+    $('netNow').textContent = '';
+    $('redNow').textContent = numAt(last, 'jvm.threads') + ' threads';
+    $('tiles').innerHTML = t(mb(numAt(last, 'jvm.heap_used')).toFixed(0) + ' MB', 'heap in use') + t(mb(numAt(last, 'jvm.non_heap_used')).toFixed(0) + ' MB', 'non-heap') +
+      t(numAt(last, 'jvm.threads'), 'threads') + t(numAt(last, 'gc_per_second').toFixed(2) + '/s', 'GC') + t(numAt(last, 'jvm.gc_time_ms') + ' ms', 'GC time so far') +
+      t(numAt(last, 'tx.in_flight'), 'tx in flight') + t(Math.round(numAt(last, 'e2e.p95')) + ' ms', 'e2e p95') + t(numAt(last, 'overhead_us') + ' µs', 'monitor cost / sample');
+    return;
+  }
+  $('memNow').textContent = mb(numAt(last, 'memory.total')).toFixed(1) + ' MB';
+  $('cpuNow').textContent = (numAt(last, 'sched') * 100).toFixed(0) + '% sched';
+  $('netNow').textContent = kb(numAt(last, 'net_in_bps') + numAt(last, 'net_out_bps')).toFixed(1) + ' KB/s';
+  $('redNow').textContent = Math.round(numAt(last, 'reductions_ps')).toLocaleString();
+  $('tiles').innerHTML = t(mb(numAt(last, 'memory.total')).toFixed(1) + ' MB', 'memory') + t(numAt(last, 'processes'), 'processes') +
+    t(numAt(last, 'ports') + ' / ' + numAt(last, 'sockets'), 'ports / tcp') + t(numAt(last, 'gc_ps') + '/s', 'GC') + t(numAt(last, 'tx.in_flight'), 'tx in flight') +
+    t(Math.round(numAt(last, 'e2e.p95')) + ' ms', 'e2e p95') + t(numAt(last, 'overhead_us') + ' µs', 'monitor cost / sample') + t('n/a', 'storage (no durable store yet)');
+}
+
+// Version history: /api/perf-history, one column per release (date and version), one line per runtime.
+let histState = 'loading', histRows = [], histBusy = false, histAt = 0;
+function histRow(r) {
+  const o = r || {};
+  return {
+    version: String(o.version ?? '?'), date: String(o.date ?? ''), runtime: String(o.runtime ?? '?'),
+    audit: o.audit, inflight: o.inflight, threads: o.threads,
+    tps: isNum(o.tps) ? o.tps : null, cpu: isNum(o.cpu_ms_per_tx) ? o.cpu_ms_per_tx : null, rss: isNum(o.peak_rss_mb) ? o.peak_rss_mb : null,
+  };
+}
+function fetchHistory(force) {
+  if (histBusy || (!force && Date.now() - histAt < 15000)) return;
+  histBusy = true;
+  fetch('/api/perf-history')
+    .then(r => {
+      if (r.status === 404) return { state: 'missing' };
+      if (!r.ok) return { state: 'error' };
+      return r.json().then(j => ({ state: 'ok', rows: Array.isArray(j) ? j.map(histRow) : [] }));
+    })
+    .then(res => { histState = res.state; histRows = res.rows || []; })
+    .catch(() => { histState = 'error'; histRows = []; })
+    .finally(() => { histBusy = false; histAt = Date.now(); renderHistory(); });
+}
+function renderHistory() {
+  if (histState === 'loading') return;
+  const note = $('histNote'), empty = $('histEmpty'), grid = $('histGrid');
+  resetGroup('history');
+  if (histState !== 'ok' || !histRows.length) {
+    grid.hidden = true;
+    empty.hidden = false;
+    note.textContent = '';
+    empty.textContent = histState === 'missing' ? 'This server does not offer version history (GET /api/perf-history is not there).'
+      : histState === 'error' ? 'The version history could not be loaded. It will be tried again.'
+      : 'No version history yet. Each release adds a record to Performance Analysis/results.json, and its charts appear here.';
+    afterDraw();
+    return;
+  }
+  grid.hidden = false;
+  empty.hidden = true;
+  const sorted = [...histRows].sort((a, b) => a.date.localeCompare(b.date) || a.version.localeCompare(b.version, undefined, { numeric: true }));
+  const cats = [], at = new Map();
+  sorted.forEach(r => { const k = r.date + '|' + r.version; if (!at.has(k)) { at.set(k, cats.length); cats.push(r); } });
+  const heads = cats.map(c => ({ key: c.date + '|' + c.version, title: `${c.version} · ${c.date}`, tick: c.version, tick2: c.date, lines: [] }));
+  sorted.forEach(r => heads[at.get(r.date + '|' + r.version)].lines.push(`${r.runtime}: audit ${r.audit ?? '—'}, inflight ${r.inflight ?? '—'}, ${r.threads ?? '—'} threads`));
+  const runtimes = [...new Set(sorted.map(r => r.runtime))].sort();
+  const seriesFor = (field, unit) => runtimes.map((rt, k) => {
+    const values = cats.map(() => null);
+    sorted.forEach(r => { if (r.runtime === rt) values[at.get(r.date + '|' + r.version)] = r[field]; });
+    return ser(rt, PALETTE[k % PALETTE.length], values, unit);
+  });
+  const ch = (id, legend, spec) => plot(id, legend, { group: 'history', heads, markers: true, dots: true, tickRows: 2, minColumns: 1, legend: 'none', ...spec });
+  ch('hTps', 'lhTps', { kind: 'lines', unit: 'tx per second', series: seriesFor('tps', 'tx/s') });
+  ch('hCpu', 'lhCpu', { kind: 'lines', unit: 'ms per tx', series: seriesFor('cpu', 'ms/tx') });
+  ch('hRss', 'lhRss', { kind: 'lines', unit: 'MB peak', series: seriesFor('rss', 'MB') });
+  note.textContent = `${runtimes.join(' and ')} · ${cats.length} release${cats.length === 1 ? '' : 's'}`;
+  afterDraw();
+}
+window.addEventListener('resize', () => { if (document.body.classList.contains('perf')) { renderPerf(); renderHistory(); } });
 
 function frame() { if (S.dirty) { S.dirty = false; renderProviders(); renderTxs(); renderStory(); } requestAnimationFrame(frame); }
 
@@ -775,7 +1074,7 @@ function setView(view) {
   $('viewReview').classList.toggle('on', view === 'review');
   $('viewBulk').classList.toggle('on', view === 'bulk');
   $('viewLive').classList.toggle('on', view === 'live'); $('viewPerf').classList.toggle('on', view === 'perf'); $('viewLab').classList.toggle('on', view === 'lab');
-  if (view === 'perf') fetchPerf();
+  if (view === 'perf') { fetchHistory(true); fetchPerf(); }
   if (view === 'lab') labFetch();
   if (view === 'bulk') bulkFetch();
   if (view === 'review') reviewFetch();

@@ -10,6 +10,7 @@ defmodule ActorTxSpike.Panel do
   * `GET /api/review`    JSON from `handler.review()` if the handler offers one (the review queue)
   * `GET /api/bulk`      JSON from `handler.bulk()` if the handler offers one (bulk sending progress)
   * `GET /api/server`    JSON from `handler.server()` if the handler offers one (what is running and how it was started)
+  * `GET /api/perf-history` the release history from `Performance Analysis/results.json` (`[]` while there is none)
   * `POST /api/control`  JSON body passed to `handler.control/1`
 
   Binds to loopback only by default. POSTs must be `application/json`, which a
@@ -20,6 +21,7 @@ defmodule ActorTxSpike.Panel do
   alias ActorTxSpike.Events
 
   @keepalive_ms 15_000
+  @perf_history "Performance Analysis/results.json"
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
@@ -33,7 +35,8 @@ defmodule ActorTxSpike.Panel do
     cfg = %{
       handler: Keyword.fetch!(opts, :handler),
       page: Keyword.get_lazy(opts, :page, &page/0),
-      keepalive_ms: Keyword.get(opts, :keepalive_ms, @keepalive_ms)
+      keepalive_ms: Keyword.get(opts, :keepalive_ms, @keepalive_ms),
+      perf_history: Keyword.get(opts, :perf_history) || @perf_history
     }
 
     case :gen_tcp.listen(Keyword.get(opts, :port, 4040), [
@@ -153,6 +156,9 @@ defmodule ActorTxSpike.Panel do
   defp route(socket, :GET, "/api/server", _h, _b, cfg),
     do: optional(socket, cfg.handler, :server, "this handler does not say what it is")
 
+  defp route(socket, :GET, "/api/perf-history", _h, _b, cfg),
+    do: respond_json(socket, 200, perf_history(cfg.perf_history))
+
   defp route(socket, :GET, "/events", _h, _b, cfg), do: stream_events(socket, cfg.keepalive_ms)
 
   defp route(socket, :POST, "/api/control", headers, body, %{handler: handler}) do
@@ -171,6 +177,20 @@ defmodule ActorTxSpike.Panel do
 
   defp route(socket, _method, _path, _h, _b, _cfg),
     do: respond(socket, 404, "text/plain", "not found")
+
+  # The release history, one record per run (see Performance Analysis/): relative to the directory the server
+  # runs in, and an empty list while the file does not exist or is not a JSON list.
+  defp perf_history(path) do
+    file = Path.expand(path, File.cwd!())
+
+    with true <- File.regular?(file),
+         {:ok, body} <- File.read(file),
+         {:ok, list} when is_list(list) <- decode(body) do
+      list
+    else
+      _ -> []
+    end
+  end
 
   defp json?(headers),
     do: String.contains?(Map.get(headers, "content-type", ""), "application/json")

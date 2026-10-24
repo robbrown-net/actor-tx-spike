@@ -15,6 +15,8 @@ defmodule Mix.Tasks.Demo do
       mix demo --max-in-flight 100      # back-pressure: refuse submissions beyond 100 running
       mix demo --lab                    # the Test lab tab: supervised regional logs in a temp
                                         # directory, fault injection, crash/recover, scenarios
+      mix demo --perf-history FILE      # the release history for the Performance tab (default
+                                        # "Performance Analysis/results.json")
   """
   use Mix.Task
 
@@ -32,7 +34,8 @@ defmodule Mix.Tasks.Demo do
     audit: :string,
     audit_dir: :string,
     lab: :boolean,
-    max_in_flight: :integer
+    max_in_flight: :integer,
+    perf_history: :string
   ]
 
   @impl true
@@ -86,7 +89,13 @@ defmodule Mix.Tasks.Demo do
   defp set_pace(factor), do: Demo.control(%{"action" => "pace", "factor" => factor})
 
   defp start_panel(opts) do
-    {:ok, panel} = Panel.start_link(handler: Demo.Handler, port: opts[:port] || 4040)
+    {:ok, panel} =
+      Panel.start_link(
+        handler: Demo.Handler,
+        port: opts[:port] || 4040,
+        perf_history: opts[:perf_history]
+      )
+
     if opts[:auto], do: Demo.control(%{"action" => "auto", "on" => true})
     panel
   end

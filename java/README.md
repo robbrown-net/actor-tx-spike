@@ -40,6 +40,7 @@ cd java
 | `GET /api/payments/{id}/result?timeout_ms=` | wait for it to end (200, or 408) |
 | `GET /api/replay` | the audit log checked against the rules and residency (needs `actortx.audit.dir`) |
 | `GET /api/review`, `GET /api/bulk`, `GET /api/metrics`, `GET /api/snapshot` | what the dashboard polls (review queue, bulk progress, metrics, the whole picture) |
+| `GET /api/perf-history` | the release history for the Performance tab's version charts: the records in `Performance Analysis/results.json` (set another path with `actortx.perf.history`); `[]` while the file is absent |
 | `GET /api/events`, `GET /api/stream`, `GET /events` | recent events; named server-sent events; the unnamed stream the page listens to |
 | `GET /api/economics`, `/api/guarantees`, `/api/cutoffs` | cost and benefit, guarantee ledger, cut-offs |
 | `POST /api/control` | actions `provider`, `cutoff`, `submit`, `admission`, `review` (`do`: check, retry, resolve), `bulk` (`do`: start, stop, clear); `auto`, `pace`, `policy`, `lab` answer "not available in the Java port yet" |

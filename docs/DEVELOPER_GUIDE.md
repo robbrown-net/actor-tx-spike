@@ -240,4 +240,5 @@ The toolchain (JDK 21, Maven 3.9) is vendored in `.tooling/` like the Elixir one
 * PMD 7 mis-reports a private method that is used only through a method reference (`Foo::bar`) as unused on clean builds. Use a lambda.
 * `-Werror`: no raw types, no unchecked casts (use a small test helper such as `Json`).
 * The dashboard page is `priv/panel.html`, shared with the Elixir build and served by Spring from the classpath. The page reads many JSON fields on every frame; a missing field can stop it drawing at all (it happened with a provider's `faults`). `PaymentIT` pins the provider fields; when you change a view that the page reads, run the dashboard by hand as well.
+* The Performance tab's version history reads `GET /api/perf-history`: Elixir in `panel.ex` (the file is `Performance Analysis/results.json` unless `mix demo --perf-history FILE` says otherwise), Java in `api/PerfHistoryController` (`actortx.perf.history`). Both answer `[]` while the file is absent. The page shows an empty state when the endpoint is missing (404), so it still works against an older server.
 * Audit logs written by Java have not been cross-verified with the Elixir verifier.
