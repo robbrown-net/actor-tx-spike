@@ -30,3 +30,5 @@
 | [report/engineering-report.html](report/engineering-report.html) | Single-page report combining all of the above |
 
 Diagrams are Mermaid and render on GitHub. The HTML report renders them in the browser.
+
+Performance measurements and decisions (throughput, CPU, memory, audit-log cost) are in [../Performance Analysis/README.md](<../Performance Analysis/README.md>).

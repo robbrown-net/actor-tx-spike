@@ -1,4 +1,5 @@
 # Elixir hot path, and the like-for-like rerun with the audit log on (2026-10-24)
+> **Update 2026-10-25:** sections 6 and 8 are superseded. Java's audit cap was measured and reduced by group commit (`java-group-commit.md`); Elixir payments now stop when finished (`elixir-process-reaping.md`). Start at `README.md`.
 
 Follows `java-vs-elixir-throughput.md`. Raw numbers: `results.json` in this folder.
 
