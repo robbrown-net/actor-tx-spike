@@ -20,8 +20,7 @@ defmodule ActorTxSpike.LabIntegrationTest do
     step_timeout_ms: 400,
     backoff_ms: 5,
     reconcile_interval_ms: 5,
-    reconcile_attempts: 3,
-    linger_ms: 60_000
+    reconcile_attempts: 3
   ]
 
   setup do

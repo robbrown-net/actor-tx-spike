@@ -91,6 +91,7 @@ instead of `case`), `Payment.run_step/3` (clauses instead of `cond`).
 lib/actor_tx_spike.ex            public API: submit, await, snapshot
 lib/actor_tx_spike/              core modules (see architecture/05 for the map)
   payment.ex                       one process per transaction: lifecycle, retries, compensation
+  reaper.ex                        stops finished transactions' processes in batches; keeps their final views (last 10,000)
   selector.ex, selector/narrator.ex  quoting and the pure judgement; the story of a selection
   policy.ex, policy_set.ex         routing policy as validated data; global/merchant/customer cascade
   eligibility.ex, eligibility/     jurisdiction rules (decide) and their parser

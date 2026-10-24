@@ -25,7 +25,7 @@ cd java
 | 3 | **Operate**: replay (`GET /api/replay`), review workflow, bulk send, metrics (JVM figures) and the existing dashboard (`/`) served by Spring. Still to do: recovery after restart, CLI tools, dashboard actions `auto`/`pace`/`policy`/lab | mostly done |
 | design | Steps, workflows, provider capabilities and routing criteria are values ([ADR 0016](../docs/adr/0016-extensible-domain-model.md)); one shared `Outcome`; named event kinds with a schema version | done |
 
-**Measured 2026-10-23:** 673 unit tests (100% lines, 97.2% branches), 68 integration tests (86.7% lines), PIT 401 of 409 killed. Structure, diagrams, extension points: [../docs/architecture/13-java-architecture.md](../docs/architecture/13-java-architecture.md).
+**Measured 2026-10-24:** 692 unit tests (100% line gate met), 68 integration tests (gate met), PIT 401 of 409 killed (2026-10-23, before the group-commit change; not rerun). Structure, diagrams, extension points: [../docs/architecture/13-java-architecture.md](../docs/architecture/13-java-architecture.md).
 
 ### The HTTP API (JSON, snake_case, the same shapes the Elixir dashboard speaks)
 
@@ -47,7 +47,7 @@ cd java
 | `GET /` | the dashboard (`priv/panel.html`, shared with the Elixir build) |
 | `GET /actuator/health` | liveness |
 
-Errors are `{ok: false, error, errors}` with 422 (invalid input), 429 (at the admission limit) or 400 (not JSON). Set `actortx.audit.dir` to write the hash-chained audit logs (one per region plus `GLOBAL`); without it nothing is durable and the write-ahead barrier is trivially satisfied.
+Errors are `{ok: false, error, errors}` with 422 (invalid input), 429 (at the admission limit) or 400 (not JSON). Set `actortx.audit.dir` to write the hash-chained audit logs (one per region plus `GLOBAL`); without it nothing is durable and the write-ahead barrier is trivially satisfied. The barrier is group commit: one sync thread per log forces the disk for every barrier waiting, and a barrier returns only after a force that covers its records (see [ADR 0018](../docs/adr/0018-audit-group-commit.md)). `/api/metrics` carries an `audit` object with `records`, `syncs`, `synced_records` and `records_per_sync`.
 
 ## The quality bars (the same as the Elixir side)
 

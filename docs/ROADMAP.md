@@ -144,8 +144,9 @@ exponents per currency and fee schedules; forward deal lifecycle; sanctions and 
 - Not built: forward deal lifecycle, sanctions/KYC gates, trade reporting, retail flows, the review workflow (UC-4). The jurisdiction matrix is unverified by counsel.
 - `Demo`, `Demo.Handler`, `Demo.Lab`, `Demo.Lab.Scenarios` are excluded from the unit gate (exercised by integration tests);
   the `Mix.Tasks.*` entry points and the `Wait` test helper are excluded everywhere.
-- Finished transactions linger 30s (configurable) then stop; their story outlives them in the
-  audit log (and in the bounded event buffer).
+- Finished transactions are stopped in batches by `Reaper` (every 500 ms); their final view stays
+  answerable from the reaper's bounded store (last 10,000), and their story outlives them in the
+  audit log (and in the bounded event buffer). See ADR 0017.
 - Unit coverage is line-based; branch-level measurement is still to do.
 
 ## Deferred

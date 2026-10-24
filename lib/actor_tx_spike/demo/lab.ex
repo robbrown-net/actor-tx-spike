@@ -88,7 +88,7 @@ defmodule ActorTxSpike.Demo.Lab do
   def set_audit(mode), do: GenServer.call(__MODULE__, {:audit, mode})
   def arm(kind, op), do: GenServer.call(__MODULE__, {:arm, kind, op})
 
-  @doc "Wait until the transaction's process is gone (finished lingering, or killed)."
+  @doc "Wait until the transaction's process is gone (reaped after it finishes, or killed)."
   def wait_gone(tx, tries \\ 400) do
     if Poll.until(fn -> not running?(tx) end, tries: tries), do: :ok, else: :timeout
   end

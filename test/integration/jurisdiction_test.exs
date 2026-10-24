@@ -163,7 +163,7 @@ defmodule ActorTxSpike.JurisdictionIntegrationTest do
         providers: ctx.providers,
         policy: policy,
         eligibility: ctx.eligibility,
-        opts: @fast ++ [linger_ms: 1]
+        opts: @fast
       )
 
     # the node dies as soon as authorise has succeeded

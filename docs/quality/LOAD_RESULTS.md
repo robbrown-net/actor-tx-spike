@@ -62,7 +62,8 @@ with a limit of 100 completes 1,000 of 1,000.
 
 * Fake providers on one laptop: absolute numbers will differ with real providers, networks and hardware. Re-measure.
 * One run per setting: differences of a few transactions between neighbouring rows are noise.
-* The demo world has no audit log in these runs. The write-ahead barrier (a flush before every money-moving call) will
+* **Audit log cost is accepted and documented.** The write-ahead barrier waits for a disk sync covering the payment's records. With the log on, Java manages 16.7 to 20.2 payments/s after group commit (ADR 0018; 10 before) and Elixir 49 to 61/s; the disk's sync rate is the limit. Details: `Performance Analysis/`.
+* The runs above this note have no audit log. The write-ahead barrier (a flush before every money-moving call) will
   add cost; measure with `--audit-dir` before choosing a production limit.
 * Recovery-resumed transactions are not counted by admission control.
 * The production default is 100 (`config/prod.exs`, override with `ACTOR_TX_MAX_IN_FLIGHT`), chosen from this table.

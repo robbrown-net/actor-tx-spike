@@ -101,15 +101,16 @@ public final class EventBus implements EventSink, AutoCloseable {
   }
 
   /**
-   * The write-ahead barrier: waits until every event emitted before this call is in every sink,
-   * then flushes them all.
+   * The write-ahead barrier: waits until every event emitted before this call is in every sink and
+   * the sinks have made them durable. The dispatcher only starts the flushes, so a sink that forces
+   * its writes (the audit log) does not hold up the events behind the barrier.
    *
    * @return empty if everything is durable; otherwise the reason, such as {@code "sink_down: name"}
    *     or the sink's own failure
    */
   public Optional<String> barrier() {
     CompletableFuture<Optional<String>> flushed = new CompletableFuture<>();
-    if (!dispatcher.submit(() -> flushed.complete(sinks.barrier()))) {
+    if (!dispatcher.submit(() -> sinks.barrier().thenAccept(flushed::complete))) {
       return Optional.of(CLOSED);
     }
     return flushed.join();

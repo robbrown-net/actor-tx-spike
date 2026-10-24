@@ -131,7 +131,7 @@ defmodule ActorTxSpike.AdmissionTest do
       ActorTxSpike.submit(%{id: tx, amount: 100},
         providers: providers,
         policy: policy(),
-        opts: [deadline_ms: 2_000, linger_ms: 50]
+        opts: [deadline_ms: 2_000]
       )
     end
 
@@ -162,7 +162,7 @@ defmodule ActorTxSpike.AdmissionTest do
       assert {:ok, _} = ActorTxSpike.await(tx, 5_000)
       Wait.until!(fn -> in_flight() == 0 end)
 
-      # the finished payment is still lingering: the id is taken, so this is a no-op
+      # the finished transaction is remembered (its process may already be gone): the id is taken, so this is a no-op
       assert {:ok, ^tx} = submit(providers, tx)
       Wait.until!(fn -> in_flight() == 0 end)
     end

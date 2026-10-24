@@ -299,12 +299,39 @@ defmodule ActorTxSpike.PaymentTest do
     assert Process.alive?(payment)
   end
 
-  test "finished transactions linger and then stop" do
-    id = submit(market(), linger_ms: 20)
+  test "finished transactions stop, and their result is still answered afterwards" do
+    m = market()
+    id = submit(m)
     assert {:ok, _} = Payment.await(id)
+
+    ActorTxSpike.Wait.until!(fn ->
+      Registry.lookup(ActorTxSpike.Registry, {:payment, id}) == []
+    end)
+
+    assert {:ok, %{provider: :best}} = Payment.await(id)
+    assert %{phase: :completed, result: {:ok, _}, done: [_ | _]} = Payment.snapshot(id)
+  end
+
+  test "submitting the id of a finished transaction again is the same transaction, not a second one" do
+    m = market()
+    id = submit(m)
     assert {:ok, _} = Payment.await(id)
-    Process.sleep(60)
-    assert {:error, :not_found} = Payment.await(id)
+
+    ActorTxSpike.Wait.until!(fn ->
+      Registry.lookup(ActorTxSpike.Registry, {:payment, id}) == []
+    end)
+
+    providers = m |> Map.values() |> Enum.map(&%{id: &1.id, server: &1.server})
+
+    assert {:ok, ^id} =
+             ActorTxSpike.submit(%{id: id, amount: 100},
+               providers: providers,
+               policy: policy(),
+               opts: @fast
+             )
+
+    assert Registry.lookup(ActorTxSpike.Registry, {:payment, id}) == []
+    assert count(m, :best, :pay) == 1
   end
 
   describe "jurisdiction" do

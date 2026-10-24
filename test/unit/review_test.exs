@@ -13,8 +13,7 @@ defmodule ActorTxSpike.ReviewTest do
     backoff_ms: 5,
     reconcile_interval_ms: 5,
     step_timeout_ms: 500,
-    deadline_ms: 1_000,
-    linger_ms: 200
+    deadline_ms: 1_000
   ]
 
   setup do

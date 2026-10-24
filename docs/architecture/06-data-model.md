@@ -130,7 +130,7 @@ erDiagram
 
 | Entity | Today | Planned |
 |---|---|---|
-| Transaction | `Payment` process state (lingers 30 s after finishing) | Event-sourced log; projections for status |
+| Transaction | `Payment` process state while it runs; afterwards its final view in the `Reaper` store (last 10,000) | Event-sourced log; projections for status |
 | Quote / Candidate / Selection | In the `Payment` process and the narrative `data` | Persisted with the decision rationale |
 | Effect | Provider-side only (in the fake); our side is in the narrative | Own table keyed by idempotency key (outbox/inbox) |
 | ProviderHealth / HealthSample | `Provider.Server` state (rolling window of 20) | Time series with retention (see [07](07-observability-and-performance.md)) |

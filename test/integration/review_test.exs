@@ -16,8 +16,7 @@ defmodule ActorTxSpike.ReviewIntegrationTest do
     deadline_ms: 600,
     step_timeout_ms: 300,
     backoff_ms: 5,
-    reconcile_interval_ms: 5,
-    linger_ms: 200
+    reconcile_interval_ms: 5
   ]
 
   setup do

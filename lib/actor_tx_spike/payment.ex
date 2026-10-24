@@ -27,6 +27,10 @@ defmodule ActorTxSpike.Payment do
   * Compensation that itself cannot be completed also ends in `:needs_review`.
 
   Every transition is announced via `ActorTxSpike.Events`.
+
+  A finished transaction does not keep its process. It hands its final view to
+  `ActorTxSpike.Reaper`, which stops the process in the next batch; from then on
+  `await/2` and `snapshot/1` answer from the reaper's store.
   """
   use GenServer
 
@@ -39,6 +43,7 @@ defmodule ActorTxSpike.Payment do
     Ledger,
     Money,
     PolicySet,
+    Reaper,
     Selector
   }
 
@@ -65,7 +70,6 @@ defmodule ActorTxSpike.Payment do
     backoff_ms: 25,
     reconcile_attempts: 3,
     reconcile_interval_ms: 50,
-    linger_ms: 30_000,
     baseline: nil,
     barrier: &Events.barrier/0
   ]
@@ -78,19 +82,32 @@ defmodule ActorTxSpike.Payment do
 
   def via(id), do: {:via, Registry, {ActorTxSpike.Registry, {:payment, id}}}
 
-  @doc "Block until terminal: `{:ok, summary}` or `{:error, reason}`."
+  @doc """
+  Block until terminal: `{:ok, summary}` or `{:error, reason}`. A transaction that has
+  already finished answers from the reaper's store; an unknown one is `{:error, :not_found}`.
+  """
   def await(id, timeout \\ 5_000) do
     GenServer.call(via(id), :await, timeout)
   catch
-    :exit, {:noproc, _} -> {:error, :not_found}
+    :exit, {:noproc, _} -> finished_result(id)
     :exit, {:timeout, _} -> {:error, :timeout}
   end
 
-  # nil when the transaction is not running, including when it is killed mid-call
+  @doc """
+  The live view of a transaction, or the final view of one that has finished; `nil` if it
+  is unknown (or was killed mid-call before it finished).
+  """
   def snapshot(id) do
     GenServer.call(via(id), :snapshot)
   catch
-    :exit, _ -> nil
+    :exit, _ -> Reaper.fetch(id)
+  end
+
+  defp finished_result(id) do
+    case Reaper.fetch(id) do
+      nil -> {:error, :not_found}
+      view -> view.result
+    end
   end
 
   @impl true
@@ -342,18 +359,7 @@ defmodule ActorTxSpike.Payment do
 
   def handle_call(:await, from, state), do: {:noreply, %{state | waiters: [from | state.waiters]}}
 
-  def handle_call(:snapshot, _from, state) do
-    {:reply,
-     %{
-       id: state.id,
-       phase: state.phase,
-       provider: state.current && state.current.provider_id,
-       deadline_ms: state.deadline_ms,
-       done: Enum.reverse(state.done),
-       history: Enum.reverse(state.history),
-       result: state.result
-     }, state}
-  end
+  def handle_call(:snapshot, _from, state), do: {:reply, view(state), state}
 
   @impl true
   def handle_info({ref, {tag, result, latency}}, %{pending: ref} = state) do
@@ -367,7 +373,6 @@ defmodule ActorTxSpike.Payment do
   def handle_info({:retry_step, op}, state), do: {:noreply, run_step(state, op)}
   def handle_info({:retry_undo, undo}, state), do: {:noreply, run_undo(state, undo)}
   def handle_info({:reconcile_again, op}, state), do: {:noreply, run_status(state, op)}
-  def handle_info(:linger_over, state), do: {:stop, :normal, state}
 
   # ---- results -----------------------------------------------------------
 
@@ -703,8 +708,21 @@ defmodule ActorTxSpike.Payment do
     emit_economics(state, phase)
     ActorTxSpike.Admission.release(state.id)
     Enum.each(state.waiters, &GenServer.reply(&1, result))
-    Process.send_after(self(), :linger_over, state.opts.linger_ms)
+    Reaper.finished(state.id, self(), view(state))
     %{state | waiters: []}
+  end
+
+  # What a caller can ask of a transaction: the live process and the reaper's store give the same shape.
+  defp view(state) do
+    %{
+      id: state.id,
+      phase: state.phase,
+      provider: state.current && state.current.provider_id,
+      deadline_ms: state.deadline_ms,
+      done: Enum.reverse(state.done),
+      history: Enum.reverse(state.history),
+      result: state.result
+    }
   end
 
   # ---- side effects ------------------------------------------------------

@@ -15,8 +15,7 @@ defmodule ActorTxSpike.BulkIntegrationTest do
     deadline_ms: 400,
     step_timeout_ms: 300,
     backoff_ms: 5,
-    reconcile_interval_ms: 5,
-    linger_ms: 60_000
+    reconcile_interval_ms: 5
   ]
 
   setup do

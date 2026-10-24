@@ -51,7 +51,9 @@ import net.robbrown.actortx.service.Sentinel;
 import net.robbrown.actortx.service.ServerReviewProviders;
 import net.robbrown.actortx.service.SnapshotService;
 import net.robbrown.actortx.validation.Validated;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -70,14 +72,19 @@ public class DemoConfig {
 
   /** The narrative: everything that happens, in order, and the durable sinks it is written to. */
   @Bean(destroyMethod = "close")
-  public EventBus eventBus(
+  public EventBus eventBus(ObjectProvider<AuditRouter> audit) {
+    EventBus bus = new EventBus();
+    audit.ifAvailable(router -> bus.registerSink("audit", router));
+    return bus;
+  }
+
+  /** The regional audit logs, when a directory is configured (the durable sink). */
+  @Bean(destroyMethod = "close")
+  @ConditionalOnExpression("'${actortx.audit.dir:}' != ''")
+  public AuditRouter auditRouter(
       @Value("${actortx.audit.dir:}") String auditDir,
       @Value("${actortx.audit.logs:IN,CN,US,UK,EU}") List<String> logs) {
-    EventBus bus = new EventBus();
-    if (!auditDir.isEmpty()) {
-      bus.registerSink("audit", AuditRouter.open(Path.of(auditDir), logs, true));
-    }
-    return bus;
+    return AuditRouter.open(Path.of(auditDir), logs, true);
   }
 
   /** The demo's providers. */

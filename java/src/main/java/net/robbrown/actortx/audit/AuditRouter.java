@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 import net.robbrown.actortx.events.DurableSink;
 import net.robbrown.actortx.events.Event;
@@ -23,6 +24,8 @@ import net.robbrown.actortx.events.Event;
  * open, so a restarted router keeps sending open transactions to their own regions.
  */
 public final class AuditRouter implements DurableSink, AutoCloseable {
+
+  private static final System.Logger LOG = System.getLogger(AuditRouter.class.getName());
 
   private final Path dir;
   private final Map<String, AuditLog> logs;
@@ -84,9 +87,27 @@ public final class AuditRouter implements DurableSink, AutoCloseable {
    * @return empty if all are durable, otherwise the first failure
    */
   @Override
-  public synchronized Optional<String> flush() {
-    List<Optional<String>> results = logs.values().stream().map(AuditLog::flush).toList();
-    return results.stream().flatMap(Optional::stream).findFirst();
+  public Optional<String> flush() {
+    return flushAsync().join();
+  }
+
+  /**
+   * Start the durability of every regional log at once, so their forces can share the disk's time.
+   * The outcome is the first failure, in the order of the logs.
+   *
+   * @return the outcome, possibly still pending
+   */
+  @Override
+  public synchronized CompletableFuture<Optional<String>> flushAsync() {
+    List<CompletableFuture<Optional<String>>> results =
+        logs.values().stream().map(AuditLog::flushAsync).toList();
+    return CompletableFuture.allOf(results.toArray(CompletableFuture[]::new))
+        .thenApply(
+            ignored ->
+                results.stream()
+                    .map(CompletableFuture::join)
+                    .flatMap(Optional::stream)
+                    .findFirst());
   }
 
   /**
@@ -111,10 +132,27 @@ public final class AuditRouter implements DurableSink, AutoCloseable {
     return Map.copyOf(heads);
   }
 
-  /** Close every regional log, releasing their locks. */
+  /**
+   * What the regional logs have done for durability, summed over every log.
+   *
+   * @return the figures
+   */
+  public synchronized AuditStats stats() {
+    return logs.values().stream().map(AuditLog::stats).reduce(AuditStats.NONE, AuditStats::plus);
+  }
+
+  /** Close every regional log, releasing their locks, and log what the audit did. */
   @Override
   public synchronized void close() {
     logs.values().forEach(AuditLog::close);
+    AuditStats stats = stats();
+    LOG.log(
+        System.Logger.Level.INFO,
+        "audit closed: records={0} syncs={1} synced_records={2} records_per_sync={3}",
+        stats.records(),
+        stats.syncs(),
+        stats.syncedRecords(),
+        String.format("%.2f", stats.recordsPerSync()));
   }
 
   /** The routing table, for the router's own tests. */

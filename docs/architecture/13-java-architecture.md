@@ -174,8 +174,10 @@ sequenceDiagram
     Q-->>P: ranked candidates
     loop each step of the workflow
       P->>B: barrier(): is everything announced so far durable?
-      B->>L: flush
-      L-->>B: durable (or why not)
+      B->>L: flushAsync (dispatcher only starts it)
+      Note over L: the audit sync thread forces once for every barrier waiting, after the records are written
+      L-->>B: durable, from a force that began after those records (or why not)
+      B-->>P: empty (or why not)
       alt not durable
         P-->>P: stop: failed or needs_review, no money moves
       end
@@ -191,9 +193,20 @@ Everything the engine does is announced on the `EventBus`, which fans out to: th
 
 ## 4. Threads and back-pressure
 
-* One **virtual thread per payment**; one dispatcher thread for the bus (so sinks and subscribers are touched from one thread); one virtual thread per provider call (so a hung provider never blocks its caller).
+* One **virtual thread per payment**; one dispatcher thread for the bus (so sinks and subscribers are touched from one thread); one **audit sync thread** per open audit log (the only thread that forces the disk: see section 4.1); one virtual thread per provider call (so a hung provider never blocks its caller).
 * **Admission** limits transactions in flight (429 beyond it); each provider has **bulkheads** by priority class (quotes 60%, steps 100%, protective calls 150% of its slots) so undo and status calls still get through when it is saturated; a busy provider is waited for, not failed, and does not use an attempt.
 * The write-ahead **barrier** is a synchronisation point with the bus, not a lock: it waits for what was announced before it.
+
+### 4.1 Audit barrier and group commit
+
+The audit log writes each record to the file as the dispatcher delivers it, in order, and does not force it there. The barrier is the only thing that waits for the disk:
+
+1. A payment asks the bus for a barrier. The dispatcher, which has already written every event announced before the call, starts the flush of each sink and goes straight on to the events behind it. It does not wait for the disk.
+2. Each audit log records how many records it holds (its target). The barrier's future completes only when a force has **started after** that count was reached and has **returned successfully**.
+3. The audit sync thread forces the disk once for everything written so far. Barriers that arrive while a force runs wait for the next one, so one force covers many payments' records (group commit). With no barrier waiting, written records are forced within 50 ms.
+4. If a force fails, every barrier waiting on it fails with the same reason as before (`audit_unavailable` at the payment), the log refuses writes from then on, and every later barrier reports the same failure. Nothing acknowledges before it is durable.
+
+Records per force and forces per payment are counted in `AuditStats` and shown on `/api/metrics` as `audit` (`records`, `syncs`, `synced_records`, `records_per_sync`); the router logs the same figures when it closes. ADR [0018](../adr/0018-audit-group-commit.md) has the reasoning and the measurements are in [Performance Analysis/java-group-commit.md](../../Performance%20Analysis/java-group-commit.md).
 
 ## 5. Extension points: how to change the domain
 

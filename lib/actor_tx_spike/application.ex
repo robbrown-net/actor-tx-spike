@@ -52,6 +52,7 @@ defmodule ActorTxSpike.Application do
         {ActorTxSpike.Ledger, []},
         {Registry, keys: :unique, name: ActorTxSpike.Registry},
         {ActorTxSpike.Admission, Keyword.get(config, :admission, [])},
+        {ActorTxSpike.Reaper, []},
         ActorTxSpike.TransactionSupervisor
       ]
   end

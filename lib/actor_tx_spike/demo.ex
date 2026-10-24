@@ -131,8 +131,7 @@ defmodule ActorTxSpike.Demo do
           deadline_ms: 2_500,
           step_timeout_ms: 2_500,
           backoff_ms: 150,
-          reconcile_interval_ms: 400,
-          linger_ms: 120_000
+          reconcile_interval_ms: 400
         )
     }
 

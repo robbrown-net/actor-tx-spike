@@ -34,7 +34,7 @@ defmodule ActorTxSpike.Recovery do
 
   @next %{"accept_quote" => "authorise", "authorise" => "pay", "pay" => "settle", "settle" => nil}
   @terminal ~w(tx_completed tx_failed needs_review)
-  @opt_keys ~w(deadline_ms step_timeout_ms max_attempts backoff_ms reconcile_attempts reconcile_interval_ms linger_ms)a
+  @opt_keys ~w(deadline_ms step_timeout_ms max_attempts backoff_ms reconcile_attempts reconcile_interval_ms)a
 
   @doc "Where one transaction stood, from its records in order. `nil` if it never started."
   @spec plan([map()]) :: nil | %{status: :done} | map()

@@ -10,7 +10,7 @@ defmodule ActorTxSpike do
   Transaction ids must not contain `:` (they prefix idempotency keys).
   """
 
-  alias ActorTxSpike.{Admission, Payment, PolicySet, TransactionSupervisor}
+  alias ActorTxSpike.{Admission, Payment, PolicySet, Reaper, TransactionSupervisor}
 
   @doc """
   Submit a transaction. `request` needs `:amount`; `:id` is generated if absent.
@@ -28,6 +28,10 @@ defmodule ActorTxSpike do
 
   Returns `{:error, {:overloaded, retry_after_ms}}` when `ActorTxSpike.Admission` is full:
   nothing was started or recorded, and the caller should wait and try again.
+
+  An id that is already running, or whose transaction has finished (and is still
+  remembered by `ActorTxSpike.Reaper`), is the same transaction: `{:ok, id}` and nothing
+  runs again.
   """
   @spec submit(map(), keyword()) ::
           {:ok, String.t()} | {:error, {:overloaded, pos_integer()} | term()}
@@ -35,6 +39,10 @@ defmodule ActorTxSpike do
     id = request[:id] || generate_id()
     request = Map.put(request, :id, id)
 
+    if Reaper.finished?(id), do: {:ok, id}, else: start(request, opts)
+  end
+
+  defp start(%{id: id} = request, opts) do
     {policy, layers} = resolve_policy(opts, request)
 
     with {:ok, admitted} <- Admission.admit(id) do

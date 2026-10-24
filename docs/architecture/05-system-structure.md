@@ -14,7 +14,8 @@ flowchart LR
         REV["Review (queue of needs_review; check, retry, resolve)"]
         RQ["Review.Queue (pure: entries from events or log records)"]
         TS["TransactionSupervisor (DynamicSupervisor)"]
-        PAY["Payment (1 process per transaction)"]
+        PAY["Payment (1 process per running transaction)"]
+        REAP["Reaper (stops finished processes in batches; keeps their final views)"]
         SEL["Selector (fan-out quoting, pure evaluate/3)"]
         NAR["Selector.Narrator (events and journal of a selection)"]
         POL["Policy (validated data)"]
@@ -133,6 +134,7 @@ flowchart TD
     APP --> LED["Ledger"]
     APP --> REG["Registry (payment ids)"]
     APP --> ADMN["Admission"]
+    APP --> RPR["Reaper (stops finished payments in batches; ETS store of their final views)"]
     APP --> TSUP["TransactionSupervisor"]
     TSUP --> P1["Payment tx-1 (temporary)"]
     TSUP --> P2["Payment tx-2 (temporary)"]
@@ -158,7 +160,8 @@ flowchart TD
 | Module | Responsibility | Pure? |
 |---|---|---|
 | `ActorTxSpike` | Public API: submit / await / snapshot | no |
-| `Payment` | Lifecycle, retries (a busy provider is asked again without using an attempt), compensation, reconcile, escalation; frees its admission slot when it ends | no (process) |
+| `Payment` | Lifecycle, retries (a busy provider is asked again without using an attempt), compensation, reconcile, escalation; frees its admission slot when it ends; hands its final view to `Reaper` and is stopped in the next batch | no (process) |
+| `Reaper` | Finished payments: keeps each final view in a bounded ETS store (the last 10,000) so `await`, `snapshot`, a repeated submission of the id and review still answer; stops the finished processes in one pass every 500 ms (see [ADR 0017](../adr/0017-payment-process-reaping.md)) | no (process + ETS) |
 | `Selector` | Concurrent quoting within deadline (a provider that does not carry the pair is not asked; a busy provider is asked again until the deadline); `evaluate/3` is the pure judgement shared with replay | `evaluate/3`: **yes** |
 | `Review` | The review workflow: queue of transactions in `needs_review`; check (read-only), retry (settle or an undo under the original key), resolve (paid, not_paid, written_off, with who and why); write-ahead; started by the host (see [11](11-review-workflow.md)) | no (process) |
 | `Review.Queue` | The queue as pure data: entries from a live transaction or from audit-log records; folding people's actions; the resolution check | **yes** |

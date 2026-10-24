@@ -18,8 +18,7 @@ defmodule ActorTxSpike.RecoveryTest do
     reconcile_interval_ms: 5,
     reconcile_attempts: 2,
     step_timeout_ms: 500,
-    deadline_ms: 500,
-    linger_ms: 1
+    deadline_ms: 500
   ]
 
   # ---- the pure plan -----------------------------------------------------
@@ -301,9 +300,12 @@ defmodule ActorTxSpike.RecoveryTest do
     }
   end
 
+  # A finished transaction's snapshot stays answerable from the reaper, so wait for its process.
   defp wait_gone(id) do
     Enum.reduce_while(1..200, nil, fn _, _ ->
-      if Payment.snapshot(id) == nil, do: {:halt, :ok}, else: Process.sleep(10) && {:cont, nil}
+      if Registry.lookup(ActorTxSpike.Registry, {:payment, id}) == [],
+        do: {:halt, :ok},
+        else: Process.sleep(10) && {:cont, nil}
     end)
   end
 
@@ -531,7 +533,7 @@ defmodule ActorTxSpike.RecoveryTest do
     m = market(%{best: [rate: 1.10, latency_ms: 200]})
     id = "rc-#{System.unique_integer([:positive])}"
     Events.subscribe()
-    submit(m, id, %{}, linger_ms: 5_000)
+    submit(m, id, %{})
     :ok = wait_for(fn -> Enum.any?(drain(), &(&1["kind"] == "step_started")) end)
 
     day = Replay.from_records(base_records([chosen(5)]) |> Enum.map(&Map.put(&1, "tx", id)))
@@ -591,7 +593,7 @@ defmodule ActorTxSpike.RecoveryTest do
       on_exit(fn -> File.rm_rf(dir) end)
 
       Events.subscribe()
-      submit(m, id, %{}, linger_ms: 5_000)
+      submit(m, id, %{})
 
       # the node dies the moment this happens
       kill_when(id, matcher)

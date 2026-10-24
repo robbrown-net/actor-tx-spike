@@ -374,6 +374,8 @@ stateDiagram-v2
 
 A transaction in `needs_review` is not the end of the story: it waits in the review queue until a person resolves it ([11](11-review-workflow.md)).
 
+Every end state (`completed`, `failed`, `needs_review`) is final for the process too: the `Payment` hands its final view to the `Reaper`, and the reaper stops the process in the next batch (within 500 ms). A finished transaction is then answered from the reaper's store: `await`, `snapshot`, the review queue, and a repeated submission of the same id (which is not run again). The store keeps the last 10,000 finished transactions ([ADR 0017](../adr/0017-payment-process-reaping.md)).
+
 ## 4.7 State machine: provider health and breaker
 
 ```mermaid

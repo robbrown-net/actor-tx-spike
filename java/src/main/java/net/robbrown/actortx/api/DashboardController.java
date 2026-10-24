@@ -2,7 +2,10 @@ package net.robbrown.actortx.api;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import net.robbrown.actortx.audit.AuditRouter;
+import net.robbrown.actortx.audit.AuditStats;
 import net.robbrown.actortx.bulk.BulkRunner;
 import net.robbrown.actortx.bulk.Progress;
 import net.robbrown.actortx.events.Event;
@@ -13,6 +16,7 @@ import net.robbrown.actortx.metrics.Snapshot;
 import net.robbrown.actortx.review.ReviewService;
 import net.robbrown.actortx.review.ReviewSnapshot;
 import net.robbrown.actortx.service.SnapshotService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +33,7 @@ public class DashboardController {
   private final ReviewService reviews;
   private final EventBus bus;
   private final BulkRunner bulk;
+  private final ObjectProvider<AuditRouter> audit;
 
   /** Fronts the dashboard's data. */
   public DashboardController(
@@ -36,7 +41,9 @@ public class DashboardController {
       Metrics metrics,
       ReviewService reviews,
       EventBus bus,
-      BulkRunner bulk) {
+      BulkRunner bulk,
+      ObjectProvider<AuditRouter> audit) {
+    this.audit = audit;
     this.bulk = bulk;
     this.snapshots = snapshots;
     this.metrics = metrics;
@@ -58,10 +65,28 @@ public class DashboardController {
     return snapshots.snapshot();
   }
 
-  /** Throughput, latency and JVM figures. */
+  /**
+   * Throughput, latency and JVM figures, plus the audit log's durability figures ({@code audit}, or
+   * null when no audit directory is configured).
+   */
   @GetMapping("/api/metrics")
-  public Snapshot metrics() {
-    return metrics.snapshot();
+  public Map<String, Object> metrics() {
+    Snapshot snapshot = metrics.snapshot();
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("raw", snapshot.raw());
+    body.put("minutes", snapshot.minutes());
+    body.put("latest", snapshot.latest());
+    body.put("audit", audit.getIfAvailable() == null ? null : auditView(audit.getObject().stats()));
+    return body;
+  }
+
+  private static Map<String, Object> auditView(AuditStats stats) {
+    Map<String, Object> view = new LinkedHashMap<>();
+    view.put("records", stats.records());
+    view.put("syncs", stats.syncs());
+    view.put("synced_records", stats.syncedRecords());
+    view.put("records_per_sync", stats.recordsPerSync());
+    return view;
   }
 
   /** The manual-review queue. */

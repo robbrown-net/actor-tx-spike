@@ -1,12 +1,15 @@
 package net.robbrown.actortx.events;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * The durable sinks, by name. Touched only from the dispatcher thread. A sink whose write or flush
- * throws is marked down and stays down until a sink is registered under its name (fail closed).
+ * The durable sinks, by name. Writes and barriers are started from the dispatcher thread; a sink's
+ * flush may finish on another thread, so the down flag is volatile. A sink whose write or flush
+ * fails is marked down and stays down until a sink is registered under its name (fail closed).
  */
 final class SinkRegistry {
 
@@ -24,8 +27,20 @@ final class SinkRegistry {
     sinks.values().forEach(entry -> entry.write(event));
   }
 
-  Optional<String> barrier() {
-    return firstDown().or(() -> flushAll());
+  CompletableFuture<Optional<String>> barrier() {
+    Optional<String> down = firstDown();
+    if (down.isPresent()) {
+      return CompletableFuture.completedFuture(down);
+    }
+    List<CompletableFuture<Optional<String>>> flushes =
+        sinks.values().stream().map(SinkEntry::flushAsync).toList();
+    return CompletableFuture.allOf(flushes.toArray(CompletableFuture[]::new))
+        .thenApply(
+            ignored ->
+                flushes.stream()
+                    .map(CompletableFuture::join)
+                    .flatMap(Optional::stream)
+                    .findFirst());
   }
 
   private Optional<String> firstDown() {
@@ -35,16 +50,12 @@ final class SinkRegistry {
         .map(entry -> "sink_down: " + entry.name());
   }
 
-  private Optional<String> flushAll() {
-    return sinks.values().stream().map(SinkEntry::flush).flatMap(Optional::stream).findFirst();
-  }
-
   /** One registered sink and whether it has failed. */
   private static final class SinkEntry {
 
     private final String name;
     private final DurableSink sink;
-    private boolean down;
+    private volatile boolean down;
 
     SinkEntry(String name, DurableSink sink) {
       this.name = name;
@@ -70,13 +81,19 @@ final class SinkRegistry {
       }
     }
 
-    Optional<String> flush() {
+    CompletableFuture<Optional<String>> flushAsync() {
+      CompletableFuture<Optional<String>> started;
       try {
-        return sink.flush();
+        started = sink.flushAsync();
       } catch (RuntimeException e) {
-        down = true;
-        return Optional.of("sink_unresponsive: " + name + ": " + e);
+        return CompletableFuture.completedFuture(unresponsive(e));
       }
+      return started.handle((outcome, error) -> error == null ? outcome : unresponsive(error));
+    }
+
+    private Optional<String> unresponsive(Throwable e) {
+      down = true;
+      return Optional.of("sink_unresponsive: " + name + ": " + e);
     }
   }
 }

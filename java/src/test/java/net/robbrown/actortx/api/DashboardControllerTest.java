@@ -11,7 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+import net.robbrown.actortx.audit.AuditRouter;
+import net.robbrown.actortx.audit.AuditStats;
 import net.robbrown.actortx.bulk.BulkRunner;
 import net.robbrown.actortx.bulk.Sleeper;
 import net.robbrown.actortx.bulk.Submission;
@@ -42,6 +46,10 @@ import net.robbrown.actortx.validation.Validated;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.http.converter.ByteArrayHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
@@ -56,6 +64,7 @@ class DashboardControllerTest {
   private EventBus bus;
   private MockMvc mvc;
   private DashboardController controller;
+  private SnapshotService snapshots;
 
   private PaymentService payments(Admission admission, PolicyResolver resolver) {
     return new PaymentService(
@@ -93,7 +102,7 @@ class DashboardControllerTest {
     Admission admission = new Admission(5);
     PolicyResolver resolver =
         new PolicyResolver(((Validated.Valid<PolicySet>) PolicySet.fromMap(Map.of())).value());
-    SnapshotService snapshots =
+    snapshots =
         new SnapshotService(
             catalog,
             resolver,
@@ -104,7 +113,8 @@ class DashboardControllerTest {
             payments(admission, resolver));
     ObjectMapper mapper =
         new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-    controller = new DashboardController(snapshots, new Metrics(), reviews(), bus, bulk());
+    controller =
+        new DashboardController(snapshots, new Metrics(), reviews(), bus, bulk(), noAudit());
     mvc =
         MockMvcBuilders.standaloneSetup(controller)
             .setMessageConverters(
@@ -118,6 +128,46 @@ class DashboardControllerTest {
     bus.close();
     selector.close();
     catalog.close();
+  }
+
+  private static ObjectProvider<AuditRouter> noAudit() {
+    return new StaticListableBeanFactory().getBeanProvider(AuditRouter.class);
+  }
+
+  private static Event receivedIn(String tx) {
+    return new Event(
+        1,
+        1L,
+        tx,
+        "payment",
+        "tx_received",
+        "m",
+        Map.of("eligibility", Map.of("logs", List.of("IN"))));
+  }
+
+  @Test
+  void theMetricsReportTheAuditLogsFiguresWhenOneIsConfigured(@TempDir Path dir) throws Exception {
+    DefaultListableBeanFactory beans = new DefaultListableBeanFactory();
+    AuditRouter router = AuditRouter.open(dir, List.of("IN"), false);
+    beans.registerSingleton("audit", router);
+    try {
+      router.write(receivedIn("t-in"));
+      AuditStats stats = router.stats();
+      DashboardController withAudit =
+          new DashboardController(
+              snapshots,
+              new Metrics(),
+              reviews(),
+              bus,
+              bulk(),
+              beans.getBeanProvider(AuditRouter.class));
+      MockMvc view = MockMvcBuilders.standaloneSetup(withAudit).build();
+      view.perform(get("/api/metrics"))
+          .andExpect(jsonPath("$.audit.records", is(Math.toIntExact(stats.records()))))
+          .andExpect(jsonPath("$.audit.syncs", is(0)));
+    } finally {
+      router.close();
+    }
   }
 
   @Test

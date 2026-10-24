@@ -10,12 +10,11 @@ defmodule ActorTxSpike.DemoIntegrationTest do
     deadline_ms: 300,
     step_timeout_ms: 300,
     backoff_ms: 5,
-    reconcile_interval_ms: 5,
-    linger_ms: 60_000
+    reconcile_interval_ms: 5
   ]
 
   setup do
-    # Unique prefix: payment processes linger, so ids must not repeat across tests.
+    # Unique prefix: a finished transaction's id is remembered, so ids must not repeat across tests.
     prefix = "d#{System.unique_integer([:positive])}"
 
     {:ok, pid} =
@@ -149,8 +148,7 @@ defmodule ActorTxSpike.DashboardIntegrationTest do
     deadline_ms: 300,
     step_timeout_ms: 300,
     backoff_ms: 5,
-    reconcile_interval_ms: 5,
-    linger_ms: 60_000
+    reconcile_interval_ms: 5
   ]
 
   defp http(port, raw) do
